@@ -1,0 +1,12 @@
+[
+  {"code": "IM40", "name_ru": "Выпуск для внутреннего потребления", "name_en": "Release for domestic consumption"},
+  {"code": "IM51", "name_ru": "Переработка на таможенной территории", "name_en": "Inward processing"},
+  {"code": "IM53", "name_ru": "Временный ввоз", "name_en": "Temporary admission"},
+  {"code": "IM70", "name_ru": "Таможенный склад", "name_en": "Customs warehouse"},
+  {"code": "IM78", "name_ru": "Уничтожение", "name_en": "Destruction"},
+  {"code": "IM80", "name_ru": "Отказ в пользу государства", "name_en": "Renunciation"},
+  {"code": "EK10", "name_ru": "Экспорт", "name_en": "Export"},
+  {"code": "EK21", "name_ru": "Реэкспорт", "name_en": "Re-export"},
+  {"code": "EK31", "name_ru": "Переработка вне таможенной территории", "name_en": "Outward processing"},
+  {"code": "TR80", "name_ru": "Таможенный транзит", "name_en": "Customs transit"}
+]

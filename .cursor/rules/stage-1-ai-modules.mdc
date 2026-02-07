@@ -1,0 +1,475 @@
+---
+description: "Этап 1: AI модули — OCR парсинг, классификация ТН ВЭД, Risk Engine, Price Analyzer (8-10 недель)"
+alwaysApply: false
+---
+
+# ЭТАП 1: AI МОДУЛИ (OCR + HS CLASSIFIER + RISK ENGINE)
+
+Предусловие: Этап 0 завершён — core-api, file-service, frontend работают.
+
+Цель: сократить ручной ввод, автозаполнение ДТ из PDF, подбор кодов ТН ВЭД с ML, предупреждение о рисках.
+
+## 1.1. ai-service — сервис AI
+
+Путь: `services/ai-service/`
+
+### Dockerfile
+```dockerfile
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng \
+    libgl1-mesa-glx libglib2.0-0 poppler-utils && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8003"]
+```
+
+### requirements.txt
+```
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+sqlalchemy[asyncio]==2.0.*
+asyncpg==0.30.*
+pydantic==2.10.*
+pydantic-settings==2.7.*
+structlog==24.*
+httpx==0.28.*
+redis==5.*
+celery[redis]==5.*
+pytesseract==0.3.*
+pdfplumber==0.11.*
+camelot-py[cv]==0.11.*
+Pillow==11.*
+lightgbm==4.*
+xgboost==2.*
+scikit-learn==1.6.*
+pandas==2.*
+numpy==2.*
+joblib==1.*
+```
+
+### Структура
+```
+services/ai-service/
+├── app/
+│   ├── main.py               # FastAPI app, health, роутеры
+│   ├── config.py              # Настройки (pydantic-settings)
+│   ├── routers/
+│   │   ├── parser.py          # OCR эндпоинты
+│   │   ├── classifier.py      # HS code classification
+│   │   └── risk.py            # Risk assessment
+│   ├── services/
+│   │   ├── ocr_service.py     # OCR pipeline
+│   │   ├── invoice_parser.py  # Парсинг инвойсов
+│   │   ├── packing_parser.py  # Парсинг упаковочных листов
+│   │   ├── contract_parser.py # Парсинг контрактов
+│   │   ├── hs_classifier.py   # ML классификатор ТН ВЭД
+│   │   ├── risk_engine.py     # Rule engine + ML risk
+│   │   └── price_analyzer.py  # Анализ цен
+│   ├── ml_models/             # Сериализованные модели (.joblib)
+│   ├── rules/                 # JSON правила СУР
+│   │   └── risk_rules.json
+│   └── utils/
+│       ├── text_processing.py # Очистка OCR текста
+│       └── table_extractor.py # Извлечение таблиц
+├── training/                  # Скрипты обучения моделей
+│   ├── train_hs_classifier.py
+│   ├── train_risk_model.py
+│   └── data/                  # Обучающие данные
+├── tests/
+└── celery_worker.py           # Celery для фоновых задач
+```
+
+## 1.2. OCR — распознавание документов
+
+### Pipeline (ocr_service.py)
+1. Принять PDF/JPG
+2. Если PDF: извлечь страницы через `pdfplumber` (текстовые) или `pytesseract` (сканы)
+3. Определить тип документа (инвойс / упаковочный лист / контракт) по ключевым словам
+4. Извлечь структурированные данные по типу документа
+5. Вернуть JSON с распознанными полями
+
+### Парсинг инвойса (invoice_parser.py)
+
+Входные поля для извлечения:
+```python
+class InvoiceParsed(BaseModel):
+    invoice_number: str | None
+    invoice_date: str | None
+    seller: CounterpartyParsed | None
+    buyer: CounterpartyParsed | None
+    currency: str | None
+    total_amount: float | None
+    items: list[InvoiceItemParsed]
+    confidence: float  # 0-1 общая уверенность
+
+class CounterpartyParsed(BaseModel):
+    name: str | None
+    address: str | None
+    country_code: str | None
+    tax_number: str | None
+
+class InvoiceItemParsed(BaseModel):
+    line_no: int
+    description_raw: str
+    quantity: float | None
+    unit: str | None
+    unit_price: float | None
+    line_total: float | None
+    confidence: float
+```
+
+Алгоритм:
+1. Поиск паттернов: `Invoice No`, `Date`, `Seller/Shipper/Exporter`, `Buyer/Consignee/Importer`
+2. Извлечение таблицы товаров через `camelot` (PDF таблицы) или regex (текст)
+3. Парсинг колонок: Description, Qty, Unit, Price, Amount
+4. Определение валюты по символу ($, €, ¥) или тексту (USD, EUR, CNY)
+5. Определение страны продавца по адресу (lookup из справочника стран)
+
+### Парсинг упаковочного листа (packing_parser.py)
+
+Извлечение:
+- Общее количество мест (packages)
+- Тип упаковки (cartons, pallets, crates)
+- Вес брутто / нетто по позициям
+- Маркировка и номера мест
+
+### Парсинг контракта (contract_parser.py)
+
+Извлечение:
+- Номер и дата контракта
+- Стороны (продавец/покупатель)
+- Общая сумма контракта (для определения необходимости ПС > 3 млн ₽)
+- Условия поставки (Incoterms)
+- Валюта
+
+### Endpoints
+
+```
+POST /api/v1/ai/parse/invoice
+  Body: multipart/form-data (file: PDF/JPG)
+  Response: InvoiceParsed
+
+POST /api/v1/ai/parse/packing-list
+  Body: multipart/form-data (file: PDF/JPG)
+  Response: PackingListParsed
+
+POST /api/v1/ai/parse/contract
+  Body: multipart/form-data (file: PDF/JPG)
+  Response: ContractParsed
+```
+
+### Применение распознанных данных
+
+Endpoint в core-api:
+```
+POST /api/v1/declarations/{id}/apply-parsed
+  Body: { source_type: "invoice"|"packing_list"|"contract", parsed_data: {...} }
+```
+
+Логика маппинга:
+| Поле OCR | Графа ДТ |
+|----------|----------|
+| seller.name, seller.address | Графа 2 (отправитель) |
+| buyer.name, buyer.address | Графа 8 (получатель) |
+| seller.country_code | Графа 11 (торгующая страна), 15 (страна отправления) |
+| currency | Графа 22 (валюта) |
+| total_amount | Графа 22 (сумма) |
+| items[].description_raw | Графа 31 (описание), 32 (наименование) |
+| items[].quantity | Графа 41 (доп. единицы) |
+| items[].unit_price | Графа 42 (цена) |
+| items[].line_total | Часть для графы 45 |
+| packing.total_packages | Графа 6 (всего мест) |
+| packing.gross_weight | Графа 35 |
+| packing.net_weight | Графа 38 |
+| contract.incoterms | Графа 20 |
+| contract.total_amount | Проверка на ПС (> 3 млн ₽) |
+
+## 1.3. Классификатор ТН ВЭД (hs_classifier.py)
+
+### Таблица (PostgreSQL, schema: ai)
+
+```sql
+CREATE TABLE ai.hs_suggestions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    description_pattern TEXT NOT NULL,
+    hs_code VARCHAR(10) NOT NULL,
+    confidence FLOAT DEFAULT 0.5,
+    source VARCHAR(20) DEFAULT 'manual',  -- manual, ml, customs_feedback
+    usage_count INTEGER DEFAULT 0,
+    last_used_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_hs_desc_trgm ON ai.hs_suggestions USING gin(description_pattern gin_trgm_ops);
+```
+
+### ML модель
+
+Тип: multi-class classification (LightGBM / XGBoost).
+
+Features:
+- TF-IDF от description_raw (текст описания товара)
+- country_origin_code (one-hot)
+- unit_price (числовой)
+- ключевые слова: материал, назначение, бренд
+
+Target: hs_code (первые 6 знаков для начала, потом 10).
+
+Training pipeline (`training/train_hs_classifier.py`):
+1. Загрузить данные из `ai.hs_suggestions` + открытые базы ТН ВЭД ФТС
+2. Предобработка текста: lowercase, удаление спецсимволов, стемминг
+3. TF-IDF vectorization (max_features=10000)
+4. Train/test split 80/20
+5. Обучить LightGBM (multiclass, softmax)
+6. Сохранить модель: `ml_models/hs_classifier.joblib`
+7. Сохранить vectorizer: `ml_models/hs_vectorizer.joblib`
+
+### Endpoint
+
+```
+POST /api/v1/ai/classify-hs
+  Body: { description: str, country_origin: str|null, unit_price: float|null }
+  Response: {
+    suggestions: [
+      { hs_code: "8536.50.11", name_ru: "...", confidence: 0.92 },
+      { hs_code: "8536.50.19", name_ru: "...", confidence: 0.05 },
+      { hs_code: "8536.90.10", name_ru: "...", confidence: 0.03 }
+    ]
+  }
+```
+
+### Frontend интеграция
+
+В форме товарной позиции (графа 33):
+- Поле `hs_code` с autocomplete из справочника
+- При вводе описания товара (графа 31/32) → автоматический вызов `/classify-hs`
+- Отображение top-3 подсказок с индикатором уверенности:
+  - Зелёный (>90%): "Высокая уверенность"
+  - Жёлтый (70-90%): "Средняя уверенность"
+  - Красный (<70%): "Низкая уверенность, проверьте вручную"
+- Клик по подсказке → заполнение поля
+- Кнопка "Другой код" → ручной ввод → feedback в `ai.hs_suggestions`
+
+## 1.4. Risk Engine — управление рисками
+
+### Таблицы (PostgreSQL, schema: ai)
+
+```sql
+CREATE TABLE ai.risk_rules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    conditions JSONB NOT NULL,
+    severity VARCHAR(10) NOT NULL,  -- low, medium, high, critical
+    recommendation TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE ai.risk_assessments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    declaration_id UUID NOT NULL,
+    item_id UUID,
+    risk_rule_id UUID REFERENCES ai.risk_rules(id),
+    severity VARCHAR(10) NOT NULL,
+    message TEXT NOT NULL,
+    recommendation TEXT,
+    resolved BOOLEAN DEFAULT false,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE ai.median_prices (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    hs_code VARCHAR(10) NOT NULL,
+    country_origin VARCHAR(2),
+    median_price_usd DECIMAL(15,4),
+    min_price_usd DECIMAL(15,4),
+    max_price_usd DECIMAL(15,4),
+    sample_count INTEGER,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Rule Engine (risk_engine.py)
+
+Формат правила (`rules/risk_rules.json`):
+```json
+[
+  {
+    "code": "HIGH_RISK_HS",
+    "name": "Код ТН ВЭД в зоне риска",
+    "conditions": {
+      "field": "hs_code",
+      "operator": "in_list",
+      "value": "high_risk_hs_codes"
+    },
+    "severity": "high",
+    "recommendation": "Для кода {hs_code} часто назначают досмотр ({inspection_rate}%). Приложите сертификат EAC и прайс-лист."
+  },
+  {
+    "code": "PRICE_BELOW_MEDIAN",
+    "name": "Цена ниже медианы",
+    "conditions": {
+      "field": "unit_price",
+      "operator": "less_than_percent",
+      "reference": "median_price",
+      "threshold": 0.7
+    },
+    "severity": "high",
+    "recommendation": "Цена на {diff_percent}% ниже медианы. Риск корректировки таможенной стоимости. Приложите прайс-лист и коммерческое предложение."
+  },
+  {
+    "code": "WEIGHT_RATIO",
+    "name": "Превышение брутто над нетто >20%",
+    "conditions": {
+      "field": "gross_weight / net_weight",
+      "operator": "greater_than",
+      "value": 1.2
+    },
+    "severity": "medium",
+    "recommendation": "Отношение брутто/нетто = {ratio}. Норма до 1.2. Проверьте данные упаковочных листов."
+  },
+  {
+    "code": "NEW_COUNTERPARTY",
+    "name": "Новый контрагент",
+    "conditions": {
+      "field": "counterparty_age_days",
+      "operator": "less_than",
+      "value": 30
+    },
+    "severity": "medium",
+    "recommendation": "Контрагент новый (<30 дней). Запросите дополнительные реквизиты и сертификат регистрации."
+  },
+  {
+    "code": "MISSING_CERTIFICATE",
+    "name": "Отсутствует обязательный сертификат",
+    "conditions": {
+      "field": "hs_code",
+      "operator": "requires_document",
+      "document_type": "certificate_origin"
+    },
+    "severity": "critical",
+    "recommendation": "Для кода {hs_code} обязателен сертификат происхождения. Без него декларация будет отклонена."
+  }
+]
+```
+
+Загрузить 50+ базовых правил, постепенно расширять до 10000+.
+
+### ML модель риска (train_risk_model.py)
+
+Тип: XGBoost binary/regression.
+
+Features:
+- hs_code (category encoded)
+- country_origin (category encoded)
+- unit_price / median_price ratio
+- counterparty_age_days
+- gross_weight / net_weight ratio
+- total_customs_value
+- has_certificate_origin (bool)
+- has_eac_certificate (bool)
+- declaration_type_code
+- season (month)
+- weekday
+
+Target: risk_score (0-100) или binary (inspection_happened).
+
+На старте: только rule engine. ML модель подключить после накопления 100+ реальных деклараций.
+
+### Endpoint
+
+```
+POST /api/v1/ai/assess-risk
+  Body: {
+    declaration_id: UUID,
+    items: [{hs_code, country_origin, unit_price, gross_weight, net_weight, ...}],
+    counterparty_id: UUID,
+    total_customs_value: float
+  }
+  Response: {
+    overall_risk_score: 45,
+    overall_severity: "medium",
+    risks: [
+      { rule_code: "PRICE_BELOW_MEDIAN", severity: "high", message: "...", recommendation: "..." },
+      { rule_code: "NEW_COUNTERPARTY", severity: "medium", message: "...", recommendation: "..." }
+    ]
+  }
+```
+
+### Автоматический пересчёт
+
+При каждом сохранении декларации/позиции:
+1. core-api публикует событие `declaration.updated` в Redis pub/sub
+2. ai-service подписан на событие → вызывает `assess-risk`
+3. Результат сохраняется в `declaration_items.risk_score`, `declaration_items.risk_flags`
+4. Публикует событие `risk.calculated` → frontend обновляет UI через polling/WebSocket
+
+## 1.5. Price Analyzer (price_analyzer.py)
+
+Логика:
+1. Получить hs_code и unit_price товарной позиции
+2. Найти median_price из таблицы `ai.median_prices`
+3. Рассчитать отклонение: `deviation = (unit_price - median_price) / median_price`
+4. Если deviation < -0.3 (на 30% ниже) → severity = high
+5. Если deviation < -0.2 → severity = medium
+6. Если deviation > 0.5 (на 50% выше) → severity = low (подозрительно дорого)
+
+Начальное заполнение `ai.median_prices`: из открытых данных ФТС, экспортных баз.
+Обновление: по мере накопления данных из реальных деклараций (Этап 4).
+
+## 1.6. Celery — фоновая обработка
+
+Файл: `services/ai-service/celery_worker.py`
+
+Задачи:
+- `parse_document_task(file_key, doc_type)` — OCR парсинг (тяжёлая операция, 5-30 сек)
+- `classify_hs_batch_task(items)` — пакетная классификация ТН ВЭД
+- `assess_risk_task(declaration_id)` — пересчёт рисков
+- `retrain_hs_model_task()` — переобучение модели (раз в месяц, по расписанию)
+
+Docker Compose — добавить:
+```yaml
+celery-worker:
+  build: services/ai-service/
+  command: celery -A celery_worker worker -l info -Q ai_tasks
+  depends_on: [redis, postgres]
+celery-beat:
+  build: services/ai-service/
+  command: celery -A celery_worker beat -l info
+  depends_on: [redis]
+```
+
+## 1.7. Frontend — новые компоненты
+
+### DocumentUploadPanel
+- Drag&Drop зона для PDF/JPG
+- Progress bar загрузки
+- После загрузки: автоматический вызов OCR (parse endpoint)
+- Превью распознанных данных в модальном окне
+- Для каждого поля: значение + confidence (цвет)
+- Кнопка "Применить к декларации" → вызов `apply-parsed`
+- Кнопка "Редактировать" → ручная корректировка перед применением
+
+### RiskPanel (правая панель)
+- Общий risk_score (0-100) с цветовой шкалой
+- Список предупреждений: иконка severity + текст + рекомендация
+- Кликабельные ссылки на соответствующие графы
+- Кнопки "Подробнее", "Игнорировать"
+- Обновляется при сохранении декларации
+
+### HSCodeSuggestions
+- Появляется при вводе описания товара (графы 31/32)
+- Показывает top-3 подсказки с confidence bar
+- Клик → подставить в графу 33
+- Feedback: если пользователь выбрал другой код → запись в `ai.hs_suggestions`
+
+## 1.8. Результат этапа 1
+
+- Загрузка PDF инвойса → автозаполнение 60-80% полей ДТ
+- Подсказки кодов ТН ВЭД с индикатором уверенности
+- Предупреждения о рисках (цены, документы, контрагенты) до подачи
+- Фоновая обработка тяжёлых задач через Celery
+- Feedback loop для улучшения моделей

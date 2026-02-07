@@ -1,0 +1,8 @@
+[
+  {"code": "01", "name_ru": "По цене сделки с ввозимыми товарами", "name_en": "Transaction value"},
+  {"code": "02", "name_ru": "По цене сделки с идентичными товарами", "name_en": "Identical goods"},
+  {"code": "03", "name_ru": "По цене сделки с однородными товарами", "name_en": "Similar goods"},
+  {"code": "04", "name_ru": "Метод вычитания", "name_en": "Deductive method"},
+  {"code": "05", "name_ru": "Метод сложения", "name_en": "Computed method"},
+  {"code": "06", "name_ru": "Резервный метод", "name_en": "Fallback method"}
+]

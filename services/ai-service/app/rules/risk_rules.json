@@ -1,0 +1,73 @@
+[
+  {
+    "rule_code": "WEIGHT_RATIO",
+    "name": "Соотношение веса брутто/нетто",
+    "severity": "high",
+    "description": "Проверка соотношения веса брутто к нетто. Если соотношение превышает 1.5, это может указывать на ошибку или попытку занижения веса.",
+    "threshold": 1.5
+  },
+  {
+    "rule_code": "PRICE_ANOMALY",
+    "name": "Аномально низкая цена",
+    "severity": "medium",
+    "description": "Обнаружена подозрительно низкая цена за единицу товара (менее 0.5).",
+    "threshold": 0.5
+  },
+  {
+    "rule_code": "HIGH_RISK_HS",
+    "name": "Товары повышенного риска",
+    "severity": "high",
+    "description": "Товары с кодами ТН ВЭД, требующие особого внимания: табачные изделия (2402), алкоголь (2208), оружие (9303).",
+    "hs_codes": ["2402", "2208", "9303"]
+  },
+  {
+    "rule_code": "MISSING_HS",
+    "name": "Отсутствует код ТН ВЭД",
+    "severity": "critical",
+    "description": "Для позиции товара не указан код ТН ВЭД. Это обязательное поле для таможенного декларирования.",
+    "required": true
+  },
+  {
+    "rule_code": "LOW_VALUE_HIGH_WEIGHT",
+    "name": "Низкая стоимость при большом весе",
+    "severity": "medium",
+    "description": "Общая таможенная стоимость декларации менее 1000 при наличии товаров с весом более 100 кг.",
+    "value_threshold": 1000,
+    "weight_threshold": 100
+  },
+  {
+    "rule_code": "MISSING_COUNTRY_ORIGIN",
+    "name": "Отсутствует страна происхождения",
+    "severity": "medium",
+    "description": "Для позиции товара не указана страна происхождения.",
+    "required": false
+  },
+  {
+    "rule_code": "PRICE_VARIANCE",
+    "name": "Большой разброс цен",
+    "severity": "low",
+    "description": "Обнаружен значительный разброс цен между позициями одного товара.",
+    "variance_threshold": 0.3
+  },
+  {
+    "rule_code": "WEIGHT_MISMATCH",
+    "name": "Несоответствие весов",
+    "severity": "medium",
+    "description": "Сумма весов позиций не соответствует общему весу декларации.",
+    "tolerance": 0.05
+  },
+  {
+    "rule_code": "DUPLICATE_HS",
+    "name": "Дублирование кодов ТН ВЭД",
+    "severity": "low",
+    "description": "Обнаружены позиции с одинаковыми кодами ТН ВЭД, которые могут быть объединены.",
+    "warning_only": true
+  },
+  {
+    "rule_code": "HIGH_VALUE_DECLARATION",
+    "name": "Высокая стоимость декларации",
+    "severity": "low",
+    "description": "Общая стоимость декларации превышает 1 000 000. Требуется дополнительная проверка.",
+    "value_threshold": 1000000
+  }
+]

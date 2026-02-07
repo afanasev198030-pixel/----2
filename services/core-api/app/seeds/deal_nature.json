@@ -1,0 +1,9 @@
+[
+  {"code": "01", "name_ru": "Купля-продажа", "name_en": "Purchase-sale"},
+  {"code": "02", "name_ru": "Бартер", "name_en": "Barter"},
+  {"code": "03", "name_ru": "Безвозмездная передача", "name_en": "Gratuitous transfer"},
+  {"code": "04", "name_ru": "Переработка", "name_en": "Processing"},
+  {"code": "05", "name_ru": "Аренда", "name_en": "Lease"},
+  {"code": "06", "name_ru": "Ремонт", "name_en": "Repair"},
+  {"code": "09", "name_ru": "Прочие", "name_en": "Other"}
+]

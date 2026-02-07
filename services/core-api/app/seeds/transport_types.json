@@ -1,0 +1,10 @@
+[
+  {"code": "10", "name_ru": "Морской", "name_en": "Sea"},
+  {"code": "20", "name_ru": "Железнодорожный", "name_en": "Railway"},
+  {"code": "30", "name_ru": "Автомобильный", "name_en": "Road"},
+  {"code": "40", "name_ru": "Воздушный", "name_en": "Air"},
+  {"code": "50", "name_ru": "Почтовые отправления", "name_en": "Mail"},
+  {"code": "60", "name_ru": "Мультимодальный", "name_en": "Multimodal"},
+  {"code": "70", "name_ru": "Трубопроводный", "name_en": "Pipeline"},
+  {"code": "80", "name_ru": "Внутренний водный", "name_en": "Inland waterway"}
+]

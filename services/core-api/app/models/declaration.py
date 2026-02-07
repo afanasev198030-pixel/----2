@@ -1,0 +1,148 @@
+import uuid
+from enum import Enum as PyEnum
+from typing import Optional
+from datetime import datetime
+from decimal import Decimal
+from sqlalchemy import (
+    String,
+    Integer,
+    Boolean,
+    Text,
+    ForeignKey,
+    DateTime,
+    DECIMAL,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import UUID
+
+from .base import Base
+
+
+class DeclarationStatus(str, PyEnum):
+    DRAFT = "draft"
+    CHECKING_LVL1 = "checking_lvl1"
+    CHECKING_LVL2 = "checking_lvl2"
+    FINAL_CHECK = "final_check"
+    SIGNED = "signed"
+    SENT = "sent"
+    REGISTERED = "registered"
+    DOCS_REQUESTED = "docs_requested"
+    INSPECTION = "inspection"
+    RELEASED = "released"
+    REJECTED = "rejected"
+
+
+class SpotStatus(str, PyEnum):
+    NONE = "none"
+    REQUIRED = "required"
+    CREATED = "created"
+    PAID = "paid"
+    QR_RECEIVED = "qr_received"
+
+
+class Declaration(Base):
+    __tablename__ = "declarations"
+    __table_args__ = {"schema": "core"}
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    number_internal: Mapped[Optional[str]] = mapped_column(String(50))
+    type_code: Mapped[Optional[str]] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core.companies.id"), nullable=False
+    )
+    sender_counterparty_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core.counterparties.id"), nullable=True
+    )
+    receiver_counterparty_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core.counterparties.id"), nullable=True
+    )
+    financial_counterparty_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core.counterparties.id"), nullable=True
+    )
+    declarant_counterparty_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core.counterparties.id"), nullable=True
+    )
+    country_dispatch_code: Mapped[Optional[str]] = mapped_column(String(2))
+    country_origin_code: Mapped[Optional[str]] = mapped_column(String(2))
+    country_destination_code: Mapped[Optional[str]] = mapped_column(String(2))
+    transport_at_border: Mapped[Optional[str]] = mapped_column(String(100))
+    container_info: Mapped[Optional[str]] = mapped_column(String(200))
+    incoterms_code: Mapped[Optional[str]] = mapped_column(String(3))
+    transport_on_border: Mapped[Optional[str]] = mapped_column(String(100))
+    currency_code: Mapped[Optional[str]] = mapped_column(String(3))
+    total_invoice_value: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
+    exchange_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 6))
+    deal_nature_code: Mapped[Optional[str]] = mapped_column(String(2))
+    transport_type_border: Mapped[Optional[str]] = mapped_column(String(2))
+    transport_type_inland: Mapped[Optional[str]] = mapped_column(String(2))
+    loading_place: Mapped[Optional[str]] = mapped_column(String(200))
+    financial_info: Mapped[Optional[str]] = mapped_column(Text)
+    total_customs_value: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
+    total_gross_weight: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(12, 3))
+    total_net_weight: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(12, 3))
+    total_items_count: Mapped[Optional[int]] = mapped_column(Integer)
+    total_packages_count: Mapped[Optional[int]] = mapped_column(Integer)
+    forms_count: Mapped[Optional[int]] = mapped_column(Integer)
+    specifications_count: Mapped[Optional[int]] = mapped_column(Integer)
+    customs_office_code: Mapped[Optional[str]] = mapped_column(String(8))
+    warehouse_name: Mapped[Optional[str]] = mapped_column(String(200))
+    spot_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    spot_status: Mapped[str] = mapped_column(String(20), default="none")
+    spot_qr_file_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    spot_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2), nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    place_and_date: Mapped[Optional[str]] = mapped_column(String(200))
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("core.users.id")
+    )
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    company: Mapped["Company"] = relationship("Company", back_populates="declarations")
+    sender_counterparty: Mapped[Optional["Counterparty"]] = relationship(
+        "Counterparty",
+        back_populates="declarations_as_sender",
+        foreign_keys=[sender_counterparty_id],
+    )
+    receiver_counterparty: Mapped[Optional["Counterparty"]] = relationship(
+        "Counterparty",
+        back_populates="declarations_as_receiver",
+        foreign_keys=[receiver_counterparty_id],
+    )
+    financial_counterparty: Mapped[Optional["Counterparty"]] = relationship(
+        "Counterparty",
+        back_populates="declarations_as_financial",
+        foreign_keys=[financial_counterparty_id],
+    )
+    declarant_counterparty: Mapped[Optional["Counterparty"]] = relationship(
+        "Counterparty",
+        back_populates="declarations_as_declarant",
+        foreign_keys=[declarant_counterparty_id],
+    )
+    created_by_user: Mapped["User"] = relationship(
+        "User", back_populates="declarations", foreign_keys=[created_by]
+    )
+    items: Mapped[list["DeclarationItem"]] = relationship(
+        "DeclarationItem", back_populates="declaration", cascade="all, delete-orphan"
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        "Document", back_populates="declaration"
+    )
+    logs: Mapped[list["DeclarationLog"]] = relationship(
+        "DeclarationLog", back_populates="declaration"
+    )
+    status_history: Mapped[list["DeclarationStatusHistory"]] = relationship(
+        "DeclarationStatusHistory", back_populates="declaration"
+    )
+    payments: Mapped[list["CustomsPayment"]] = relationship(
+        "CustomsPayment", back_populates="declaration"
+    )

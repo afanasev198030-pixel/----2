@@ -1,0 +1,13 @@
+[
+  {"code": "EXW", "name_ru": "Франко завод", "name_en": "Ex Works"},
+  {"code": "FCA", "name_ru": "Франко перевозчик", "name_en": "Free Carrier"},
+  {"code": "CPT", "name_ru": "Перевозка оплачена до", "name_en": "Carriage Paid To"},
+  {"code": "CIP", "name_ru": "Перевозка и страхование оплачены до", "name_en": "Carriage and Insurance Paid To"},
+  {"code": "DAP", "name_ru": "Поставка в место назначения", "name_en": "Delivered at Place"},
+  {"code": "DPU", "name_ru": "Поставка на место выгрузки", "name_en": "Delivered at Place Unloaded"},
+  {"code": "DDP", "name_ru": "Поставка с оплатой пошлины", "name_en": "Delivered Duty Paid"},
+  {"code": "FAS", "name_ru": "Свободно вдоль борта судна", "name_en": "Free Alongside Ship"},
+  {"code": "FOB", "name_ru": "Свободно на борту", "name_en": "Free on Board"},
+  {"code": "CFR", "name_ru": "Стоимость и фрахт", "name_en": "Cost and Freight"},
+  {"code": "CIF", "name_ru": "Стоимость, страхование и фрахт", "name_en": "Cost, Insurance and Freight"}
+]

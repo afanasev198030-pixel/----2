@@ -1,0 +1,354 @@
+---
+description: "Этап 4: База знаний, чек-листы, AI self-learning, диспетчеризация, compliance (4-6 недель)"
+alwaysApply: false
+---
+
+# ЭТАП 4: БАЗА ЗНАНИЙ, COMPLIANCE, AI САМООБУЧЕНИЕ
+
+Предусловие: Этапы 0-3 завершены — полный цикл ДТ от создания до выпуска работает.
+
+Цель: повысить качество деклараций, снизить ошибки, обучить модели на реальных данных.
+
+## 4.1. База знаний (Knowledge Base)
+
+### Таблицы (PostgreSQL, schema: core)
+
+```sql
+CREATE TABLE core.knowledge_articles (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    title VARCHAR(300) NOT NULL,
+    body_md TEXT NOT NULL,               -- Markdown контент
+    category VARCHAR(50) NOT NULL,       -- hs_code, risk, procedure, error, koap, general
+    tags JSONB DEFAULT '[]',             -- ["8536", "EAC", "сертификат", "досмотр"]
+    related_hs_codes JSONB DEFAULT '[]', -- ["8536.50", "8536.90"]
+    related_risk_codes JSONB DEFAULT '[]', -- ["HIGH_RISK_HS", "MISSING_CERTIFICATE"]
+    views_count INTEGER DEFAULT 0,
+    is_published BOOLEAN DEFAULT true,
+    author_id UUID,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_articles_category ON core.knowledge_articles(category);
+CREATE INDEX idx_articles_tags ON core.knowledge_articles USING gin(tags);
+CREATE INDEX idx_articles_hs ON core.knowledge_articles USING gin(related_hs_codes);
+
+CREATE TABLE core.checklists (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    context_type VARCHAR(50) NOT NULL,   -- pre_submit, import_regime, export_regime, incomplete_declaration, periodic_declaration, processing
+    declaration_type VARCHAR(10),        -- IM40, EX10, ... (null = для всех)
+    items JSONB NOT NULL,                -- [{order, text, field_ref, is_critical}]
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE core.checklist_results (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    checklist_id UUID NOT NULL REFERENCES core.checklists(id),
+    declaration_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    results JSONB NOT NULL,              -- [{item_order, checked: bool, comment: str}]
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Контент базы знаний (seed)
+
+#### Статьи по кодам ТН ВЭД
+Для каждой группы ТН ВЭД (2-значный код, всего ~97 групп):
+- Какие документы обычно требует ФТС
+- Процент досмотров (по открытым данным)
+- Средний срок выпуска
+- Типичные запросы ФТС
+- Требуемые сертификаты (EAC, ГОСТ, санитарные)
+
+Пример:
+```markdown
+# Группа 85: Электрические машины и оборудование
+
+## Требуемые документы
+- Сертификат соответствия ТР ТС (EAC) — обязательно для бытовой электроники
+- Декларация о соответствии — для промышленного оборудования
+- Нотификация ФСБ — для товаров с шифрованием (роутеры, телефоны)
+
+## Статистика
+- Досмотр: ~15% деклараций
+- Средний срок выпуска: 3-5 рабочих дней
+- Частые запросы: прайс-лист производителя, техническое описание
+
+## Риски
+- Занижение стоимости (особенно для кодов 8517, 8536)
+- Неправильная классификация (8471 vs 8528 для мониторов)
+```
+
+#### Справка по КоАП (статьи 16.*)
+- **Ст. 16.2** — Недостоверное декларирование: штраф 50-200% стоимости + конфискация
+- **Ст. 16.12** — Непредставление сведений в срок: штраф 5000-20000 ₽
+- **Ст. 16.3** — Несоблюдение запретов/ограничений: штраф 100-300% стоимости
+- Для каждой: описание, санкции, примеры, как избежать
+
+#### Типичные ошибки декларантов
+1. Графа 31 (переработка): не указаны сведения о замене, операциях, отходах
+2. Графа 33: неправильная классификация → отказ/корректировка
+3. Графа 36: неверный код преференции или отсутствие подтверждающих документов
+4. Графа 40: некорректные ссылки на предшествующие ДТ
+5. Графа 44: не указаны коды документов по классификатору ФТС
+6. Графы 45, 47: ошибки в расчётах → корректировка ФТС
+7. Неполное декларирование: не подана корректировка в срок (до 8 мес.)
+8. Периодическое: товар не вывезен в срок → аннулирование
+
+### Endpoints (core-api)
+
+```
+GET /api/v1/knowledge/articles
+  Query: category, search, hs_code, tag, page, per_page
+  Response: paginated list
+
+GET /api/v1/knowledge/articles/{id}
+  Response: full article (increment views_count)
+
+GET /api/v1/knowledge/articles/by-hs-code/{hs_code}
+  Response: статьи, связанные с этим кодом ТН ВЭД
+
+POST /api/v1/knowledge/articles  (admin only)
+PUT /api/v1/knowledge/articles/{id}  (admin only)
+DELETE /api/v1/knowledge/articles/{id}  (admin only)
+
+GET /api/v1/knowledge/checklists
+  Query: context_type, declaration_type
+
+GET /api/v1/knowledge/checklists/{id}
+  Response: checklist with items
+
+POST /api/v1/knowledge/checklists/{checklist_id}/results
+  Body: { declaration_id, results: [{item_order, checked, comment}] }
+  Response: checklist_result
+
+GET /api/v1/knowledge/checklists/results/{declaration_id}
+  Response: все результаты чек-листов для декларации
+```
+
+## 4.2. Чек-листы
+
+### Предподачный чек-лист (из ТЗ, п.4.2)
+
+Seed:
+```json
+{
+  "name": "Предподачный контроль ДТ",
+  "context_type": "pre_submit",
+  "items": [
+    {"order": 1, "text": "Графа 1: Правильный код процедуры", "field_ref": "type_code", "is_critical": true},
+    {"order": 2, "text": "Графы 2, 8, 13, 14: Реквизиты соответствуют документам", "field_ref": "counterparties", "is_critical": true},
+    {"order": 3, "text": "Графы 15, 16, 17: Коды стран верны и подтверждены", "field_ref": "countries", "is_critical": true},
+    {"order": 4, "text": "Графа 20: Условия Incoterms соответствуют контракту", "field_ref": "incoterms_code", "is_critical": false},
+    {"order": 5, "text": "Графа 22: Валюта и сумма соответствуют инвойсу", "field_ref": "total_invoice_value", "is_critical": true},
+    {"order": 6, "text": "Графа 23: Курс валюты актуален на дату подачи", "field_ref": "exchange_rate", "is_critical": true},
+    {"order": 7, "text": "Графа 31: Описание товара полное и точное", "field_ref": "items.description", "is_critical": true},
+    {"order": 8, "text": "Графа 33: Код ТН ВЭД подтверждён решением", "field_ref": "items.hs_code", "is_critical": true},
+    {"order": 9, "text": "Графа 35, 38: Веса соответствуют упаковочным листам", "field_ref": "items.weights", "is_critical": true},
+    {"order": 10, "text": "Графа 42: Цена соответствует инвойсу", "field_ref": "items.unit_price", "is_critical": true},
+    {"order": 11, "text": "Графа 43: Метод МОС выбран правильно", "field_ref": "items.mos_method_code", "is_critical": false},
+    {"order": 12, "text": "Графа 45: Расчёт таможенной стоимости верен", "field_ref": "items.customs_value_rub", "is_critical": true},
+    {"order": 13, "text": "Графа 47: Расчёт платежей точен", "field_ref": "payments", "is_critical": true},
+    {"order": 14, "text": "Все обязательные документы приложены", "field_ref": "documents", "is_critical": true},
+    {"order": 15, "text": "Подписи и печати соответствуют требованиям", "field_ref": "signature", "is_critical": true},
+    {"order": 16, "text": "СПОТ оформлен (если товар из ЕАЭС)", "field_ref": "spot_status", "is_critical": true}
+  ]
+}
+```
+
+### Динамические чек-листы по СУР
+
+При расчёте рисков (ai-service) — автогенерация дополнительных пунктов:
+- Если risk_rule = "MISSING_CERTIFICATE" → добавить пункт "Приложите сертификат EAC"
+- Если risk_rule = "PRICE_BELOW_MEDIAN" → добавить "Приложите прайс-лист производителя"
+- Если risk_rule = "NEW_COUNTERPARTY" → добавить "Проверьте реквизиты контрагента"
+
+## 4.3. AI Self-Learning Pipeline
+
+### Сбор данных
+
+При получении статусов от ФТС (integration-service) — сохранять обратную связь:
+
+```sql
+CREATE TABLE ai.ml_feedback (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    declaration_id UUID NOT NULL,
+    item_id UUID,
+    feedback_type VARCHAR(30) NOT NULL,  -- hs_code_accepted, hs_code_corrected, inspection, value_correction, docs_requested, released
+    predicted_value TEXT,                -- Что предсказала система
+    actual_value TEXT,                   -- Что оказалось в реальности
+    metadata JSONB,                      -- Дополнительные данные
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+События для сбора:
+- Декларация `released` → все hs_code и цены подтверждены → positive feedback
+- `value_correction` → ФТС скорректировала стоимость → negative feedback для price model
+- `inspection` → досмотр назначен → positive sample для risk model
+- `rejected` → отказ → negative feedback для validation
+- Пользователь изменил hs_code после AI подсказки → feedback для HS classifier
+
+### Retraining Pipeline (Celery periodic task)
+
+Задача `retrain_models_task()` — запуск раз в месяц:
+
+```python
+@celery.task
+def retrain_models_task():
+    """Переобучение ML моделей на накопленных данных"""
+    
+    # 1. HS Code Classifier
+    feedback = load_hs_feedback()  # из ai.ml_feedback + ai.hs_suggestions
+    if len(feedback) >= 100:  # Минимум 100 новых примеров
+        model, vectorizer, metrics = train_hs_classifier(feedback)
+        if metrics.accuracy > 0.75:  # Порог качества
+            save_model(model, "hs_classifier", version=next_version())
+            save_model(vectorizer, "hs_vectorizer", version=next_version())
+            logger.info("hs_classifier_retrained", accuracy=metrics.accuracy, samples=len(feedback))
+    
+    # 2. Risk Model
+    risk_feedback = load_risk_feedback()  # inspection, value_correction events
+    if len(risk_feedback) >= 50:
+        model, metrics = train_risk_model(risk_feedback)
+        if metrics.auc > 0.70:
+            save_model(model, "risk_model", version=next_version())
+            logger.info("risk_model_retrained", auc=metrics.auc, samples=len(risk_feedback))
+    
+    # 3. Обновить медианные цены
+    update_median_prices_from_declarations()
+```
+
+### Версионирование моделей
+
+Модели хранятся в MinIO:
+```
+models/
+  hs_classifier/
+    v1/model.joblib
+    v1/vectorizer.joblib
+    v1/metrics.json
+    v2/model.joblib  (после retraining)
+  risk_model/
+    v1/model.joblib
+    v1/metrics.json
+```
+
+При старте ai-service — загружает последнюю версию каждой модели.
+
+Таблица версий:
+```sql
+CREATE TABLE ai.model_versions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    model_name VARCHAR(50) NOT NULL,   -- hs_classifier, risk_model
+    version INTEGER NOT NULL,
+    file_key VARCHAR(500) NOT NULL,    -- S3 path
+    metrics JSONB,                     -- {accuracy, precision, recall, f1, auc}
+    training_samples INTEGER,
+    is_active BOOLEAN DEFAULT false,   -- Текущая активная версия
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+## 4.4. Диспетчеризация деклараций
+
+### Контекст
+С декабря 2025 ФТС автоматически перенаправляет ДТ между таможенными постами по загруженности.
+
+### Реализация
+
+При получении статуса `redirected` от ФТС (webhook):
+1. Записать новый таможенный пост в `declaration_status_history.customs_post_code`
+2. Обновить `declarations.customs_office_code`
+3. Отправить уведомление пользователю:
+   - "Декларация №{number} перенаправлена с {old_post} на {new_post} (перегруз основного поста)"
+4. Показать в StatusTimeline
+
+### UI
+- В timeline статусов: иконка "перенаправление" + текст "{старый пост} → {новый пост}"
+- В списке деклараций: колонка "Таможенный пост" обновляется
+
+## 4.5. Frontend — новые страницы и компоненты
+
+### KnowledgeBasePage (`/knowledge`)
+- Левая панель: категории (По кодам ТН ВЭД, Риски, Процедуры, Ошибки, КоАП)
+- Поиск: полнотекстовый поиск по статьям
+- Список статей: заголовок, категория, теги, дата, просмотры
+- Страница статьи: Markdown рендеринг, связанные статьи, кнопка "В декларацию" (ссылка на связанный код)
+
+### ChecklistPanel (на странице декларации)
+- Расположение: Этап 7 wizard (Завершение) + отдельный таб "Чек-лист"
+- Базовый чек-лист (16 пунктов из ТЗ) + динамические пункты из СУР
+- Каждый пункт: checkbox + текст + ссылка на графу + поле комментария
+- Критические пункты (is_critical) выделены красным
+- Прогресс-бар: "12/16 пунктов проверены"
+- Кнопка "Сохранить результат проверки"
+- Для руководителя: кнопки "Вернуть на доработку", "Согласовать", "Следующий уровень"
+
+### ContextualHelp
+- На каждом этапе wizard: иконка "?" рядом с каждым полем
+- По клику: tooltip с описанием графы + ссылка на статью базы знаний
+- Автопоказ: при первом заполнении графы показать подсказку
+
+### AdminPanel (`/admin`) — для admin/head ролей
+- Управление пользователями
+- Управление справочниками (CRUD)
+- Редактор базы знаний (WYSIWYG Markdown)
+- Управление чек-листами
+- Статистика: количество деклараций, среднее время оформления, топ ошибок
+- Управление AI моделями: версии, метрики, ручной запуск retraining
+
+### DashboardPage (`/dashboard`) — главная после логина
+- Виджеты:
+  - Декларации по статусам (chart: draft, sent, released, rejected)
+  - Средний risk_score за период
+  - Календарь обязательств (валютный контроль)
+  - Последние уведомления
+  - Курсы валют
+  - СПОТ: декларации, ожидающие оформления
+
+## 4.6. Seed data для этапа 4
+
+### Статьи базы знаний
+Подготовить 20-30 статей:
+- 10 по группам ТН ВЭД (наиболее частые: 84, 85, 39, 73, 87, 44, 61, 62, 94, 30)
+- 5 по КоАП (16.2, 16.3, 16.12, 16.16, 15.25)
+- 5 по типичным ошибкам
+- 5 по процедурам (ИМ40, ЭК10, неполное, периодическое, переработка)
+
+### Чек-листы
+- Предподачный контроль (16 пунктов, для всех типов ДТ)
+- Неполное декларирование (что можно не заполнять, сроки корректировки)
+- Периодическое декларирование (срок подачи полной ДТ)
+- Переработка (обязательные сведения графы 31)
+
+### Правила СУР (расширение)
+Довести до 100+ правил (из 50 базовых на этапе 1):
+- По группам ТН ВЭД с высоким риском
+- По странам с санкционными ограничениями
+- По ценовым аномалиям для типовых товаров
+- По сочетаниям "код + страна + цена"
+
+## 4.7. Результат этапа 4
+
+- База знаний: 20-30 статей по ТН ВЭД, КоАП, ошибкам, процедурам
+- Чек-листы: предподачный контроль + динамические из СУР
+- AI self-learning: retraining моделей на реальных данных (ежемесячно)
+- Диспетчеризация: отслеживание перенаправлений между постами
+- Админ-панель: управление контентом, моделями, пользователями
+- Dashboard: сводная информация по всем декларациям
+
+## 4.8. Timeline итого (все этапы)
+
+| Этап | Срок | Результат |
+|------|------|-----------|
+| 0. MVP ядро | 4-6 нед | Ручное заполнение ДТ, workflow, справочники |
+| 1. AI модули | 8-10 нед | OCR, ТН ВЭД classifier, risk engine |
+| 2. ФТС + ЭЦП + СПОТ | 12-16 нед | Отправка в таможню, СПОТ, подпись |
+| 3. Платежи + мониторинг | 6-8 нед | Калькулятор, курсы, валютный контроль, WebSocket |
+| 4. Compliance | 4-6 нед | База знаний, чек-листы, self-learning, dashboard |
+| **ИТОГО** | **34-46 нед** | **~8.5-11.5 месяцев до production-ready** |
