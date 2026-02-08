@@ -33,9 +33,5 @@ test_*.py
 # ML models (large files)
 services/ai-service/app/ml_models/*.joblib
 
-# PDF documents (user data)
-dek/
-*.pdf
-
-# Cursor plans
-.cursor/plans/
+# Cursor plans (keep in git for collaboration)
+# .cursor/plans/
