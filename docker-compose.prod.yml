@@ -1,0 +1,212 @@
+version: '3.8'
+
+# Production docker-compose — bridge network mode
+# Запуск: docker-compose -f docker-compose.prod.yml up --build -d
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: customs-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-customs}
+      POSTGRES_USER: ${POSTGRES_USER:-customs_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-customs_pass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-customs_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - customs-net
+
+  redis:
+    image: redis:7
+    container_name: customs-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - customs-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: customs-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - customs-net
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: customs-chromadb
+    ports:
+      - "8100:8000"
+    volumes:
+      - chromadata:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - customs-net
+
+  core-api:
+    build:
+      context: .
+      dockerfile: services/core-api/Dockerfile
+    container_name: customs-core-api
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-customs}
+      POSTGRES_USER: ${POSTGRES_USER:-customs_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-customs_pass}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_MINUTES: 60
+      LOG_LEVEL: INFO
+    networks:
+      - customs-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  file-service:
+    build:
+      context: .
+      dockerfile: services/file-service/Dockerfile
+    container_name: customs-file-service
+    ports:
+      - "8002:8002"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: documents
+      MINIO_SECURE: "false"
+    networks:
+      - customs-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: services/ai-service/Dockerfile
+    container_name: customs-ai-service
+    ports:
+      - "8003:8003"
+    depends_on:
+      - core-api
+      - chromadb
+    environment:
+      CORE_API_URL: http://core-api:8001
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      SERVICE_NAME: ai-service
+      LOG_LEVEL: INFO
+    networks:
+      - customs-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  calc-service:
+    build:
+      context: .
+      dockerfile: services/calc-service/Dockerfile
+    container_name: customs-calc-service
+    ports:
+      - "8005:8005"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SERVICE_NAME: calc-service
+    networks:
+      - customs-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: customs-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - core-api
+      - file-service
+      - ai-service
+      - calc-service
+    networks:
+      - customs-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: customs-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - nginx
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - customs-net
+
+volumes:
+  pgdata:
+  miniodata:
+  chromadata:
+
+networks:
+  customs-net:
+    driver: bridge
