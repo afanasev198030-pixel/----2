@@ -322,6 +322,7 @@ const DeclarationsListPage = () => {
             <MenuItem disabled sx={{ opacity: '0.7 !important' }}>
               <Typography variant="caption">{meData?.email}</Typography>
             </MenuItem>
+            <MenuItem onClick={() => { setAnchorEl(null); navigate('/settings'); }}>Настройки</MenuItem>
             <MenuItem onClick={handleLogout}>Выйти</MenuItem>
           </Menu>
         </Toolbar>
@@ -498,10 +499,23 @@ const DeclarationsListPage = () => {
                 ))
               ) : filteredAndSortedItems.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={hasAnyValue ? 6 : 5} align="center" sx={{ py: 6 }}>
-                    <Typography color="text.secondary">
-                      {searchQuery || statusFilter ? 'Нет деклараций, соответствующих фильтрам' : 'Нет деклараций. Создайте первую!'}
-                    </Typography>
+                  <TableCell colSpan={hasAnyValue ? 6 : 5} align="center" sx={{ py: 8 }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <WorkIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+                      <Typography variant="h6" color="text.secondary" gutterBottom>
+                        {searchQuery || statusFilter ? 'Нет деклараций по фильтрам' : 'Нет деклараций'}
+                      </Typography>
+                      <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
+                        {searchQuery || statusFilter
+                          ? 'Попробуйте изменить параметры поиска'
+                          : 'Создайте первую декларацию — загрузите PDF-документы и AI заполнит все данные'}
+                      </Typography>
+                      {!searchQuery && !statusFilter && (
+                        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateDialogOpen(true)}>
+                          Создать декларацию
+                        </Button>
+                      )}
+                    </Box>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -513,15 +527,15 @@ const DeclarationsListPage = () => {
                     onClick={() => navigate(`/declarations/${declaration.id}/edit`)}
                   >
                     <TableCell>
-                      <Typography
-                        sx={{
-                          fontWeight: 600,
-                          color: 'primary.main',
-                          '&:hover': { color: 'primary.dark', textDecoration: 'underline' },
-                        }}
-                      >
-                        {declaration.number_internal || declaration.id.slice(0, 8)}
-                      </Typography>
+                      {declaration.number_internal ? (
+                        <Typography sx={{ fontWeight: 600, color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
+                          {declaration.number_internal}
+                        </Typography>
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          Не присвоен
+                        </Typography>
+                      )}
                     </TableCell>
 
                     <TableCell>
@@ -564,22 +578,13 @@ const DeclarationsListPage = () => {
 
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                        <Tooltip title="Открыть">
+                        <Tooltip title="Редактировать">
                           <IconButton
                             size="small"
                             onClick={(e) => { e.stopPropagation(); navigate(`/declarations/${declaration.id}/edit`); }}
                             sx={{ borderRadius: 1.5, '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}
                           >
                             <OpenIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Копировать">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => e.stopPropagation()}
-                            sx={{ borderRadius: 1.5, '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}
-                          >
-                            <CopyIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Ещё">
@@ -627,12 +632,16 @@ const DeclarationsListPage = () => {
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
+          <MenuItem onClick={() => { handleRowActionClose(); if (rowActionDeclarationId) navigate(`/declarations/${rowActionDeclarationId}/view`); }}>
+            <PdfIcon fontSize="small" sx={{ mr: 1 }} />
+            Просмотр ДТ
+          </MenuItem>
           <MenuItem onClick={handleDuplicate}>
             <CopyIcon fontSize="small" sx={{ mr: 1 }} />
             Дублировать
           </MenuItem>
           <MenuItem onClick={handleExportPdf}>
-            <PdfIcon fontSize="small" sx={{ mr: 1 }} />
+            <PrintIcon fontSize="small" sx={{ mr: 1 }} />
             Экспорт PDF
           </MenuItem>
           <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>

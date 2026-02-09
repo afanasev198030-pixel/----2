@@ -1,10 +1,8 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 
-// Use same origin - go through nginx proxy on port 80
-// nginx routes /api/v1/ to core-api, /api/v1/files/ to file-service
-const API_BASE = window.location.port === '3000'
-  ? `${window.location.protocol}//${window.location.hostname}:80/api/v1`
-  : '/api/v1';
+// API base URL: use proxy (CRA proxy or nginx)
+// In dev mode (port 3000), CRA proxies /api/v1/ to core-api
+const API_BASE = '/api/v1';
 
 const client: AxiosInstance = axios.create({
   baseURL: API_BASE,

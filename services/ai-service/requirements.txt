@@ -4,7 +4,27 @@ pydantic==2.10.5
 pydantic-settings==2.7.1
 structlog==24.4.0
 httpx==0.28.1
-# pytesseract==0.3.13  # TODO: add when tesseract-ocr is installed
 pdfplumber==0.11.4
 Pillow==11.1.0
 python-multipart==0.0.20
+
+# LLM
+openai>=1.50.0
+tiktoken>=0.7.0
+
+# RAG (LlamaIndex)
+llama-index>=0.11.0
+llama-index-vector-stores-chroma>=0.3.0
+llama-index-embeddings-openai>=0.3.0
+chromadb>=0.5.0
+
+# Prompt optimization
+dspy-ai>=2.5.0
+
+# Multi-agent orchestration
+crewai>=0.80.0
+crewai-tools>=0.14.0
+
+# Observability
+arize-phoenix>=5.0.0
+openinference-instrumentation-llama-index>=3.0.0

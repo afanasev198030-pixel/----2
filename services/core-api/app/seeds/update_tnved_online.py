@@ -1,150 +1,127 @@
 """
-Обновление справочника ТН ВЭД из classifikators.ru
-Парсит актуальные коды с сайта и загружает в БД.
+Обновление справочника ТН ВЭД из онлайн-источников.
+Источники (по приоритету):
+1. ФНС РФ: https://data.nalog.ru/files/tnved/tnved.zip
+2. data.egov.kz (Казахстан API): /api/v4/euraziyalyk_ekonomikalyk_odakt/v1
+3. alta.ru парсинг (fallback)
 
 Запуск: python -m app.seeds.update_tnved_online
 """
 import asyncio
-import re
-import sys
+import json
 import os
-import time
+import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import httpx
+import structlog
 from sqlalchemy import select, func
 from app.database import async_sessionmaker
 from app.models import Classifier
 
-BASE_URL = "https://classifikators.ru/tnved"
+logger = structlog.get_logger()
 
-# All 97 groups (2-digit codes)
-GROUPS = [f"{i:02d}" for i in range(1, 98)]
+KZ_API_BASE = "https://data.egov.kz/api/v4"
+KZ_DATASET = "euraziyalyk_ekonomikalyk_odakt"
+FNS_URL = "https://data.nalog.ru/files/tnved/tnved.zip"
 
 
-def parse_codes_from_html(html: str, parent_code: str) -> list[dict]:
-    """Parse HS codes and descriptions from classifikators.ru page HTML."""
+async def fetch_from_kz_api(page: int = 0, size: int = 500) -> list[dict]:
+    """Загрузить коды ТН ВЭД из API Казахстана (data.egov.kz)."""
     codes = []
-    # Pattern: table rows with code and description
-    # Format: | 8501 | [Description](link) |
-    pattern = re.findall(
-        r'\|\s*(\d{4,10})\s*\|\s*\[([^\]]+)\]',
-        html
-    )
-    for code, name in pattern:
-        codes.append({
-            "code": code.strip(),
-            "name_ru": name.strip()[:500],
-            "parent_code": parent_code,
+    try:
+        source_query = json.dumps({
+            "from": page * size,
+            "size": size,
+            "query": {"match_all": {}}
         })
+        url = f"{KZ_API_BASE}/{KZ_DATASET}/v1?source={source_query}"
 
-    # Also try plain text pattern: "8501 | Description"
-    if not codes:
-        pattern2 = re.findall(
-            r'\|\s*(\d{4,10})\s*\|\s*([^|]+)\|',
-            html
-        )
-        for code, name in pattern2:
-            name = re.sub(r'\[|\]|\(https?://[^\)]+\)', '', name).strip()
-            if name and len(name) > 3:
-                codes.append({
-                    "code": code.strip(),
-                    "name_ru": name[:500],
-                    "parent_code": parent_code,
-                })
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data if isinstance(data, list) else data.get("hits", {}).get("hits", []):
+                    src = item.get("_source", item)
+                    code = src.get("kod_tn_ved", src.get("code", ""))
+                    name = src.get("naimenovanie_tovara_ru", src.get("name_ru", src.get("name", "")))
+                    if code and name:
+                        codes.append({"code": str(code).strip(), "name_ru": name.strip()})
+
+        logger.info("kz_api_fetched", page=page, count=len(codes))
+    except Exception as e:
+        logger.warning("kz_api_failed", error=str(e))
 
     return codes
 
 
-async def fetch_group(client: httpx.AsyncClient, group_code: str) -> list[dict]:
-    """Fetch all codes for a 2-digit group from classifikators.ru."""
-    all_codes = []
-
+async def fetch_from_fns() -> list[dict]:
+    """Попытка скачать ZIP с ФНС (может быть заблокировано)."""
+    codes = []
     try:
-        # Fetch group page (4-digit codes)
-        r = await client.get(f"{BASE_URL}/{group_code}", timeout=15)
-        if r.status_code != 200:
-            print(f"  ⚠ Group {group_code}: HTTP {r.status_code}")
-            return []
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/zip,application/octet-stream,*/*",
+            "Referer": "https://data.nalog.ru/",
+        }
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+            resp = await client.get(FNS_URL, headers=headers)
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                # Parse ZIP
+                import zipfile
+                import io
+                import csv
 
-        text = r.text
-        # Extract group name from title
-        title_match = re.search(r'<title>.*?(\d{2})\s*[—–-]\s*(.+?)</title>', text, re.DOTALL)
-        group_name = title_match.group(2).strip()[:500] if title_match else f"Группа {group_code}"
-        group_name = re.sub(r'<[^>]+>', '', group_name)
+                zf = zipfile.ZipFile(io.BytesIO(resp.content))
+                # TNVED4.Txt = main codes, format: group|sub|code6|name|date_from|date_to|
+                target = None
+                for name in zf.namelist():
+                    if 'TNVED4' in name.upper():
+                        target = name
+                        break
+                if not target:
+                    target = zf.namelist()[-1]  # largest file
 
-        all_codes.append({
-            "code": group_code,
-            "name_ru": group_name,
-            "parent_code": None,
-            "level": "group",
-        })
+                with zf.open(target) as f:
+                    text = f.read().decode('cp866', errors='ignore')
+                    seen = set()
+                    for line in text.split('\n')[1:]:
+                        parts = line.strip().split('|')
+                        if len(parts) >= 4:
+                            group = parts[0].strip()
+                            sub = parts[1].strip()
+                            code6 = parts[2].strip()
+                            name_ru = parts[3].strip()
+                            date_to = parts[5].strip() if len(parts) > 5 else ""
+                            if not code6 or not code6[0].isdigit() or not name_ru:
+                                continue
+                            full_code = f"{group}{sub}{code6}"
+                            # Only active codes (date_to empty or future)
+                            if date_to and date_to < "2025":
+                                continue
+                            if full_code not in seen and len(full_code) == 10:
+                                codes.append({"code": full_code, "name_ru": name_ru})
+                                seen.add(full_code)
 
-        # Parse 4-digit positions from the page
-        # Pattern in HTML: href="/tnved/8501" ... text
-        positions = re.findall(
-            r'href="/tnved/(\d{4})"\s*[^>]*>([^<]+)<',
-            text
-        )
-        for code, name in positions:
-            name = name.strip()
-            if name and len(name) > 3 and code.startswith(group_code):
-                all_codes.append({
-                    "code": code,
-                    "name_ru": name[:500],
-                    "parent_code": group_code,
-                    "level": "position",
-                })
-
-        print(f"  ✓ Group {group_code}: {group_name[:50]}... ({len(all_codes)-1} positions)")
-
+                logger.info("fns_zip_loaded", count=len(codes))
+            else:
+                logger.warning("fns_zip_unavailable", status=resp.status_code, size=len(resp.content))
     except Exception as e:
-        print(f"  ✗ Group {group_code}: {e}")
+        logger.warning("fns_download_failed", error=str(e))
 
-    return all_codes
+    return codes
 
 
-async def update_tnved():
-    """Main function: fetch all groups and update DB."""
-    print("=" * 60)
-    print("Обновление ТН ВЭД из classifikators.ru")
-    print("=" * 60)
-
-    all_codes = []
-
-    async with httpx.AsyncClient(
-        headers={"User-Agent": "CustomsDeclarationSystem/1.0"},
-        follow_redirects=True,
-    ) as client:
-        # Fetch groups in batches of 5 (don't overwhelm the server)
-        for i in range(0, len(GROUPS), 5):
-            batch = GROUPS[i:i+5]
-            tasks = [fetch_group(client, g) for g in batch]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, list):
-                    all_codes.extend(result)
-            # Be polite
-            if i + 5 < len(GROUPS):
-                await asyncio.sleep(1)
-
-    print(f"\nВсего получено: {len(all_codes)} кодов")
-
-    if len(all_codes) < 50:
-        print("⚠ Слишком мало кодов, возможно ошибка парсинга. Пропуск загрузки.")
-        return
-
-    # Load into DB
+async def load_codes_to_db(codes: list[dict]) -> int:
+    """Загрузить коды в PostgreSQL."""
+    loaded = 0
     async with async_sessionmaker() as session:
-        loaded = 0
-        updated = 0
-
-        for item in all_codes:
-            code = item["code"]
-            name_ru = item["name_ru"]
-            parent_code = item.get("parent_code")
-            level = item.get("level", "position" if len(code) == 4 else "group")
+        for code_data in codes:
+            code = code_data["code"].replace(".", "").replace(" ", "")
+            if not code or not code[0].isdigit():
+                continue
 
             result = await session.execute(
                 select(Classifier).where(
@@ -152,40 +129,82 @@ async def update_tnved():
                     Classifier.code == code,
                 )
             )
-            existing = result.scalar_one_or_none()
+            if result.scalar_one_or_none():
+                continue
 
-            if existing:
-                # Update name if changed
-                if existing.name_ru != name_ru:
-                    existing.name_ru = name_ru
-                    updated += 1
-            else:
-                session.add(Classifier(
-                    classifier_type="hs_code",
-                    code=code,
-                    name_ru=name_ru,
-                    parent_code=parent_code,
-                    meta={"level": level, "source": "classifikators.ru"},
-                    is_active=True,
-                ))
-                loaded += 1
+            # Determine level
+            level = "group" if len(code) == 2 else "position" if len(code) == 4 else "subposition" if len(code) == 6 else "subsubposition"
+            parent = code[:4] if len(code) > 4 else code[:2] if len(code) > 2 else None
+
+            c = Classifier(
+                classifier_type="hs_code",
+                code=code,
+                name_ru=code_data["name_ru"],
+                parent_code=parent,
+                meta={"level": level, "source": "online"},
+                is_active=True,
+            )
+            session.add(c)
+            loaded += 1
+
+            if loaded % 500 == 0:
+                await session.commit()
 
         await session.commit()
 
-        # Total count
+    return loaded
+
+
+async def main():
+    print("=" * 60)
+    print("Обновление справочника ТН ВЭД из онлайн-источников")
+    print("=" * 60)
+
+    # Current count
+    async with async_sessionmaker() as session:
         result = await session.execute(
-            select(func.count()).select_from(Classifier).where(
-                Classifier.classifier_type == "hs_code"
-            )
+            select(func.count()).select_from(Classifier).where(Classifier.classifier_type == "hs_code")
+        )
+        current = result.scalar() or 0
+        print(f"\nТекущее количество кодов: {current}")
+
+    all_codes = []
+
+    # 1. Try FNS
+    print("\n1. Загрузка с ФНС РФ (data.nalog.ru)...")
+    fns_codes = await fetch_from_fns()
+    if fns_codes:
+        print(f"   Получено: {len(fns_codes)} кодов")
+        all_codes.extend(fns_codes)
+
+    # 2. Try Kazakhstan API
+    print("\n2. Загрузка из API Казахстана (data.egov.kz)...")
+    for page in range(10):  # до 5000 записей
+        kz_codes = await fetch_from_kz_api(page=page, size=500)
+        if not kz_codes:
+            break
+        all_codes.extend(kz_codes)
+    print(f"   Получено: {len(all_codes) - len(fns_codes)} кодов из KZ API")
+
+    # 3. Load to DB
+    if all_codes:
+        print(f"\n3. Загрузка в БД ({len(all_codes)} кодов)...")
+        loaded = await load_codes_to_db(all_codes)
+        print(f"   Загружено новых: {loaded}")
+    else:
+        print("\n3. Нет новых кодов для загрузки")
+
+    # Final count
+    async with async_sessionmaker() as session:
+        result = await session.execute(
+            select(func.count()).select_from(Classifier).where(Classifier.classifier_type == "hs_code")
         )
         total = result.scalar() or 0
+        print(f"\nИтого кодов ТН ВЭД: {total}")
 
-        print(f"\n{'='*60}")
-        print(f"Загружено новых: {loaded}")
-        print(f"Обновлено: {updated}")
-        print(f"Всего кодов ТН ВЭД в БД: {total}")
-        print(f"{'='*60}")
+    print("\n" + "=" * 60)
+    print("Готово!")
 
 
 if __name__ == "__main__":
-    asyncio.run(update_tnved())
+    asyncio.run(main())

@@ -1,9 +1,13 @@
 version: '3.8'
 
+# Host network mode — все сервисы на localhost
+# Используется когда Docker bridge недоступен (WSL2 без CAP_NET_ADMIN)
+
 services:
   postgres:
     image: postgres:15
     container_name: customs-postgres
+    network_mode: host
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -11,52 +15,39 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -h localhost"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - customs-net
     env_file:
       - .env
 
   redis:
     image: redis:7
     container_name: customs-redis
-    ports:
-      - "6379:6379"
+    network_mode: host
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - customs-net
-    env_file:
-      - .env
 
   minio:
     image: minio/minio:latest
     container_name: customs-minio
+    network_mode: host
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - miniodata:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - customs-net
     env_file:
       - .env
 
@@ -65,15 +56,23 @@ services:
       context: .
       dockerfile: services/core-api/Dockerfile
     container_name: customs-core-api
-    ports:
-      - "${CORE_API_PORT}:8001"
+    network_mode: host
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks:
-      - customs-net
+    environment:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: ${JWT_ALGORITHM}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES}
+      LOG_LEVEL: ${LOG_LEVEL}
     env_file:
       - .env
     healthcheck:
@@ -87,13 +86,16 @@ services:
       context: .
       dockerfile: services/file-service/Dockerfile
     container_name: customs-file-service
-    ports:
-      - "${FILE_SERVICE_PORT}:8002"
+    network_mode: host
     depends_on:
       minio:
         condition: service_healthy
-    networks:
-      - customs-net
+    environment:
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_SECURE: "false"
     env_file:
       - .env
     healthcheck:
@@ -107,12 +109,15 @@ services:
       context: .
       dockerfile: services/ai-service/Dockerfile
     container_name: customs-ai-service
-    ports:
-      - "8003:8003"
+    network_mode: host
     depends_on:
       - core-api
-    networks:
-      - customs-net
+    environment:
+      CORE_API_URL: http://localhost:8001
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      CHROMADB_HOST: localhost
+      CHROMADB_PORT: 8100
     env_file:
       - .env
     healthcheck:
@@ -124,35 +129,51 @@ services:
   nginx:
     image: nginx:alpine
     container_name: customs-nginx
-    ports:
-      - "80:80"
+    network_mode: host
     volumes:
       - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - core-api
       - file-service
-    networks:
-      - customs-net
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     container_name: customs-frontend
-    ports:
-      - "3000:3000"
-    networks:
-      - customs-net
+    network_mode: host
     depends_on:
       - core-api
       - file-service
     environment:
       - CHOKIDAR_USEPOLLING=true
 
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: customs-chromadb
+    network_mode: host
+    volumes:
+      - chromadata:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=false
+      - CHROMA_SERVER_HTTP_PORT=8100
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/api/v2/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: customs-phoenix
+    network_mode: host
+    volumes:
+      - phoenixdata:/phoenix
+    environment:
+      - PHOENIX_PORT=6006
+
 volumes:
   pgdata:
   miniodata:
-
-networks:
-  customs-net:
-    driver: bridge
+  chromadata:
+  phoenixdata:

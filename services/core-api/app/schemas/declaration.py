@@ -40,6 +40,14 @@ class DeclarationCreate(BaseModel):
     customs_office_code: Optional[str] = None
     warehouse_name: Optional[str] = None
     place_and_date: Optional[str] = None
+    trading_country_code: Optional[str] = None
+    declarant_inn_kpp: Optional[str] = None
+    declarant_ogrn: Optional[str] = None
+    declarant_phone: Optional[str] = None
+    delivery_place: Optional[str] = None
+    transport_on_border_id: Optional[str] = None
+    entry_customs_code: Optional[str] = None
+    goods_location: Optional[str] = None
 
 
 class DeclarationUpdate(BaseModel):
@@ -74,6 +82,14 @@ class DeclarationUpdate(BaseModel):
     customs_office_code: Optional[str] = None
     warehouse_name: Optional[str] = None
     place_and_date: Optional[str] = None
+    trading_country_code: Optional[str] = None
+    declarant_inn_kpp: Optional[str] = None
+    declarant_ogrn: Optional[str] = None
+    declarant_phone: Optional[str] = None
+    delivery_place: Optional[str] = None
+    transport_on_border_id: Optional[str] = None
+    entry_customs_code: Optional[str] = None
+    goods_location: Optional[str] = None
 
 
 class DeclarationResponse(BaseModel):
@@ -118,6 +134,14 @@ class DeclarationResponse(BaseModel):
     spot_amount: Optional[Decimal]
     submitted_at: Optional[datetime]
     place_and_date: Optional[str]
+    trading_country_code: Optional[str] = None
+    declarant_inn_kpp: Optional[str] = None
+    declarant_ogrn: Optional[str] = None
+    declarant_phone: Optional[str] = None
+    delivery_place: Optional[str] = None
+    transport_on_border_id: Optional[str] = None
+    entry_customs_code: Optional[str] = None
+    goods_location: Optional[str] = None
     created_by: uuid.UUID
     created_at: Optional[datetime]
     updated_at: Optional[datetime]

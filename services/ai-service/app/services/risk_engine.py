@@ -1,8 +1,21 @@
+import json
+from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
 import structlog
 
 logger = structlog.get_logger()
+
+# Load rules from JSON file
+_RULES_PATH = Path(__file__).parent.parent / "rules" / "risk_rules.json"
+_LOADED_RULES: list[dict] = []
+try:
+    if _RULES_PATH.exists():
+        with open(_RULES_PATH) as f:
+            _LOADED_RULES = json.load(f)
+        logger.info("risk_rules_loaded_from_json", count=len(_LOADED_RULES))
+except Exception as e:
+    logger.warning("risk_rules_load_failed", error=str(e))
 
 
 class RiskItem(BaseModel):
@@ -111,6 +124,27 @@ def assess(
                 risk_score += 15
                 break
     
+    # Rule 6: MISSING_COUNTRY_ORIGIN (from JSON rules)
+    for idx, item in enumerate(items, 1):
+        if not item.get("country_origin") and not item.get("country_origin_code"):
+            risks.append(RiskItem(
+                rule_code="MISSING_COUNTRY_ORIGIN",
+                severity="medium",
+                message=f"Позиция {idx}: не указана страна происхождения",
+                recommendation="Укажите страну происхождения товара."
+            ))
+            risk_score += 10
+
+    # Rule 7: HIGH_VALUE_DECLARATION (from JSON rules)
+    if total_customs_value and total_customs_value > 1000000:
+        risks.append(RiskItem(
+            rule_code="HIGH_VALUE_DECLARATION",
+            severity="low",
+            message=f"Высокая стоимость декларации: {total_customs_value:.2f}",
+            recommendation="Требуется дополнительная проверка документов."
+        ))
+        risk_score += 5
+
     # Cap risk score at 100
     risk_score = min(100, risk_score)
     

@@ -99,6 +99,16 @@ class Declaration(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.users.id")
     )
+    # Новые графы ДТ
+    trading_country_code: Mapped[Optional[str]] = mapped_column(String(2))  # Графа 11
+    declarant_inn_kpp: Mapped[Optional[str]] = mapped_column(String(30))    # Графа 14 ИНН/КПП
+    declarant_ogrn: Mapped[Optional[str]] = mapped_column(String(15))       # Графа 14 ОГРН
+    declarant_phone: Mapped[Optional[str]] = mapped_column(String(20))      # Графа 14 телефон
+    delivery_place: Mapped[Optional[str]] = mapped_column(String(200))      # Графа 20 город
+    transport_on_border_id: Mapped[Optional[str]] = mapped_column(String(100))  # Графа 21 рейс
+    entry_customs_code: Mapped[Optional[str]] = mapped_column(String(8))    # Графа 29
+    goods_location: Mapped[Optional[str]] = mapped_column(Text)             # Графа 30
+
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

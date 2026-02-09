@@ -35,3 +35,4 @@ services/ai-service/app/ml_models/*.joblib
 
 # Cursor plans (keep in git for collaboration)
 # .cursor/plans/
+frontend/package-lock.json

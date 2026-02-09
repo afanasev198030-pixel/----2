@@ -282,13 +282,15 @@ async def update_declaration(
     
     declaration.updated_at = datetime.utcnow()
     
-    # Log action
+    # Log action — serialize UUIDs and Decimals for JSONB
+    import json
+    safe_update = json.loads(json.dumps(update_data, default=str))
     log_entry = DeclarationLog(
         declaration_id=declaration.id,
         user_id=current_user.id,
         action="update",
         old_value=old_value,
-        new_value=update_data,
+        new_value=safe_update,
     )
     db.add(log_entry)
     await db.commit()
@@ -480,3 +482,29 @@ async def duplicate_declaration(
     )
     
     return DeclarationResponse.model_validate(new_declaration)
+
+
+@router.get("/{id}/logs")
+async def get_declaration_logs(
+    id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get declaration change logs."""
+    result = await db.execute(
+        select(DeclarationLog)
+        .where(DeclarationLog.declaration_id == id)
+        .order_by(DeclarationLog.created_at.desc())
+    )
+    logs = result.scalars().all()
+    return [
+        {
+            "id": str(log.id),
+            "action": log.action,
+            "old_value": log.old_value,
+            "new_value": log.new_value,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "user_id": str(log.user_id) if log.user_id else None,
+        }
+        for log in logs
+    ]

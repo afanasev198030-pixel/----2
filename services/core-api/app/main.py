@@ -15,6 +15,10 @@ from app.routers import (
     classifiers,
     users,
 )
+from app.routers import apply_parsed
+from app.routers import settings as settings_router
+from app.routers import counterparties, companies
+from app.routers import export_pdf
 
 # Setup logging
 setup_logging()
@@ -30,13 +34,37 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Setup logging and log service start."""
+    """Setup logging and log service start. Load OpenAI key from DB."""
     setup_logging()
     logger.info(
         "service_started",
         service_name=settings.SERVICE_NAME,
         version="0.1.0",
     )
+
+    # Load OpenAI key from DB and send to ai-service
+    try:
+        from app.database import async_sessionmaker
+        from sqlalchemy import text
+        import httpx
+
+        async with async_sessionmaker() as session:
+            result = await session.execute(text("SELECT value FROM core.system_settings WHERE key = 'openai_api_key'"))
+            row = result.fetchone()
+            if row and row[0] and row[0] != "sk-your-key-here":
+                api_key = row[0]
+                logger.info("openai_key_loaded_from_db", key_prefix=api_key[:8] + "...")
+                # Send to ai-service
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.post(
+                        "http://localhost:8003/api/v1/ai/configure",
+                        json={"openai_api_key": api_key, "openai_model": "gpt-4o"},
+                    )
+                    logger.info("openai_key_sent_to_ai_service")
+            else:
+                logger.info("no_openai_key_in_db")
+    except Exception as e:
+        logger.warning("startup_key_load_failed", error=str(e))
 
 
 # Add CORS middleware
@@ -102,6 +130,11 @@ app.include_router(workflow.router)
 app.include_router(documents.router)
 app.include_router(classifiers.router)
 app.include_router(users.router)
+app.include_router(apply_parsed.router)
+app.include_router(settings_router.router)
+app.include_router(counterparties.router)
+app.include_router(companies.router)
+app.include_router(export_pdf.router)
 
 
 if __name__ == "__main__":
