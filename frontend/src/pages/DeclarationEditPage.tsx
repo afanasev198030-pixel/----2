@@ -57,24 +57,22 @@ const DeclarationEditPage = () => {
 
   const items: DeclarationItem[] = Array.isArray(itemsData) ? itemsData : (itemsData as any)?.items || [];
 
-  // Init form ONCE when decl loads
+  // Init form when decl loads (use decl.id as key to detect new data)
+  const [loadedDeclId, setLoadedDeclId] = useState<string>('');
+
   useEffect(() => {
-    if (decl && !formReady) {
+    if (decl && decl.id !== loadedDeclId) {
       reset(decl);
       setFormValues({ ...decl });
       setFormReady(true);
-    }
-  }, [decl]); // eslint-disable-line
-
-  // Set initial step ONCE
-  useEffect(() => {
-    if (formReady && !initialStepSet) {
-      if (decl?.currency_code || decl?.total_invoice_value || items.length > 0) {
+      setLoadedDeclId(decl.id);
+      // Auto-step to review if data exists
+      if (!initialStepSet && (decl.currency_code || decl.total_invoice_value || items.length > 0)) {
         setActiveStep(1);
+        setInitialStepSet(true);
       }
-      setInitialStepSet(true);
     }
-  }, [formReady, items.length]); // eslint-disable-line
+  }, [decl, items.length]); // eslint-disable-line
 
   // Calculate payments when items change
   useEffect(() => {

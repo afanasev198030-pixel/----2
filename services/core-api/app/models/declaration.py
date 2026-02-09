@@ -148,11 +148,11 @@ class Declaration(Base):
         "Document", back_populates="declaration"
     )
     logs: Mapped[list["DeclarationLog"]] = relationship(
-        "DeclarationLog", back_populates="declaration"
+        "DeclarationLog", back_populates="declaration", cascade="all, delete-orphan"
     )
     status_history: Mapped[list["DeclarationStatusHistory"]] = relationship(
-        "DeclarationStatusHistory", back_populates="declaration"
+        "DeclarationStatusHistory", back_populates="declaration", cascade="all, delete-orphan"
     )
     payments: Mapped[list["CustomsPayment"]] = relationship(
-        "CustomsPayment", back_populates="declaration"
+        "CustomsPayment", back_populates="declaration", cascade="all, delete-orphan"
     )

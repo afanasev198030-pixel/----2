@@ -34,6 +34,7 @@ import {
   Skeleton,
   TablePagination,
   TableSortLabel,
+  Checkbox,
 } from '@mui/material';
 import {
   AccountCircle,
@@ -74,6 +75,7 @@ const DeclarationsListPage = () => {
   const [statusFilter, setStatusFilter] = useState<string[] | null>(null);
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rowActionMenuAnchor, setRowActionMenuAnchor] = useState<null | HTMLElement>(null);
   const [rowActionDeclarationId, setRowActionDeclarationId] = useState<string | null>(null);
 
@@ -152,6 +154,35 @@ const DeclarationsListPage = () => {
     if (!rowActionDeclarationId) return;
     if (window.confirm('Вы уверены, что хотите удалить эту декларацию?')) {
       deleteMutation.mutate(rowActionDeclarationId);
+      handleRowActionClose();
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Удалить ${selectedIds.size} деклараций?`)) return;
+    const ids = Array.from(selectedIds);
+    for (let i = 0; i < ids.length; i++) {
+      try { await deleteDeclaration(ids[i]); } catch (e) { console.error(e); }
+    }
+    setSelectedIds(new Set());
+    queryClient.invalidateQueries({ queryKey: ['declarations'] });
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const allIds = filteredAndSortedItems?.map((d: Declaration) => d.id) || [];
+    if (selectedIds.size === allIds.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allIds));
     }
   };
 
@@ -433,8 +464,23 @@ const DeclarationsListPage = () => {
         {/* Table */}
         <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
           <Table>
+            {selectedIds.size > 0 && (
+              <Box sx={{ p: 1, bgcolor: '#e3f2fd', display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="body2">Выбрано: {selectedIds.size}</Typography>
+                <Button size="small" color="error" variant="contained" onClick={handleBulkDelete}>Удалить выбранные</Button>
+                <Button size="small" onClick={() => setSelectedIds(new Set())}>Снять выделение</Button>
+              </Box>
+            )}
             <TableHead>
               <TableRow>
+                <TableCell padding="checkbox" sx={{ width: 40 }}>
+                  <Checkbox
+                    size="small"
+                    checked={filteredAndSortedItems?.length > 0 && selectedIds.size === filteredAndSortedItems?.length}
+                    indeterminate={selectedIds.size > 0 && selectedIds.size < (filteredAndSortedItems?.length || 0)}
+                    onChange={toggleSelectAll}
+                  />
+                </TableCell>
                 <TableCell>
                   <TableSortLabel
                     active={sortField === 'number_internal'}
@@ -523,9 +569,13 @@ const DeclarationsListPage = () => {
                   <TableRow
                     key={declaration.id}
                     hover
+                    selected={selectedIds.has(declaration.id)}
                     sx={{ cursor: 'pointer', '&:last-child td': { borderBottom: 0 } }}
                     onClick={() => navigate(`/declarations/${declaration.id}/edit`)}
                   >
+                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox size="small" checked={selectedIds.has(declaration.id)} onChange={() => toggleSelect(declaration.id)} />
+                    </TableCell>
                     <TableCell>
                       {declaration.number_internal ? (
                         <Typography sx={{ fontWeight: 600, color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
