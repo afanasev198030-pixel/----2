@@ -1,4 +1,4 @@
-import { Box, Typography, Checkbox, FormControlLabel, Paper, LinearProgress, Chip, Alert } from '@mui/material';
+import { Box, Typography, Checkbox, FormControlLabel, Paper, LinearProgress, Chip, Alert, Button } from '@mui/material';
 import { CheckCircle, RadioButtonUnchecked, Warning } from '@mui/icons-material';
 
 interface ChecklistProps {
@@ -90,6 +90,26 @@ const DeclarationChecklist = ({ declaration, items }: ChecklistProps) => {
       {criticalFailed.length > 0 && (
         <Alert severity="error" sx={{ mt: 2 }}>
           Не заполнено {criticalFailed.length} обязательных полей. Декларация не может быть отправлена.
+          <Box sx={{ mt: 1, fontSize: 12 }}>
+            <b>Рекомендации:</b>
+            <ul style={{ margin: '4px 0', paddingLeft: 20 }}>
+              {criticalFailed.some(r => r.key === 'sender' || r.key === 'receiver') && (
+                <li>Загрузите инвойс (Invoice) — AI определит продавца и покупателя</li>
+              )}
+              {criticalFailed.some(r => r.key === 'countries') && (
+                <li>Укажите страны вручную или загрузите инвойс с адресами</li>
+              )}
+              {criticalFailed.some(r => r.key === 'currency') && (
+                <li>Выберите валюту в поле "Валюта (22)"</li>
+              )}
+              {criticalFailed.some(r => r.key === 'weights') && (
+                <li>Загрузите упаковочный лист (Packing List) для заполнения весов</li>
+              )}
+              {criticalFailed.some(r => r.key === 'hs_code') && (
+                <li>Нажмите "Подобрать код ТН ВЭД" для каждой позиции</li>
+              )}
+            </ul>
+          </Box>
         </Alert>
       )}
       {allPassed && (
