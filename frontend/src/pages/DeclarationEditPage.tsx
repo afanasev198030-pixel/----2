@@ -136,10 +136,12 @@ const DeclarationEditPage = () => {
       });
       if (parsed.risk_score) setRiskScore(parsed.risk_score);
       if (parsed.risk_flags) setRiskFlags(parsed.risk_flags);
-      // Refetch and update form
+      // Refetch and update form — force reload by resetting loadedDeclId
+      setLoadedDeclId('');  // Reset to force useEffect re-init
       const fresh = await getDeclaration(id);
       reset(fresh);
       setFormValues({ ...fresh });
+      setLoadedDeclId(fresh.id);  // Set back
       await refetchItems();
       setSnackMsg('AI заполнил декларацию');
       setActiveStep(1);
