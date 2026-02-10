@@ -279,6 +279,46 @@ class HSCodeClassifier:
             except Exception as e:
                 logger.warning("dspy_hs_classify_fallback", error=str(e))
 
+        # GPT-4o direct call (when DSPy unavailable but OpenAI configured)
+        try:
+            from app.config import get_settings
+            settings = get_settings()
+            if settings.has_openai and rag_results:
+                import openai as _oai
+                client = _oai.OpenAI(api_key=settings.OPENAI_API_KEY)
+                rag_text = "\n".join([
+                    f"- {r.get('code', '')}: {r.get('name_ru', '')} (score: {r.get('score', 0):.2f})"
+                    for r in rag_results[:10]
+                ])
+                resp = client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Выбери точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название\",\"reasoning\":\"обоснование\",\"confidence\":0.95}"},
+                        {"role": "user", "content": f"Товар: {description}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."},
+                    ],
+                    temperature=0,
+                    max_tokens=300,
+                )
+                text = resp.choices[0].message.content.strip()
+                if text.startswith("```"):
+                    text = text.split("```")[1]
+                    if text.startswith("json"):
+                        text = text[4:]
+                data = json.loads(text)
+                code = data.get("hs_code", "").replace(".", "").replace(" ", "")
+                if len(code) < 10:
+                    code = code.ljust(10, "0")
+                logger.info("hs_classified_by_gpt", code=code, description=description[:50])
+                return {
+                    "hs_code": code[:10],
+                    "name_ru": data.get("name_ru", ""),
+                    "reasoning": data.get("reasoning", "GPT-4o classification"),
+                    "confidence": float(data.get("confidence", 0.85)),
+                    "source": "gpt4o_rag",
+                }
+        except Exception as e:
+            logger.warning("gpt4o_hs_classify_failed", error=str(e))
+
         # Fallback на keyword classifier
         from app.services.hs_classifier import classify as keyword_classify, _pad_hs_code
         suggestions = keyword_classify(description)

@@ -296,7 +296,7 @@ const DeclarationEditPage = () => {
             {/* Right panel */}
             <Grid item xs={12} md={4}>
               {(riskScore > 0 || riskFlags) && <Box sx={{ mb: 2 }}><RiskPanel riskScore={riskScore} risks={riskFlags?.risks || []} source={riskFlags?.source} /></Box>}
-              <DeclarationChecklist declaration={decl} items={items} />
+              <DeclarationChecklist declaration={decl} items={items} formValues={watchedValues} />
               {id && <HistoryPanel declarationId={id} />}
               <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
                 <Button variant="outlined" onClick={() => setActiveStep(0)}>Назад</Button>

@@ -4,6 +4,7 @@ import { CheckCircle, RadioButtonUnchecked, Warning } from '@mui/icons-material'
 interface ChecklistProps {
   declaration: any;
   items: any[];
+  formValues?: any;  // live form values (react-hook-form watch)
 }
 
 const CHECKS = [
@@ -19,7 +20,10 @@ const CHECKS = [
   { key: 'price', label: '42. Цена товара указана', field: '_price', critical: true },
 ];
 
-const DeclarationChecklist = ({ declaration, items }: ChecklistProps) => {
+const DeclarationChecklist = ({ declaration, items, formValues }: ChecklistProps) => {
+  // Use formValues (live) with fallback to declaration (server)
+  const d = { ...declaration, ...(formValues || {}) };
+
   const results = CHECKS.map((check) => {
     let passed = false;
     if (check.field === '_items') {
@@ -27,11 +31,14 @@ const DeclarationChecklist = ({ declaration, items }: ChecklistProps) => {
     } else if (check.field === '_hs') {
       passed = items.length > 0 && items.every((i: any) => i.hs_code && i.hs_code.length >= 10);
     } else if (check.field === '_weights') {
-      passed = items.length > 0 && items.every((i: any) => i.gross_weight && i.net_weight);
+      // Check both item-level AND declaration-level weights
+      const hasItemWeights = items.length > 0 && items.every((i: any) => i.gross_weight && i.net_weight);
+      const hasDeclWeights = !!(d.total_gross_weight && d.total_net_weight);
+      passed = hasItemWeights || hasDeclWeights;
     } else if (check.field === '_price') {
       passed = items.length > 0 && items.every((i: any) => i.unit_price);
     } else {
-      passed = !!declaration[check.field];
+      passed = !!d[check.field];
     }
     return { ...check, passed };
   });

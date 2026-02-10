@@ -28,12 +28,36 @@ export interface RiskAssessment {
 }
 
 export const classifyHS = async (description: string, countryOrigin?: string, unitPrice?: number): Promise<HSSuggestion[]> => {
-  const response = await aiClient.post<{ suggestions: HSSuggestion[] }>('/classify-hs', {
-    description,
-    country_origin: countryOrigin || null,
-    unit_price: unitPrice || null,
-  });
-  return response.data.suggestions;
+  // Use RAG+GPT-4o endpoint (falls back to keyword if AI unavailable)
+  try {
+    const response = await aiClient.post<{ suggestions: HSSuggestion[]; rag_candidates?: any[] }>('/classify-hs-rag', {
+      description,
+      country_origin: countryOrigin || null,
+      unit_price: unitPrice || null,
+    });
+    // Merge suggestions + rag_candidates
+    const suggestions = response.data.suggestions || [];
+    const rag = (response.data.rag_candidates || [])
+      .filter((c: any) => c.code && c.code.length >= 4)
+      .slice(0, 3)
+      .map((c: any) => ({
+        hs_code: c.code.length < 10 ? c.code.padEnd(10, '0') : c.code,
+        name_ru: c.name_ru || '',
+        confidence: c.score || 0.5,
+      }));
+    // Deduplicate
+    const seen = new Set(suggestions.map((s: HSSuggestion) => s.hs_code));
+    const merged = [...suggestions, ...rag.filter((r: HSSuggestion) => !seen.has(r.hs_code))];
+    return merged.filter((s: HSSuggestion) => s.hs_code && s.hs_code !== '0000000000');
+  } catch {
+    // Fallback to keyword classifier
+    const response = await aiClient.post<{ suggestions: HSSuggestion[] }>('/classify-hs', {
+      description,
+      country_origin: countryOrigin || null,
+      unit_price: unitPrice || null,
+    });
+    return response.data.suggestions;
+  }
 };
 
 export const assessRisk = async (items: any[], totalCustomsValue?: number): Promise<RiskAssessment> => {
