@@ -322,6 +322,26 @@ class DeclarationCrew:
                     item["gross_weight"] = round(per_item_gross, 3)
                     item["net_weight"] = round(per_item_net, 3)
 
+        # Auto-classify HS codes via GPT-4o + RAG
+        from app.services.dspy_modules import HSCodeClassifier
+        from app.services.index_manager import get_index_manager
+        hs_classifier = HSCodeClassifier()
+        idx_mgr = get_index_manager()
+        for item in items:
+            if not item.get("hs_code") and item.get("description"):
+                try:
+                    rag_results = idx_mgr.search_hs_codes(item["description"])
+                    hs_result = hs_classifier.classify(item["description"], rag_results)
+                    if hs_result.get("hs_code"):
+                        item["hs_code"] = hs_result["hs_code"]
+                        item["hs_code_name"] = hs_result.get("name_ru", "")
+                        item["hs_confidence"] = hs_result.get("confidence", 0)
+                        item["hs_reasoning"] = hs_result.get("reasoning", "")
+                        item["hs_needs_review"] = hs_result.get("confidence", 0) < 0.8
+                        logger.info("auto_hs_classified", description=item["description"][:50], code=item["hs_code"], confidence=item["hs_confidence"])
+                except Exception as e:
+                    logger.warning("auto_hs_classify_failed", error=str(e), description=item.get("description", "")[:50])
+
         # Transport from AWB — extract AWB number
         import re as _re
         transport = parsed_docs.get("transport", {})

@@ -21,6 +21,12 @@ class Company(Base):
     ogrn: Mapped[Optional[str]] = mapped_column(String(15))
     address: Mapped[Optional[str]] = mapped_column(Text)
     country_code: Mapped[Optional[str]] = mapped_column(String(2))
+    company_type: Mapped[Optional[str]] = mapped_column(
+        String(20), server_default="client"
+    )
+    broker_license: Mapped[Optional[str]] = mapped_column(String(50))
+    contact_email: Mapped[Optional[str]] = mapped_column(String(255))
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(30))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -160,6 +160,27 @@ services:
       timeout: 10s
       retries: 3
 
+  integration-service:
+    build:
+      context: .
+      dockerfile: services/integration-service/Dockerfile
+    container_name: customs-integration
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./services/integration-service/app:/app/app
+    depends_on:
+      - core-api
+    environment:
+      CORE_API_URL: http://core-api:8001
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   nginx:
     image: nginx:alpine
     container_name: customs-nginx

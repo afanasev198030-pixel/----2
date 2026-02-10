@@ -6,7 +6,7 @@ import structlog
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
-from app.models import Classifier, User
+from app.models import Classifier, User, HsRequirement
 from app.schemas import ClassifierResponse
 
 logger = structlog.get_logger()
@@ -109,6 +109,50 @@ async def list_currencies(
     currencies = result.scalars().all()
     
     return [ClassifierResponse.model_validate(c) for c in currencies]
+
+
+@router.get("/hs-requirements")
+async def get_hs_requirements(
+    hs_code: str = Query(..., description="Full or partial HS code to check requirements for"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get certificate/license/permit requirements for an HS code.
+
+    Generates all possible prefixes of the given HS code and returns
+    matching requirements sorted from most specific to least specific.
+    """
+    # Generate all prefixes: 8517711900 → ['8517711900','851771190',...,'85','8']
+    hs_code_clean = hs_code.strip().replace(".", "").replace(" ", "")
+    if len(hs_code_clean) < 2:
+        return []
+
+    prefixes = [hs_code_clean[:i] for i in range(len(hs_code_clean), 0, -1)]
+
+    query = (
+        select(HsRequirement)
+        .where(
+            HsRequirement.hs_code_prefix.in_(prefixes),
+            HsRequirement.is_active == True,
+        )
+        .order_by(func.length(HsRequirement.hs_code_prefix).desc())
+    )
+
+    result = await db.execute(query)
+    requirements = result.scalars().all()
+
+    return [
+        {
+            "id": str(r.id),
+            "hs_code_prefix": r.hs_code_prefix,
+            "requirement_type": r.requirement_type,
+            "document_name": r.document_name,
+            "issuing_authority": r.issuing_authority,
+            "legal_basis": r.legal_basis,
+            "description": r.description,
+        }
+        for r in requirements
+    ]
 
 
 @router.get("/hs-codes/search", response_model=list[ClassifierResponse])

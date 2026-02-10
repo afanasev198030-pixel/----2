@@ -15,7 +15,7 @@ from app.routers import (
     classifiers,
     users,
 )
-from app.routers import apply_parsed
+from app.routers import apply_parsed, broker_clients
 from app.routers import settings as settings_router
 from app.routers import counterparties, companies
 from app.routers import export_pdf
@@ -137,6 +137,7 @@ app.include_router(settings_router.router)
 app.include_router(counterparties.router)
 app.include_router(companies.router)
 app.include_router(export_pdf.router)
+app.include_router(broker_clients.router)
 
 
 if __name__ == "__main__":

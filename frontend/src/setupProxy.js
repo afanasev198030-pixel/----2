@@ -9,6 +9,14 @@ module.exports = function(app) {
     logger: console,
   }));
 
+  // Integration service: keep full path /api/v1/integration/*
+  app.use(createProxyMiddleware({
+    target: 'http://integration-service:8004',
+    changeOrigin: true,
+    pathFilter: '/api/v1/integration/**',
+    logger: console,
+  }));
+
   // Calc service: keep full path /api/v1/calc/*
   app.use(createProxyMiddleware({
     target: 'http://calc-service:8005',

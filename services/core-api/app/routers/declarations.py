@@ -23,6 +23,7 @@ from app.schemas import (
     DeclarationListResponse,
     PaginatedResponse,
 )
+from app.middleware.company_filter import get_accessible_company_ids
 
 logger = structlog.get_logger()
 
@@ -37,6 +38,7 @@ async def list_declarations(
     type_code: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
+    client_id: Optional[uuid.UUID] = Query(None, description="Filter by client company ID (for brokers)"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -67,11 +69,9 @@ async def list_declarations(
     if date_to:
         conditions.append(Declaration.created_at <= date_to)
     
-    # Filter by company_id (users can only see their company's declarations)
-    if current_user.company_id:
-        conditions.append(Declaration.company_id == current_user.company_id)
-    else:
-        # If user has no company_id, they can't see any declarations
+    # Multi-company data isolation: filter by accessible companies
+    accessible = await get_accessible_company_ids(current_user, db)
+    if not accessible:
         return PaginatedResponse(
             items=[],
             total=0,
@@ -79,6 +79,16 @@ async def list_declarations(
             per_page=per_page,
             pages=0,
         )
+    conditions.append(Declaration.company_id.in_(accessible))
+
+    # Optional filter by specific client company
+    if client_id is not None:
+        if client_id not in accessible:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to the specified client company",
+            )
+        conditions.append(Declaration.company_id == client_id)
     
     if conditions:
         query = query.where(and_(*conditions))

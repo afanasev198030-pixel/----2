@@ -9,6 +9,8 @@ from .classifier import Classifier
 from .customs_payment import CustomsPayment, PaymentType
 from .declaration_log import DeclarationLog
 from .declaration_status_history import DeclarationStatusHistory
+from .broker_client import BrokerClient, UserCompanyAccess
+from .hs_requirement import HsRequirement
 
 __all__ = [
     "Base",
@@ -28,4 +30,7 @@ __all__ = [
     "PaymentType",
     "DeclarationLog",
     "DeclarationStatusHistory",
+    "BrokerClient",
+    "UserCompanyAccess",
+    "HsRequirement",
 ]

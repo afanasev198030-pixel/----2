@@ -16,6 +16,10 @@ export interface Company {
   ogrn?: string;
   address?: string;
   country_code?: string;
+  company_type?: string;
+  broker_license?: string;
+  contact_email?: string;
+  contact_phone?: string;
   created_at: string;
 }
 

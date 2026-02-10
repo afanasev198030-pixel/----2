@@ -16,6 +16,7 @@ from .declaration_item import (
 )
 from .document import DocumentCreate, DocumentUpdate, DocumentResponse
 from .classifier import ClassifierResponse
+from .broker_client import BrokerClientCreate, BrokerClientUpdate, BrokerClientResponse
 from .common import PaginatedResponse, MessageResponse
 
 __all__ = [
@@ -51,6 +52,10 @@ __all__ = [
     "DocumentResponse",
     # Classifier
     "ClassifierResponse",
+    # Broker Client
+    "BrokerClientCreate",
+    "BrokerClientUpdate",
+    "BrokerClientResponse",
     # Common
     "PaginatedResponse",
     "MessageResponse",

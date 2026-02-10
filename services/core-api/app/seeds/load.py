@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_sessionmaker
-from app.models import Classifier, User, Company
+from app.models import Classifier, User, Company, HsRequirement
 from app.middleware.auth import get_password_hash
 from app.models.user import UserRole
 
@@ -95,6 +95,61 @@ async def load_classifiers(session: AsyncSession) -> dict[str, int]:
     return summary
 
 
+async def load_hs_requirements(session: AsyncSession) -> dict[str, int]:
+    """Load HS code requirements (certificates, licenses, permits) from seed file."""
+    seeds_dir = Path(__file__).parent
+    filepath = seeds_dir / "hs_requirements.json"
+
+    if not filepath.exists():
+        print("Warning: hs_requirements.json not found, skipping...")
+        return {"loaded": 0, "skipped": 0}
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    loaded_count = 0
+    skipped_count = 0
+
+    for item in data:
+        hs_code_prefix = item.get("hs_code_prefix")
+        requirement_type = item.get("requirement_type")
+        document_name = item.get("document_name")
+
+        if not hs_code_prefix or not document_name:
+            print(f"Warning: Skipping HS requirement - missing required fields")
+            continue
+
+        # Check if this exact requirement already exists
+        result = await session.execute(
+            select(HsRequirement).where(
+                HsRequirement.hs_code_prefix == hs_code_prefix,
+                HsRequirement.requirement_type == requirement_type,
+                HsRequirement.document_name == document_name,
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            skipped_count += 1
+            continue
+
+        requirement = HsRequirement(
+            hs_code_prefix=hs_code_prefix,
+            requirement_type=requirement_type,
+            document_name=document_name,
+            issuing_authority=item.get("issuing_authority"),
+            legal_basis=item.get("legal_basis"),
+            description=item.get("description"),
+            is_active=True,
+        )
+        session.add(requirement)
+        loaded_count += 1
+
+    await session.commit()
+    print(f"✓ hs_requirements: loaded {loaded_count}, skipped {skipped_count}")
+    return {"loaded": loaded_count, "skipped": skipped_count}
+
+
 async def create_default_admin(session: AsyncSession, company_id=None) -> tuple[bool, str]:
     """Create default admin user if it doesn't exist."""
     result = await session.execute(
@@ -153,7 +208,12 @@ async def main():
             # Load classifiers
             print("\nLoading classifiers...")
             summary = await load_classifiers(session)
-            
+
+            # Load HS requirements
+            print("\nLoading HS code requirements...")
+            hs_req_summary = await load_hs_requirements(session)
+            summary["hs_requirements"] = hs_req_summary
+
             # Create default company first
             print("\nCreating default company...")
             company_created, company_msg = await create_default_company(session)

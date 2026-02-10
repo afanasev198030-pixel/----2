@@ -21,6 +21,7 @@ import StatusChip from '../components/StatusChip';
 import DocumentUploadPanel from '../components/DocumentUploadPanel';
 import ClassifierSelect from '../components/ClassifierSelect';
 import HSCodeSuggestions from '../components/HSCodeSuggestions';
+import RequirementsPanel from '../components/RequirementsPanel';
 import RiskPanel from '../components/RiskPanel';
 import DeclarationChecklist from '../components/DeclarationChecklist';
 import HistoryPanel from '../components/HistoryPanel';
@@ -274,6 +275,9 @@ const DeclarationEditPage = () => {
                       <HSCodeSuggestions description={item.description || item.commercial_name || ''} currentCode={item.hs_code || ''}
                         onSelect={(code, name) => { client.put(`/declarations/${id}/items/${item.id}`, { hs_code: code }).then(() => { refetchItems(); setSnackMsg(`ТН ВЭД: ${code}`); }); }} />
                     </Box>
+                    {item.hs_code && item.hs_code.length >= 4 && (
+                      <RequirementsPanel hsCode={item.hs_code} description={item.description || item.commercial_name || ''} />
+                    )}
                   </Paper>
                 ))}
               </Paper>

@@ -11,6 +11,10 @@ class CompanyCreate(BaseModel):
     ogrn: Optional[str] = None
     address: Optional[str] = None
     country_code: Optional[str] = "RU"
+    company_type: Optional[str] = "client"
+    broker_license: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
 
 
 class CompanyUpdate(BaseModel):
@@ -20,6 +24,10 @@ class CompanyUpdate(BaseModel):
     ogrn: Optional[str] = None
     address: Optional[str] = None
     country_code: Optional[str] = None
+    company_type: Optional[str] = None
+    broker_license: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
 
 
 class CompanyResponse(BaseModel):
@@ -32,4 +40,8 @@ class CompanyResponse(BaseModel):
     ogrn: Optional[str]
     address: Optional[str]
     country_code: Optional[str]
+    company_type: Optional[str]
+    broker_license: Optional[str]
+    contact_email: Optional[str]
+    contact_phone: Optional[str]
     created_at: Optional[datetime]
