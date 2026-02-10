@@ -55,9 +55,11 @@ async def startup_event():
                 api_key = row[0]
                 logger.info("openai_key_loaded_from_db", key_prefix=api_key[:8] + "...")
                 # Send to ai-service
+                import os
+                ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
                 async with httpx.AsyncClient(timeout=10) as client:
                     await client.post(
-                        "http://localhost:8003/api/v1/ai/configure",
+                        f"{ai_url}/api/v1/ai/configure",
                         json={"openai_api_key": api_key, "openai_model": "gpt-4o"},
                     )
                     logger.info("openai_key_sent_to_ai_service")

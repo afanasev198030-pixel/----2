@@ -65,13 +65,15 @@ async def get_settings(
     openai_model = await _get_setting(db, "openai_model") or "gpt-4o"
 
     # Check ai-service health
+    import os
+    ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
     chromadb_status = "unknown"
     rag_available = False
     ai_status = "unknown"
     ai_message = ""
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get("http://localhost:8003/health")
+            resp = await client.get(f"{ai_url}/health")
             data = resp.json()
             rag_available = data.get("rag_available", False)
             chromadb_connected = data.get("chromadb_connected", False)
@@ -108,25 +110,21 @@ async def get_settings(
     except Exception:
         services.append(ServiceStatus(name="PostgreSQL", port=5432, status="error", detail="Не подключён"))
 
-    # Redis
+    # Redis (TCP check via Docker DNS)
     try:
-        async with httpx.AsyncClient(timeout=2) as c:
-            r = await c.get("http://localhost:6379")
+        import socket
+        redis_host = os.environ.get("REDIS_URL", "redis://redis:6379/0").split("://")[1].split(":")[0]
+        s = socket.create_connection((redis_host, 6379), timeout=2)
+        s.close()
         services.append(ServiceStatus(name="Redis", port=6379, status="ok", detail="Кеш и очереди"))
     except Exception:
-        # Redis doesn't have HTTP, check via tcp hint
-        import socket
-        try:
-            s = socket.create_connection(("localhost", 6379), timeout=2)
-            s.close()
-            services.append(ServiceStatus(name="Redis", port=6379, status="ok", detail="Кеш и очереди"))
-        except Exception:
-            services.append(ServiceStatus(name="Redis", port=6379, status="error", detail="Не запущен"))
+        services.append(ServiceStatus(name="Redis", port=6379, status="error", detail="Не запущен"))
 
     # MinIO
     try:
+        minio_host = os.environ.get("MINIO_ENDPOINT", "minio:9000").replace("http://", "").split(":")[0]
         async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get("http://localhost:9000/minio/health/live")
+            r = await c.get(f"http://{minio_host}:9000/minio/health/live")
             services.append(ServiceStatus(name="MinIO", port=9000, status="ok" if r.status_code == 200 else "error", detail="Файловое хранилище S3"))
     except Exception:
         services.append(ServiceStatus(name="MinIO", port=9000, status="error", detail="Не запущен"))
@@ -134,7 +132,7 @@ async def get_settings(
     # file-service
     try:
         async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get("http://localhost:8002/health")
+            r = await c.get("http://file-service:8002/health")
             services.append(ServiceStatus(name="file-service", port=8002, status="ok", detail="Загрузка файлов"))
     except Exception:
         services.append(ServiceStatus(name="file-service", port=8002, status="error", detail="Не запущен"))
@@ -142,17 +140,17 @@ async def get_settings(
     # ai-service
     try:
         async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get("http://localhost:8003/health")
+            r = await c.get(f"{ai_url}/health")
             d = r.json()
             detail = f"RAG={'OK' if d.get('rag_available') else 'OFF'}, OpenAI={'OK' if d.get('openai_configured') else 'OFF'}"
             services.append(ServiceStatus(name="ai-service", port=8003, status="ok", detail=detail))
     except Exception:
         services.append(ServiceStatus(name="ai-service", port=8003, status="error", detail="Не запущен"))
 
-    # ChromaDB
+    # ChromaDB (internal port 8000, exposed as 8100)
     try:
         async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get("http://localhost:8100/api/v2/heartbeat")
+            r = await c.get("http://chromadb:8000/api/v2/heartbeat")
             services.append(ServiceStatus(name="ChromaDB", port=8100, status="ok" if r.status_code == 200 else "error", detail="Векторная БД"))
     except Exception:
         services.append(ServiceStatus(name="ChromaDB", port=8100, status="error", detail="Не запущен"))
@@ -160,7 +158,7 @@ async def get_settings(
     # calc-service
     try:
         async with httpx.AsyncClient(timeout=3) as c:
-            r = await c.get("http://localhost:8005/health")
+            r = await c.get("http://calc-service:8005/health")
             services.append(ServiceStatus(name="calc-service", port=8005, status="ok", detail="Расчёт платежей, курсы ЦБ"))
     except Exception:
         services.append(ServiceStatus(name="calc-service", port=8005, status="error", detail="Не запущен"))
@@ -234,9 +232,11 @@ async def set_openai_key(
     ai_result = {}
     if ai_check["status"] == "ok":
         try:
+            import os
+            ai_svc = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
             async with httpx.AsyncClient(timeout=10) as http_client:
                 resp = await http_client.post(
-                    "http://localhost:8003/api/v1/ai/configure",
+                    f"{ai_svc}/api/v1/ai/configure",
                     json={"openai_api_key": data.value, "openai_model": "gpt-4o"},
                 )
                 ai_result = resp.json()
@@ -264,6 +264,187 @@ async def set_openai_model(
     await _set_setting(db, "openai_model", data.value)
     logger.info("openai_model_updated", model=data.value)
     return {"status": "saved", "model": data.value}
+
+
+@router.post("/load-tnved")
+async def load_tnved(
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Загрузить коды ТН ВЭД в PostgreSQL из seed-данных."""
+    try:
+        # Check current count
+        r = await db.execute(text("SELECT count(*) FROM core.classifiers WHERE classifier_type='hs_code'"))
+        existing = r.scalar() or 0
+
+        if existing > 500:
+            return {"status": "exists", "count": existing, "message": f"Уже загружено {existing} кодов ТН ВЭД"}
+
+        # Run seed loader inline
+        from app.seeds.load_tnved import TNVED_GROUPS
+        from app.models import Classifier
+        from sqlalchemy import select
+
+        loaded = 0
+        for group_code, group_name, positions in TNVED_GROUPS:
+            # Group (2-digit)
+            result = await db.execute(
+                select(Classifier).where(
+                    Classifier.classifier_type == "hs_code",
+                    Classifier.code == group_code,
+                )
+            )
+            if not result.scalar_one_or_none():
+                db.add(Classifier(
+                    classifier_type="hs_code", code=group_code,
+                    name_ru=group_name, parent_code="", is_active=True,
+                ))
+                loaded += 1
+
+            # 4-digit positions
+            for pos_code, pos_name in positions:
+                result = await db.execute(
+                    select(Classifier).where(
+                        Classifier.classifier_type == "hs_code",
+                        Classifier.code == pos_code,
+                    )
+                )
+                if result.scalar_one_or_none():
+                    continue
+                db.add(Classifier(
+                    classifier_type="hs_code", code=pos_code,
+                    name_ru=pos_name, parent_code=group_code, is_active=True,
+                ))
+                loaded += 1
+
+                # Generate 6-digit sub-positions (00-09)
+                for sub in range(10):
+                    sub_code = f"{pos_code}{sub:02d}"
+                    db.add(Classifier(
+                        classifier_type="hs_code", code=sub_code,
+                        name_ru=f"{pos_name} ({sub_code})",
+                        parent_code=pos_code, is_active=True,
+                    ))
+                    loaded += 1
+
+                    # Generate 10-digit codes
+                    for subsub in range(10):
+                        code10 = f"{sub_code}{subsub:02d}00"
+                        db.add(Classifier(
+                            classifier_type="hs_code", code=code10,
+                            name_ru=f"{pos_name} ({code10})",
+                            parent_code=sub_code, is_active=True,
+                        ))
+                        loaded += 1
+
+            if loaded % 5000 == 0:
+                await db.commit()
+
+        await db.commit()
+
+        # Re-count
+        r = await db.execute(text("SELECT count(*) FROM core.classifiers WHERE classifier_type='hs_code'"))
+        total = r.scalar() or 0
+
+        logger.info("tnved_loaded", loaded=loaded, total=total)
+        return {"status": "loaded", "loaded": loaded, "total": total}
+
+    except Exception as e:
+        await db.rollback()
+        logger.error("tnved_load_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, f"Ошибка загрузки ТН ВЭД: {str(e)}")
+
+
+@router.post("/init-rag")
+async def init_rag(
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправить ВСЕ коды ТН ВЭД из PostgreSQL в ai-service батчами по 500."""
+    import os
+    ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+
+    try:
+        # Fetch ALL HS codes from DB
+        r = await db.execute(text(
+            "SELECT code, name_ru, parent_code FROM core.classifiers "
+            "WHERE classifier_type='hs_code' AND is_active=true "
+            "ORDER BY code"
+        ))
+        rows = r.fetchall()
+        all_codes = [{"code": row[0], "name_ru": row[1] or "", "parent_code": row[2] or ""} for row in rows]
+
+        if not all_codes:
+            return {"status": "no_codes", "message": "Нет кодов ТН ВЭД в БД. Сначала загрузите."}
+
+        # First batch with force=True to clear old data, rest with force=False (append)
+        BATCH_SIZE = 200
+        total_indexed = 0
+        batches = [all_codes[i:i + BATCH_SIZE] for i in range(0, len(all_codes), BATCH_SIZE)]
+        errors = []
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            for idx, batch in enumerate(batches):
+                try:
+                    force = (idx == 0)  # clear only on first batch
+                    resp = await client.post(
+                        f"{ai_url}/api/v1/ai/index-hs-codes",
+                        json={"codes": batch, "force": force},
+                    )
+                    result = resp.json()
+                    total_indexed += result.get("count", len(batch))
+                    logger.info("rag_batch_sent", batch=idx + 1, total_batches=len(batches), count=len(batch))
+                except Exception as e:
+                    errors.append(f"batch {idx + 1}: {str(e)[:100]}")
+                    logger.warning("rag_batch_failed", batch=idx + 1, error=str(e)[:100])
+
+        logger.info("rag_init_complete", total=len(all_codes), indexed=total_indexed, errors=len(errors))
+        return {
+            "status": "indexed",
+            "codes_total": len(all_codes),
+            "codes_indexed": total_indexed,
+            "batches": len(batches),
+            "errors": errors[:5] if errors else [],
+        }
+
+    except Exception as e:
+        logger.error("rag_init_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, f"Ошибка индексации RAG: {str(e)}")
+
+
+@router.get("/training-stats")
+async def get_training_stats(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Проксирование статистики обучения из ai-service + локальные данные."""
+    import os
+    ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+
+    # DB stats
+    db_stats = {}
+    try:
+        r = await db.execute(text("SELECT count(*) FROM core.classifiers WHERE classifier_type='hs_code'"))
+        db_stats["hs_codes_pg"] = r.scalar() or 0
+        r = await db.execute(text("SELECT count(*) FROM core.ml_feedback"))
+        db_stats["feedback_pg"] = r.scalar() or 0
+    except Exception:
+        db_stats["hs_codes_pg"] = 0
+        db_stats["feedback_pg"] = 0
+
+    # AI service stats
+    ai_stats = {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{ai_url}/api/v1/ai/training-stats")
+            ai_stats = resp.json()
+    except Exception as e:
+        ai_stats = {"error": str(e)}
+
+    return {
+        "db": db_stats,
+        "ai": ai_stats,
+    }
 
 
 @router.on_event("startup")

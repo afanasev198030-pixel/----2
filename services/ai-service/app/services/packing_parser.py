@@ -18,9 +18,50 @@ class PackingListParsed(BaseModel):
     raw_text: str = ""
 
 
+def _llm_parse_pl(raw_text: str) -> dict:
+    """Parse packing list using OpenAI GPT-4o."""
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_openai:
+            return {}
+        import openai, json
+        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract data from a packing list. Return JSON only."},
+                {"role": "user", "content": f"""Extract from this packing list:
+- total_packages (int)
+- package_type (string)
+- total_gross_weight (float, kg)
+- total_net_weight (float, kg)
+- country_origin (2-letter ISO code)
+- items: array of {{description, quantity, gross_weight, net_weight, country_origin}}
+
+Text:
+{raw_text[:6000]}
+
+Return ONLY valid JSON."""},
+            ],
+            temperature=0,
+            max_tokens=2000,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return json.loads(text)
+    except Exception as e:
+        logger.warning("llm_pl_parse_failed", error=str(e))
+        return {}
+
+
 def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
     """
     Parse packing list document and extract structured data.
+    Uses LLM (GPT-4o) if available, falls back to regex.
     """
     try:
         raw_text = extract_text(file_bytes, filename)
@@ -28,6 +69,29 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
         if not raw_text:
             logger.warning("no_text_extracted", filename=filename)
             return PackingListParsed(raw_text="", confidence=0.0)
+
+        # Try LLM first
+        llm = _llm_parse_pl(raw_text)
+        if llm and (llm.get("total_gross_weight") or llm.get("total_net_weight")):
+            logger.info("pl_parsed_by_llm", gross=llm.get("total_gross_weight"), net=llm.get("total_net_weight"))
+            items = []
+            for it in llm.get("items", []):
+                items.append({
+                    "description": it.get("description", ""),
+                    "quantity": it.get("quantity"),
+                    "gross_weight": it.get("gross_weight"),
+                    "net_weight": it.get("net_weight"),
+                    "country_origin": it.get("country_origin"),
+                })
+            return PackingListParsed(
+                total_packages=llm.get("total_packages"),
+                package_type=llm.get("package_type"),
+                total_gross_weight=llm.get("total_gross_weight"),
+                total_net_weight=llm.get("total_net_weight"),
+                items=items,
+                confidence=0.92,
+                raw_text=raw_text,
+            )
         
         # Extract total packages
         total_packages = None

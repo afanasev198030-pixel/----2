@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.cursor
+.vscode
+*.swp
+
+# Docs & data
+dek/
+*.pdf
+README.md
+
+# Frontend node_modules (copied via own Dockerfile)
+frontend/node_modules
+
+# Python caches
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# Docker
+docker-compose*.yml
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db

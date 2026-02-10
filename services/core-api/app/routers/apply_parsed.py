@@ -183,6 +183,9 @@ async def apply_parsed_data(
         if data.country_origin:
             declaration.country_origin_code = data.country_origin
             declaration.country_dispatch_code = data.country_origin
+            # Графа 11 — торговая страна = страна происхождения
+            if not declaration.trading_country_code:
+                declaration.trading_country_code = data.country_origin
         if data.country_destination:
             declaration.country_destination_code = data.country_destination
         if data.total_packages is not None:

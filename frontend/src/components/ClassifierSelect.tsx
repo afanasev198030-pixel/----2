@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useCallback } from 'react';
 import { Autocomplete, TextField, CircularProgress } from '@mui/material';
+import { useQuery } from '@tanstack/react-query';
 import { getClassifiers, Classifier } from '../api/classifiers';
 
 interface ClassifierSelectProps {
@@ -18,21 +19,28 @@ const ClassifierSelect = ({
   classifierType, value, onChange, label,
   size = 'small', required, disabled, error, helperText,
 }: ClassifierSelectProps) => {
-  const [options, setOptions] = useState<Classifier[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [inputValue, setInputValue] = useState('');
+  // Load all options ONCE per classifier type, cache 10 minutes
+  const { data: options = [], isLoading } = useQuery({
+    queryKey: ['classifiers', classifierType],
+    queryFn: () => getClassifiers(classifierType),
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+  });
 
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    getClassifiers(classifierType, inputValue || undefined)
-      .then((data) => { if (active) setOptions(data.slice(0, 50)); })
-      .catch(() => {})
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [classifierType, inputValue]);
+  const selected = useMemo(
+    () => options.find((o) => o.code === value) || null,
+    [options, value],
+  );
 
-  const selected = options.find((o) => o.code === value) || null;
+  const handleChange = useCallback(
+    (_: any, item: Classifier | null) => onChange(item?.code || '', item || undefined),
+    [onChange],
+  );
+
+  const getLabel = useCallback(
+    (o: Classifier) => `${o.code} — ${o.name_ru || o.name_en || ''}`,
+    [],
+  );
 
   return (
     <Autocomplete
@@ -40,12 +48,20 @@ const ClassifierSelect = ({
       disabled={disabled}
       options={options}
       value={selected}
-      inputValue={inputValue}
-      onInputChange={(_, v) => setInputValue(v)}
-      onChange={(_, item) => onChange(item?.code || '', item || undefined)}
-      getOptionLabel={(o) => `${o.code} — ${o.name_ru || o.name_en || ''}`}
+      onChange={handleChange}
+      getOptionLabel={getLabel}
       isOptionEqualToValue={(o, v) => o.code === v.code}
-      loading={loading}
+      loading={isLoading}
+      filterOptions={(opts, { inputValue }) => {
+        if (!inputValue) return opts.slice(0, 50);
+        const q = inputValue.toLowerCase();
+        return opts.filter(
+          (o) =>
+            o.code.toLowerCase().includes(q) ||
+            (o.name_ru || '').toLowerCase().includes(q) ||
+            (o.name_en || '').toLowerCase().includes(q),
+        ).slice(0, 50);
+      }}
       renderInput={(params) => (
         <TextField
           {...params}
@@ -53,14 +69,17 @@ const ClassifierSelect = ({
           required={required}
           error={error}
           helperText={helperText}
-          InputProps={{
-            ...params.InputProps,
-            endAdornment: (
-              <>
-                {loading && <CircularProgress size={16} />}
-                {params.InputProps.endAdornment}
-              </>
-            ),
+          InputLabelProps={{ shrink: true }}
+          slotProps={{
+            input: {
+              ...params.InputProps,
+              endAdornment: (
+                <>
+                  {isLoading && <CircularProgress size={16} />}
+                  {params.InputProps.endAdornment}
+                </>
+              ),
+            },
           }}
         />
       )}

@@ -248,6 +248,46 @@ def _parse_items(text: str) -> list[InvoiceItemParsed]:
     return items
 
 
+def _llm_enrich_invoice(raw_text: str, regex_result: dict) -> dict:
+    """Use GPT-4o to fill missing fields that regex couldn't extract."""
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_openai:
+            return {}
+        import openai, json as _json
+        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        missing = []
+        if not regex_result.get("country_origin"):
+            missing.append("country_origin (2-letter ISO code)")
+        if not regex_result.get("total_gross_weight"):
+            missing.append("total_gross_weight (kg)")
+        if not regex_result.get("total_net_weight"):
+            missing.append("total_net_weight (kg)")
+        if not regex_result.get("total_packages"):
+            missing.append("total_packages (int)")
+        if not missing:
+            return {}
+        resp = client.chat.completions.create(
+            model=settings.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": "Extract missing fields from a commercial document. Return JSON only."},
+                {"role": "user", "content": f"Extract these fields: {', '.join(missing)}\n\nAlso extract:\n- items: array of {{description, quantity, unit_price, line_total, gross_weight, net_weight, country_origin}}\n\nText:\n{raw_text[:6000]}\n\nReturn ONLY valid JSON."},
+            ],
+            temperature=0,
+            max_tokens=2000,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return _json.loads(text)
+    except Exception as e:
+        logger.warning("llm_invoice_enrich_failed", error=str(e))
+        return {}
+
+
 def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
     try:
         raw_text = extract_text(file_bytes, filename)
@@ -382,6 +422,19 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
             # Check for Cyrillic
             if not country_destination and ('\u041c\u043e\u0441\u043a\u0432\u0430' in raw_text or '\u0420\u043e\u0441\u0441\u0438\u044f' in raw_text):
                 country_destination = 'RU'
+
+        # LLM enrichment for missing fields
+        regex_result = {
+            "country_origin": origin_country,
+            "total_gross_weight": None,
+            "total_net_weight": None,
+            "total_packages": None,
+        }
+        llm_data = _llm_enrich_invoice(raw_text, regex_result)
+        if llm_data:
+            if not origin_country and llm_data.get("country_origin"):
+                origin_country = llm_data["country_origin"]
+                logger.info("llm_enriched_origin", origin=origin_country)
 
         return InvoiceParsed(
             invoice_number=invoice_number, invoice_date=invoice_date,

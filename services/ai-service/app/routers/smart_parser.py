@@ -250,6 +250,7 @@ async def submit_feedback(data: FeedbackRequest):
 @router.post("/optimize")
 async def manual_optimize():
     """Ручной запуск DSPy оптимизации."""
+    from app.services.index_manager import _log_event
     if len(_feedback_store) < 5:
         return {"status": "not_enough_data", "feedback_count": len(_feedback_store), "min_required": 5}
 
@@ -259,8 +260,75 @@ async def manual_optimize():
             {"description": f["description"] or "", "hs_code": f["actual_value"] or f["predicted_value"] or ""}
             for f in _feedback_store if f.get("actual_value") or f.get("predicted_value")
         ]
+        _log_event("optimization_started", f"{len(examples)} examples")
         result = optimize_hs_classifier(examples)
+        if result:
+            import time
+            global _last_optimize_time
+            _last_optimize_time = time.time()
+            _log_event("optimization_complete", f"Saved to {result}")
+        else:
+            _log_event("optimization_skipped", "Not enough data or DSPy unavailable", "warning")
         return {"status": "optimized" if result else "failed", "path": result, "examples": len(examples)}
     except Exception as e:
         logger.error("manual_optimization_failed", error=str(e))
+        _log_event("optimization_failed", str(e), "error")
         raise HTTPException(500, f"Optimization failed: {str(e)}")
+
+
+# --- Training Stats & HS Code Indexing ---
+
+@router.get("/training-stats")
+async def training_stats():
+    """Статистика обучения: коллекции ChromaDB, feedback, лог."""
+    from app.services.index_manager import get_index_manager, get_training_log
+    from pathlib import Path
+
+    idx = get_index_manager()
+    stats = idx.get_stats()
+
+    # Check for optimized model
+    models_dir = Path(__file__).parent.parent / "ml_models"
+    optimized_hs = (models_dir / "hs_classifier_optimized.json").exists()
+    optimized_invoice = (models_dir / "invoice_extractor_optimized.json").exists()
+
+    return {
+        **stats,
+        "feedback_count": len(_feedback_store),
+        "last_optimize_time": _last_optimize_time or None,
+        "optimized_models": {
+            "hs_classifier": optimized_hs,
+            "invoice_extractor": optimized_invoice,
+        },
+        "log": get_training_log()[-50:],  # last 50 events
+    }
+
+
+class IndexHSCodesRequest(BaseModel):
+    codes: list[dict]  # [{"code": "8501200009", "name_ru": "...", "parent_code": "..."}]
+    force: bool = False
+
+
+@router.post("/index-hs-codes")
+async def index_hs_codes(data: IndexHSCodesRequest):
+    """Индексировать коды ТН ВЭД в ChromaDB."""
+    from app.services.index_manager import get_index_manager, _log_event
+    idx = get_index_manager()
+
+    if not idx._initialized:
+        # Try to init
+        import json
+        from pathlib import Path
+        rules_path = Path(__file__).parent.parent / "rules" / "risk_rules.json"
+        risk_rules = []
+        if rules_path.exists():
+            with open(rules_path) as f:
+                risk_rules = json.load(f)
+        idx.init_indices(risk_rules=risk_rules)
+
+    if not idx._chroma_client:
+        raise HTTPException(500, "ChromaDB not connected")
+
+    _log_event("hs_index_request", f"{len(data.codes)} codes, force={data.force}")
+    result = idx.index_hs_codes(data.codes, force=data.force)
+    return result

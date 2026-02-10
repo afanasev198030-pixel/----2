@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
@@ -36,43 +36,71 @@ const DeclarationEditPage = () => {
   const [snackMsg, setSnackMsg] = useState('');
   const [riskScore, setRiskScore] = useState(0);
   const [riskFlags, setRiskFlags] = useState<any>(null);
-  const [formValues, setFormValues] = useState<any>({});
-  const [formReady, setFormReady] = useState(false);
-  const [initialStepSet, setInitialStepSet] = useState(false);
   const [payments, setPayments] = useState<PaymentResult | null>(null);
 
-  const { register, reset, setValue, getValues } = useForm<any>();
+  // react-hook-form — single source of truth for form state
+  const { register, reset, setValue, getValues, watch } = useForm<any>({
+    defaultValues: {},
+  });
 
-  const { data: decl, refetch: refetchDecl } = useQuery({
+  // Watch classifier fields so ClassifierSelect stays in sync
+  const watchedValues = watch();
+
+  const { data: decl } = useQuery({
     queryKey: ['declaration', id],
     queryFn: () => getDeclaration(id!),
     enabled: !!id,
+    staleTime: 30_000, // don't refetch for 30s
   });
 
   const { data: itemsData, refetch: refetchItems } = useQuery({
     queryKey: ['declaration-items', id],
     queryFn: () => getItems(id!),
     enabled: !!id,
+    staleTime: 10_000,
   });
 
-  const items: DeclarationItem[] = Array.isArray(itemsData) ? itemsData : (itemsData as any)?.items || [];
+  const items: DeclarationItem[] = useMemo(() => {
+    if (Array.isArray(itemsData)) return itemsData;
+    return (itemsData as any)?.items || [];
+  }, [itemsData]);
 
-  // Init form when decl loads (use decl.id as key to detect new data)
-  const [loadedDeclId, setLoadedDeclId] = useState<string>('');
-
-  useEffect(() => {
-    if (decl && decl.id !== loadedDeclId) {
-      reset(decl);
-      setFormValues({ ...decl });
-      setFormReady(true);
-      setLoadedDeclId(decl.id);
-      // Auto-step to review if data exists
-      if (!initialStepSet && (decl.currency_code || decl.total_invoice_value || items.length > 0)) {
-        setActiveStep(1);
-        setInitialStepSet(true);
+  // Convert Decimal strings ("870.000") to numbers for form fields
+  const normalizeDecl = (d: any) => {
+    if (!d) return d;
+    const numFields = ['total_invoice_value','exchange_rate','total_customs_value','total_gross_weight','total_net_weight','spot_amount'];
+    const copy = { ...d };
+    for (const f of numFields) {
+      if (copy[f] !== null && copy[f] !== undefined) {
+        copy[f] = Number(copy[f]) || copy[f];
       }
     }
-  }, [decl, items.length]); // eslint-disable-line
+    return copy;
+  };
+
+  // Init form ONCE when declaration loads
+  const loadedRef = useRef<string>('');
+  const initialStepRef = useRef(false);
+
+  useEffect(() => {
+    if (decl && decl.id !== loadedRef.current) {
+      reset(normalizeDecl(decl));
+      loadedRef.current = decl.id;
+      // Auto-step to review if data already exists
+      if (!initialStepRef.current && (decl.currency_code || decl.total_invoice_value)) {
+        setActiveStep(1);
+        initialStepRef.current = true;
+      }
+    }
+  }, [decl, reset]);
+
+  // Auto-step if items loaded later
+  useEffect(() => {
+    if (!initialStepRef.current && items.length > 0) {
+      setActiveStep(1);
+      initialStepRef.current = true;
+    }
+  }, [items.length]);
 
   // Calculate payments when items change
   useEffect(() => {
@@ -87,31 +115,30 @@ const DeclarationEditPage = () => {
         .then(setPayments)
         .catch(() => {});
     }
-  }, [items, decl?.currency_code]); // eslint-disable-line
+  }, [items, decl?.currency_code, decl?.exchange_rate]); // eslint-disable-line
 
-  const updateField = (field: string, value: string) => {
-    setValue(field, value);
-    setFormValues((p: any) => ({ ...p, [field]: value }));
-  };
+  // Update a classifier field (setValue only, no extra state)
+  const updateField = useCallback((field: string, value: string) => {
+    setValue(field, value, { shouldDirty: true });
+  }, [setValue]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!id) return;
     try {
       const data = getValues();
       await updateDeclaration(id, data);
       setSnackMsg('Сохранено');
-      // Don't refetch — it resets the form
     } catch (e: any) {
       setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
     }
-  };
+  }, [id, getValues]);
 
-  const handleFinish = async () => {
+  const handleFinish = useCallback(async () => {
     await handleSave();
     setActiveStep(2);
-  };
+  }, [handleSave]);
 
-  const handleApplyParsed = async (parsed: any) => {
+  const handleApplyParsed = useCallback(async (parsed: any) => {
     if (!id) return;
     try {
       await client.post(`/declarations/${id}/apply-parsed`, {
@@ -136,19 +163,18 @@ const DeclarationEditPage = () => {
       });
       if (parsed.risk_score) setRiskScore(parsed.risk_score);
       if (parsed.risk_flags) setRiskFlags(parsed.risk_flags);
-      // Refetch and update form — force reload by resetting loadedDeclId
-      setLoadedDeclId('');  // Reset to force useEffect re-init
+      // Reload fresh data from server
       const fresh = await getDeclaration(id);
-      reset(fresh);
-      setFormValues({ ...fresh });
-      setLoadedDeclId(fresh.id);  // Set back
+      reset(normalizeDecl(fresh));
+      loadedRef.current = fresh.id;
+      queryClient.setQueryData(['declaration', id], fresh);
       await refetchItems();
       setSnackMsg('AI заполнил декларацию');
       setActiveStep(1);
     } catch (e: any) {
       setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
     }
-  };
+  }, [id, reset, queryClient, refetchItems]);
 
   if (!decl) return <Container sx={{ py: 4 }}><Typography>Загрузка...</Typography></Container>;
 
@@ -188,7 +214,7 @@ const DeclarationEditPage = () => {
         )}
 
         {/* STEP 1 */}
-        {activeStep === 1 && formReady && (
+        {activeStep === 1 && loadedRef.current && (
           <Grid container spacing={2}>
             <Grid item xs={12} md={8}>
               <Paper sx={{ p: 2, mb: 2 }}>
@@ -196,19 +222,19 @@ const DeclarationEditPage = () => {
                 <Grid container spacing={2}>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тип (1)" {...register('type_code')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Номер (7)" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={formValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label="Валюта (22)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label="Валюта (22)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Сумма (22)" type="number" {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={formValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label="Страна отпр. (15)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={formValues.country_origin_code || ''} onChange={(c) => updateField('country_origin_code', c)} label="Происхождение (16)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={formValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label="Назначение (17)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="incoterms" value={formValues.incoterms_code || ''} onChange={(c) => updateField('incoterms_code', c)} label="Incoterms (20)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label="Страна отпр. (15)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_code || ''} onChange={(c) => updateField('country_origin_code', c)} label="Происхождение (16)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label="Назначение (17)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="incoterms" value={watchedValues.incoterms_code || ''} onChange={(c) => updateField('incoterms_code', c)} label="Incoterms (20)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Город поставки (20)" {...register('delivery_place')} InputLabelProps={{ shrink: true }} placeholder="SHIJIAZHUANG" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Рейс/транспорт (21)" {...register('transport_on_border_id')} InputLabelProps={{ shrink: true }} placeholder="1:U3-9222" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Курс (23)" type="number" {...register('exchange_rate')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="deal_nature" value={formValues.deal_nature_code || ''} onChange={(c) => updateField('deal_nature_code', c)} label="Хар. сделки (24)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="transport_type" value={formValues.transport_type_border || ''} onChange={(c) => updateField('transport_type_border', c)} label="Транспорт (25)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="deal_nature" value={watchedValues.deal_nature_code || ''} onChange={(c) => updateField('deal_nature_code', c)} label="Хар. сделки (24)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="transport_type" value={watchedValues.transport_type_border || ''} onChange={(c) => updateField('transport_type_border', c)} label="Транспорт (25)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Орган въезда (29)" {...register('entry_customs_code')} InputLabelProps={{ shrink: true }} placeholder="10005020" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={formValues.trading_country_code || ''} onChange={(c) => updateField('trading_country_code', c)} label="Торг. страна (11)" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.trading_country_code || ''} onChange={(c) => updateField('trading_country_code', c)} label="Торг. страна (11)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Мест (6)" type="number" {...register('total_packages_count')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Брутто, кг (35)" type="number" {...register('total_gross_weight')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Нетто, кг (38)" type="number" {...register('total_net_weight')} InputLabelProps={{ shrink: true }} /></Grid>

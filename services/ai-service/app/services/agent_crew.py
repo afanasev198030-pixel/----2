@@ -294,6 +294,7 @@ class DeclarationCrew:
             }
 
         # Items из инвойса
+        origin_code = inv.get("country_origin") or (packing.get("items", [{}])[0].get("country_origin") if packing.get("items") else None)
         items = []
         for item_data in inv.get("items", []):
             items.append({
@@ -304,6 +305,7 @@ class DeclarationCrew:
                 "unit": item_data.get("unit"),
                 "unit_price": item_data.get("unit_price"),
                 "line_total": item_data.get("line_total"),
+                "country_origin_code": origin_code,
                 "gross_weight": None,  # будет заполнено из packing
                 "net_weight": None,
             })
@@ -320,6 +322,16 @@ class DeclarationCrew:
                     item["gross_weight"] = round(per_item_gross, 3)
                     item["net_weight"] = round(per_item_net, 3)
 
+        # Transport from AWB — extract AWB number
+        import re as _re
+        transport = parsed_docs.get("transport", {})
+        awb_number = None
+        awb_raw = transport.get("raw_text", "")
+        if awb_raw:
+            awb_match = _re.search(r'(\d{3})[- ]?(\d{8})', awb_raw)
+            if awb_match:
+                awb_number = f"{awb_match.group(1)}-{awb_match.group(2)}"
+
         result = {
             "invoice_number": inv.get("invoice_number"),
             "invoice_date": inv.get("invoice_date"),
@@ -328,7 +340,7 @@ class DeclarationCrew:
             "currency": inv.get("currency"),
             "total_amount": inv.get("total_amount"),
             "incoterms": inv.get("incoterms") or contract.get("incoterms"),
-            "country_origin": inv.get("country_origin"),
+            "country_origin": origin_code or inv.get("country_origin"),
             "country_destination": inv.get("country_destination", "RU"),
             "contract_number": inv.get("contract_number") or contract.get("contract_number"),
             "contract_date": contract.get("contract_date"),
@@ -336,10 +348,12 @@ class DeclarationCrew:
             "package_type": packing.get("package_type"),
             "total_gross_weight": packing.get("total_gross_weight"),
             "total_net_weight": packing.get("total_net_weight"),
+            "transport_type": "40",  # Воздушный (по AWB)
+            "transport_doc_number": awb_number,
             "deal_nature_code": "01",  # Купля-продажа
             "type_code": "IM40",  # Импорт
             "items": items,
-            "documents": [],  # Заполняется при загрузке файлов
+            "documents": [],
         }
 
         return result
