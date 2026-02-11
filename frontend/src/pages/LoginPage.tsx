@@ -14,6 +14,7 @@ import {
   Link,
 } from '@mui/material';
 import { login } from '../api/auth';
+import { useAuth } from '../contexts/AuthContext';
 
 interface LoginForm {
   email: string;
@@ -22,6 +23,7 @@ interface LoginForm {
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const { reload } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -33,6 +35,7 @@ const LoginPage = () => {
     try {
       setError(null);
       await login(data.email, data.password);
+      reload();
       navigate('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Ошибка входа в систему');

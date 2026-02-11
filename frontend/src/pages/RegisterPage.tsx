@@ -6,6 +6,7 @@ import {
   Snackbar, Alert, Link,
 } from '@mui/material';
 import client from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 interface RegisterForm {
   email: string;
@@ -18,6 +19,7 @@ interface RegisterForm {
 
 const RegisterPage = () => {
   const navigate = useNavigate();
+  const { reload } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const {
     register,
@@ -40,6 +42,7 @@ const RegisterPage = () => {
       });
       if (resp.data.access_token) {
         localStorage.setItem('token', resp.data.access_token);
+        reload();
         navigate('/dashboard');
       }
     } catch (err: any) {
