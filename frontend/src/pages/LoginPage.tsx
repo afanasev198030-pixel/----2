@@ -31,7 +31,7 @@ const LoginPage = () => {
     try {
       setError(null);
       await login(data.email, data.password);
-      navigate('/declarations');
+      navigate('/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Ошибка входа в систему');
     }
