@@ -1,8 +1,10 @@
 import uuid
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from pydantic import BaseModel
 import structlog
 
 from app.database import get_db
@@ -137,3 +139,30 @@ async def register(
     )
     
     return UserResponse.model_validate(new_user)
+
+
+class ProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    old_password: Optional[str] = None
+    new_password: Optional[str] = None
+
+
+@router.put("/profile")
+async def update_profile(
+    data: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update current user profile: name and/or password."""
+    if data.full_name is not None:
+        current_user.full_name = data.full_name
+
+    if data.new_password:
+        if not data.old_password:
+            raise HTTPException(status_code=400, detail="Укажите текущий пароль")
+        if not verify_password(data.old_password, current_user.hashed_password):
+            raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+        current_user.hashed_password = get_password_hash(data.new_password)
+
+    await db.commit()
+    return {"status": "updated", "full_name": current_user.full_name}

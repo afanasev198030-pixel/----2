@@ -16,7 +16,7 @@ from pathlib import Path
 # Add parent directories to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_sessionmaker
@@ -189,7 +189,8 @@ async def create_default_company(session: AsyncSession) -> tuple[bool, str]:
     company = Company(
         name="ООО Тест",
         inn="1234567890",
-        country_code="RU"
+        country_code="RU",
+        company_type="broker",
     )
     session.add(company)
     await session.flush()  # Flush to get the company ID
@@ -220,6 +221,12 @@ async def main():
             if company_created:
                 await session.commit()
             print(f"  {company_msg}")
+
+            # Ensure default company is broker type
+            await session.execute(
+                text("UPDATE core.companies SET company_type = 'broker' WHERE inn = '1234567890' AND (company_type IS NULL OR company_type = 'client')")
+            )
+            await session.commit()
             
             # Get company for admin association
             result = await session.execute(

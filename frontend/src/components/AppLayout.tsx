@@ -1,4 +1,4 @@
-import { ReactNode, useMemo } from 'react';
+import { ReactNode, useMemo, useContext } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -13,8 +13,12 @@ import {
   Logout as LogoutIcon,
   NavigateNext as NavNextIcon,
   Home as HomeIcon,
+  Notifications as NotificationsIcon,
+  DarkMode as DarkModeIcon,
+  LightMode as LightModeIcon,
 } from '@mui/icons-material';
 import { getMe, logout } from '../api/auth';
+import { ThemeToggleContext } from '../index';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -32,6 +36,7 @@ const NAV_ITEMS = [
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const themeCtx = useContext(ThemeToggleContext);
 
   const { data: me } = useQuery({
     queryKey: ['me'],
@@ -117,10 +122,21 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
             ))}
           </Box>
 
+          <Tooltip title={themeCtx.mode === 'light' ? 'Тёмная тема' : 'Светлая тема'}>
+            <IconButton color="inherit" size="small" onClick={themeCtx.toggleTheme} sx={{ mr: 0.5 }}>
+              {themeCtx.mode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Уведомления">
+            <IconButton color="inherit" size="small" onClick={() => navigate('/declarations')} sx={{ mr: 0.5 }}>
+              <NotificationsIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           <Chip
             label={me?.full_name || 'Пользователь'}
             avatar={<Avatar sx={{ bgcolor: 'rgba(255,255,255,0.3) !important', color: 'white !important', fontSize: 12, fontWeight: 600 }}>{initials}</Avatar>}
-            sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)', fontWeight: 500, mr: 0.5, display: { xs: 'none', sm: 'flex' } }}
+            onClick={() => navigate('/profile')}
+            sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)', fontWeight: 500, mr: 0.5, display: { xs: 'none', sm: 'flex' }, cursor: 'pointer' }}
             size="small"
           />
           <Tooltip title="Выйти">

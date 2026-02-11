@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Typography,
@@ -48,6 +48,7 @@ import {
   CallReceived as ExportIcon,
   Delete as DeleteIcon,
   PictureAsPdf as PdfIcon,
+  FileDownload as FileDownloadIcon,
 } from '@mui/icons-material';
 import { getDeclarations, createDeclaration, deleteDeclaration } from '../api/declarations';
 import { getMe } from '../api/auth';
@@ -59,15 +60,25 @@ import dayjs from 'dayjs';
 type SortField = 'number_internal' | 'created_at' | 'type_code' | 'status' | 'total_invoice_value';
 type SortOrder = 'asc' | 'desc';
 
+const STATUS_PARAM_MAP: Record<string, string[]> = {
+  in_progress: ['draft', 'checking_lvl1', 'checking_lvl2', 'final_check'],
+  released: ['released'],
+  rejected: ['rejected'],
+};
+
 const DeclarationsListPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const initialStatus = searchParams.get('status') || '';
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(20);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTypeCode, setNewTypeCode] = useState<'IM40' | 'EX10'>('IM40');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string[] | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string[] | null>(
+    initialStatus ? (STATUS_PARAM_MAP[initialStatus] || [initialStatus]) : null,
+  );
   const [sortField, setSortField] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -174,6 +185,19 @@ const DeclarationsListPage = () => {
     } else {
       setSelectedIds(new Set(allIds));
     }
+  };
+
+  const handleExportCSV = () => {
+    const items = filteredAndSortedItems || [];
+    const header = '№;Тип;Статус;Валюта;Сумма;Дата создания\n';
+    const rows = items.map((d: any) =>
+      `${d.number_internal || ''};${d.type_code || ''};${d.status};${d.currency_code || ''};${d.total_invoice_value || ''};${d.created_at?.slice(0, 10) || ''}`
+    ).join('\n');
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'declarations.csv'; a.click();
   };
 
   const handleExportPdf = () => {
@@ -292,6 +316,14 @@ const DeclarationsListPage = () => {
             ),
           }}
         />
+        <Button
+          size="small"
+          onClick={handleExportCSV}
+          startIcon={<FileDownloadIcon />}
+          sx={{ textTransform: 'none', borderRadius: 2 }}
+        >
+          Excel
+        </Button>
         <Button
           variant="contained"
           startIcon={<AddIcon />}

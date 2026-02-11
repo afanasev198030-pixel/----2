@@ -136,6 +136,32 @@ const DeclarationEditPage = () => {
     }
   }, [id, getValues]);
 
+  // Auto-save drafts
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!id || !loadedRef.current) return;
+    // Only auto-save drafts
+    if (decl?.status !== 'draft') return;
+
+    // Debounce 3 seconds
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      try {
+        setAutoSaveStatus('saving');
+        const data = getValues();
+        await updateDeclaration(id, data);
+        setAutoSaveStatus('saved');
+        setTimeout(() => setAutoSaveStatus('idle'), 2000);
+      } catch {
+        setAutoSaveStatus('idle');
+      }
+    }, 3000);
+
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [watchedValues]); // eslint-disable-line
+
   const handleFinish = useCallback(async () => {
     await handleSave();
     setActiveStep(2);
@@ -191,6 +217,8 @@ const DeclarationEditPage = () => {
         <Typography variant="h6" sx={{ flex: 1 }}>{decl.number_internal || 'Новая декларация'} — {decl.type_code || 'IM40'}</Typography>
         <StatusChip status={decl.status} />
         <Button startIcon={<Save />} onClick={handleSave} sx={{ ml: 2 }}>Сохранить</Button>
+        {autoSaveStatus === 'saving' && <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>Сохранение...</Typography>}
+        {autoSaveStatus === 'saved' && <Typography variant="caption" color="success.main" sx={{ ml: 1 }}>Сохранено</Typography>}
         <Button startIcon={<ViewIcon />} onClick={() => navigate(`/declarations/${id}/view`)} sx={{ ml: 1 }} variant="outlined">Просмотр ДТ</Button>
       </Box>
 

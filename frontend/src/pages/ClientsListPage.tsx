@@ -34,6 +34,7 @@ import {
   Search as SearchIcon,
   People as PeopleIcon,
   Visibility as ViewIcon,
+  FileDownload as FileDownloadIcon,
 } from '@mui/icons-material';
 import { getBrokerClients, createBrokerClient, BrokerClient, CreateBrokerClientData } from '../api/broker';
 import AppLayout from '../components/AppLayout';
@@ -106,6 +107,19 @@ const ClientsListPage = () => {
     createMutation.mutate(formData);
   };
 
+  const handleExportCSV = () => {
+    const items = filteredClients || [];
+    const header = 'Название;ИНН;КПП;Контракт;Тариф\n';
+    const rows = items.map((c: BrokerClient) =>
+      `${c.client_company?.name || ''};${c.client_company?.inn || ''};${c.client_company?.kpp || ''};${c.contract_number || ''};${c.tariff_plan || ''}`
+    ).join('\n');
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'clients.csv'; a.click();
+  };
+
   const filteredClients = useMemo(() => {
     if (!clients) return [];
     if (!searchQuery.trim()) return clients;
@@ -141,6 +155,14 @@ const ClientsListPage = () => {
               }}
             />
           </Box>
+          <Button
+            size="small"
+            onClick={handleExportCSV}
+            startIcon={<FileDownloadIcon />}
+            sx={{ textTransform: 'none', borderRadius: 2 }}
+          >
+            Excel
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddIcon />}

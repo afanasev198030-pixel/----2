@@ -8,6 +8,7 @@ import DeclarationsListPage from './pages/DeclarationsListPage';
 import DeclarationEditPage from './pages/DeclarationEditPage';
 import SettingsPage from './pages/SettingsPage';
 import DeclarationViewPage from './pages/DeclarationViewPage';
+import ProfilePage from './pages/ProfilePage';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
         <Route path="/declarations/:id/edit" element={<DeclarationEditPage />} />
         <Route path="/declarations/:id/view" element={<DeclarationViewPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>

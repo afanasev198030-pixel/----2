@@ -113,7 +113,7 @@ const BrokerDashboard = () => {
               transition: 'all 0.2s',
               '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
             }}
-            onClick={() => navigate('/declarations')}
+            onClick={() => navigate('/declarations?status=in_progress')}
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
@@ -130,7 +130,14 @@ const BrokerDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
+          <Card
+            sx={{
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+            }}
+            onClick={() => navigate('/declarations?status=released')}
+          >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
@@ -146,7 +153,14 @@ const BrokerDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
+          <Card
+            sx={{
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+            }}
+            onClick={() => navigate('/declarations?status=rejected')}
+          >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
