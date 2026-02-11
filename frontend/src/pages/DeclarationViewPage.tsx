@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Container, Box, Button, CircularProgress, Typography } from '@mui/material';
-import { Print as PrintIcon, Edit as EditIcon, ArrowBack, PictureAsPdf } from '@mui/icons-material';
+import { Box, Button, CircularProgress, Typography } from '@mui/material';
+import { Print as PrintIcon, Edit as EditIcon, PictureAsPdf } from '@mui/icons-material';
+import AppLayout from '../components/AppLayout';
 import client from '../api/client';
 import { calculatePayments, PaymentResult } from '../api/calc';
 
@@ -54,8 +55,8 @@ const DeclarationViewPage = () => {
     if (id) load();
   }, [id]);
 
-  if (loading) return <Container sx={{ py: 4, textAlign: 'center' }}><CircularProgress /></Container>;
-  if (!decl) return <Container sx={{ py: 4 }}><Typography>Не найдена</Typography></Container>;
+  if (loading) return <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}><Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box></AppLayout>;
+  if (!decl) return <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}><Typography sx={{ py: 4 }}>Не найдена</Typography></AppLayout>;
 
   const f = (v: any) => v || '';
   const num = (v: any, d = 2) => v ? Number(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }) : '';
@@ -63,9 +64,8 @@ const DeclarationViewPage = () => {
   const totals = payments?.totals;
 
   return (
-    <Container maxWidth="lg" sx={{ py: 2 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }} className="no-print">
-        <Button startIcon={<ArrowBack />} onClick={() => navigate('/declarations')}>Назад</Button>
+    <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }} className="no-print">
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button variant="outlined" startIcon={<EditIcon />} onClick={() => navigate(`/declarations/${id}/edit`)}>Редактировать</Button>
           <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={async () => {
@@ -232,7 +232,7 @@ const DeclarationViewPage = () => {
       <style>{`
         @media print { .no-print { display: none !important; } body { margin: 0; padding: 0; } }
       `}</style>
-    </Container>
+    </AppLayout>
   );
 };
 

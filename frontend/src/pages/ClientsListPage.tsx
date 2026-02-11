@@ -2,8 +2,6 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  AppBar,
-  Toolbar,
   Typography,
   Button,
   Box,
@@ -28,24 +26,17 @@ import {
   Select,
   MenuItem,
   Tooltip,
-  Avatar,
   Snackbar,
   Alert,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
   Add as AddIcon,
   Search as SearchIcon,
   People as PeopleIcon,
-  Edit as EditIcon,
   Visibility as ViewIcon,
-  Dashboard as DashboardIcon,
-  Description as DeclarationsIcon,
-  Settings as SettingsIcon,
-  Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { getBrokerClients, createBrokerClient, BrokerClient, CreateBrokerClientData } from '../api/broker';
-import { logout, getMe } from '../api/auth';
+import AppLayout from '../components/AppLayout';
 
 const tariffLabels: Record<string, { label: string; bg: string; color: string }> = {
   basic: { label: 'Базовый', bg: '#f5f5f5', color: '#616161' },
@@ -75,11 +66,6 @@ const ClientsListPage = () => {
     tariff_plan: 'standard',
   });
 
-  const { data: meData } = useQuery({
-    queryKey: ['me'],
-    queryFn: getMe,
-  });
-
   const { data: clients, isLoading } = useQuery({
     queryKey: ['broker-clients'],
     queryFn: getBrokerClients,
@@ -102,11 +88,6 @@ const ClientsListPage = () => {
       });
     },
   });
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const resetForm = () => {
     setFormData({
@@ -137,84 +118,12 @@ const ClientsListPage = () => {
     });
   }, [clients, searchQuery]);
 
-  const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
-    { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" /> },
-    { label: 'Декларации', path: '/declarations', icon: <DeclarationsIcon fontSize="small" /> },
-    { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" /> },
-  ];
-
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  };
-
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f5f7fa' }}>
-      {/* Header */}
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
-        <Toolbar sx={{ px: { xs: 2, md: 4 } }}>
-          <Box
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: 2,
-              background: 'rgba(255,255,255,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              mr: 2,
-            }}
-          >
-            <Typography sx={{ color: 'white', fontWeight: 700, fontSize: 14 }}>ТД</Typography>
-          </Box>
-          <Typography variant="h6" sx={{ fontWeight: 700, mr: 4 }}>
-            Клиенты
-          </Typography>
-
-          <Box sx={{ display: 'flex', gap: 0.5, flexGrow: 1 }}>
-            {navItems.map((item) => (
-              <Button
-                key={item.path}
-                startIcon={item.icon}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  color: 'white',
-                  textTransform: 'none',
-                  fontWeight: item.path === '/clients' ? 700 : 400,
-                  bgcolor: item.path === '/clients' ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  borderRadius: 2,
-                  px: 2,
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </Box>
-
-          <Tooltip title={meData?.full_name || 'Пользователь'}>
-            <IconButton color="inherit" sx={{ ml: 1 }}>
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(255,255,255,0.2)', fontSize: 14, fontWeight: 600 }}>
-                {meData?.full_name ? getInitials(meData.full_name) : 'А'}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Выйти">
-            <IconButton color="inherit" onClick={handleLogout} sx={{ ml: 0.5 }}>
-              <LogoutIcon />
-            </IconButton>
-          </Tooltip>
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ px: { xs: 2, md: 4 }, py: 3, maxWidth: 1400, mx: 'auto' }}>
-        {/* Toolbar */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2, flexWrap: 'wrap' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1 }}>
-            <IconButton onClick={() => navigate('/dashboard')} sx={{ bgcolor: 'white', boxShadow: 1 }}>
-              <ArrowBackIcon />
-            </IconButton>
-            <TextField
+    <AppLayout breadcrumbs={[{ label: 'Клиенты' }]}>
+      {/* Toolbar */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexGrow: 1 }}>
+          <TextField
               size="small"
               placeholder="Поиск по названию, ИНН, контракту..."
               value={searchQuery}
@@ -362,7 +271,6 @@ const ClientsListPage = () => {
             </TableBody>
           </Table>
         </TableContainer>
-      </Box>
 
       {/* Create Client Dialog */}
       <Dialog
@@ -468,7 +376,7 @@ const ClientsListPage = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </AppLayout>
   );
 };
 

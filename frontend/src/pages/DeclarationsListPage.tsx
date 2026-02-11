@@ -2,8 +2,6 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  AppBar,
-  Toolbar,
   Typography,
   Button,
   Box,
@@ -29,7 +27,6 @@ import {
   CardContent,
   TextField,
   InputAdornment,
-  Avatar,
   Tooltip,
   Skeleton,
   TablePagination,
@@ -37,7 +34,6 @@ import {
   Checkbox,
 } from '@mui/material';
 import {
-  AccountCircle,
   Add as AddIcon,
   Search as SearchIcon,
   WorkOutline as WorkIcon,
@@ -48,14 +44,14 @@ import {
   ContentCopy as CopyIcon,
   Print as PrintIcon,
   MoreVert as MoreVertIcon,
-  TrendingUp as TrendingUpIcon,
   CallMade as ImportIcon,
   CallReceived as ExportIcon,
   Delete as DeleteIcon,
   PictureAsPdf as PdfIcon,
 } from '@mui/icons-material';
 import { getDeclarations, createDeclaration, deleteDeclaration } from '../api/declarations';
-import { logout, getMe } from '../api/auth';
+import { getMe } from '../api/auth';
+import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import { Declaration } from '../types';
 import dayjs from 'dayjs';
@@ -68,7 +64,6 @@ const DeclarationsListPage = () => {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(20);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newTypeCode, setNewTypeCode] = useState<'IM40' | 'EX10'>('IM40');
   const [searchQuery, setSearchQuery] = useState('');
@@ -112,11 +107,6 @@ const DeclarationsListPage = () => {
       console.error('Delete declaration error:', err?.response?.data || err);
     },
   });
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const handleCreate = () => {
     if (!meData?.company_id) return;
@@ -275,10 +265,6 @@ const DeclarationsListPage = () => {
     };
   }, [data?.items]);
 
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  };
-
   const isMetricActive = (statuses: string[] | null) => {
     if (statusFilter === null && statuses === null) return true;
     if (statusFilter === null || statuses === null) return false;
@@ -286,81 +272,37 @@ const DeclarationsListPage = () => {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* Header */}
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
-        <Toolbar sx={{ px: { xs: 2, md: 4 } }}>
-          <Typography variant="h6" sx={{ flexGrow: 0, mr: 4, fontWeight: 700 }}>
-            Таможенные декларации
-          </Typography>
+    <AppLayout breadcrumbs={[{ label: 'Декларации' }]}>
+      {/* Search and Create */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2 }}>
+        <TextField
+          size="small"
+          placeholder="Поиск по номеру, ИНН, контрагенту..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          sx={{
+            width: { xs: '100%', sm: 400 },
+            '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' },
+          }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+        />
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setCreateDialogOpen(true)}
+          sx={{ fontWeight: 600, borderRadius: 2, px: 3, textTransform: 'none' }}
+        >
+          Создать
+        </Button>
+      </Box>
 
-          <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', maxWidth: 500, mx: 'auto' }}>
-            <TextField
-              size="small"
-              placeholder="Поиск по номеру, ИНН, контрагенту..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{
-                width: '100%',
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'rgba(255,255,255,0.15)',
-                  borderRadius: 2,
-                  color: 'white',
-                  '& fieldset': { border: 'none' },
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' },
-                  '&.Mui-focused': { bgcolor: 'rgba(255,255,255,0.25)' },
-                },
-                '& .MuiInputAdornment-root': { color: 'rgba(255,255,255,0.7)' },
-                '& input::placeholder': { color: 'rgba(255,255,255,0.7)', opacity: 1 },
-              }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon />
-                  </InputAdornment>
-                ),
-              }}
-            />
-          </Box>
-
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setCreateDialogOpen(true)}
-            sx={{
-              ml: 2,
-              bgcolor: 'white',
-              color: 'primary.main',
-              fontWeight: 600,
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
-              boxShadow: 'none',
-            }}
-          >
-            Создать
-          </Button>
-
-          <Tooltip title={meData?.full_name || 'Пользователь'}>
-            <IconButton color="inherit" onClick={(e) => setAnchorEl(e.currentTarget)} sx={{ ml: 1 }}>
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(255,255,255,0.2)', fontSize: 14, fontWeight: 600 }}>
-                {meData?.full_name ? getInitials(meData.full_name) : 'А'}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-          <Menu anchorEl={anchorEl} open={!!anchorEl} onClose={() => setAnchorEl(null)}>
-            <MenuItem disabled sx={{ opacity: '1 !important' }}>
-              <Typography variant="body2" fontWeight={600}>{meData?.full_name || 'Пользователь'}</Typography>
-            </MenuItem>
-            <MenuItem disabled sx={{ opacity: '0.7 !important' }}>
-              <Typography variant="caption">{meData?.email}</Typography>
-            </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); navigate('/settings'); }}>Настройки</MenuItem>
-            <MenuItem onClick={handleLogout}>Выйти</MenuItem>
-          </Menu>
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ px: { xs: 2, md: 4 }, py: 3, maxWidth: 1400, mx: 'auto' }}>
-        {/* Metrics */}
+      {/* Metrics */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
           <Card
             onClick={() => handleMetricClick(null)}
@@ -699,7 +641,6 @@ const DeclarationsListPage = () => {
             Удалить
           </MenuItem>
         </Menu>
-      </Box>
 
       {/* Create dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} PaperProps={{ sx: { borderRadius: 3, minWidth: 400 } }}>
@@ -724,7 +665,7 @@ const DeclarationsListPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </AppLayout>
   );
 };
 

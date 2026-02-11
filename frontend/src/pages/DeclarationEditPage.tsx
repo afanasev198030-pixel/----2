@@ -3,14 +3,15 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import {
-  Box, AppBar, Toolbar, Typography, Button, Container,
+  Box, Typography, Button, Container,
   Stepper, Step, StepLabel, Paper, TextField, Grid,
   IconButton, Chip, Alert, Snackbar, Divider,
 } from '@mui/material';
 import {
-  ArrowBack, Save, AutoAwesome as AiIcon,
+  Save, AutoAwesome as AiIcon,
   Visibility as ViewIcon, Delete as DeleteIcon,
 } from '@mui/icons-material';
+import AppLayout from '../components/AppLayout';
 import {
   getDeclaration, updateDeclaration,
 } from '../api/declarations';
@@ -184,16 +185,14 @@ const DeclarationEditPage = () => {
   const num = (v: any, d = 2) => v ? Number(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f5f6fa' }}>
-      <AppBar position="static" color="default" elevation={1}>
-        <Toolbar>
-          <IconButton onClick={() => navigate('/declarations')} sx={{ mr: 1 }}><ArrowBack /></IconButton>
-          <Typography variant="h6" sx={{ flex: 1 }}>{decl.number_internal || 'Новая декларация'} — {decl.type_code || 'IM40'}</Typography>
-          <StatusChip status={decl.status} />
-          <Button startIcon={<Save />} onClick={handleSave} sx={{ ml: 2 }}>Сохранить</Button>
-          <Button startIcon={<ViewIcon />} onClick={() => navigate(`/declarations/${id}/view`)} sx={{ ml: 1 }} variant="outlined">Просмотр ДТ</Button>
-        </Toolbar>
-      </AppBar>
+    <AppLayout noPadding breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Редактирование' }]}>
+      {/* Action toolbar */}
+      <Box sx={{ px: { xs: 2, md: 4 }, py: 1, display: 'flex', alignItems: 'center', gap: 1, maxWidth: 1400, mx: 'auto' }}>
+        <Typography variant="h6" sx={{ flex: 1 }}>{decl.number_internal || 'Новая декларация'} — {decl.type_code || 'IM40'}</Typography>
+        <StatusChip status={decl.status} />
+        <Button startIcon={<Save />} onClick={handleSave} sx={{ ml: 2 }}>Сохранить</Button>
+        <Button startIcon={<ViewIcon />} onClick={() => navigate(`/declarations/${id}/view`)} sx={{ ml: 1 }} variant="outlined">Просмотр ДТ</Button>
+      </Box>
 
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <Stepper activeStep={activeStep} sx={{ mb: 3 }}>
@@ -354,7 +353,7 @@ const DeclarationEditPage = () => {
         )}
       </Container>
       <Snackbar open={!!snackMsg} autoHideDuration={4000} onClose={() => setSnackMsg('')} message={snackMsg} />
-    </Box>
+    </AppLayout>
   );
 };
 

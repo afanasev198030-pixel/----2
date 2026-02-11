@@ -2,8 +2,6 @@ import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AppBar,
-  Toolbar,
   Typography,
   Button,
   Box,
@@ -20,30 +18,24 @@ import {
   CardContent,
   Skeleton,
   Tooltip,
-  Avatar,
   Divider,
   Grid,
 } from '@mui/material';
 import {
-  ArrowBack as ArrowBackIcon,
   Add as AddIcon,
-  People as PeopleIcon,
   Business as BusinessIcon,
   Phone as PhoneIcon,
   Email as EmailIcon,
   Description as DescriptionIcon,
   CalendarToday as CalendarIcon,
   WorkOutline as WorkIcon,
-  Dashboard as DashboardIcon,
-  Settings as SettingsIcon,
-  Logout as LogoutIcon,
   CallMade as ImportIcon,
   CallReceived as ExportIcon,
   OpenInNew as OpenIcon,
 } from '@mui/icons-material';
 import { getBrokerClient } from '../api/broker';
 import { getDeclarations } from '../api/declarations';
-import { logout, getMe } from '../api/auth';
+import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import { Declaration } from '../types';
 import dayjs from 'dayjs';
@@ -58,11 +50,6 @@ const ClientDetailPage = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
 
-  const { data: meData } = useQuery({
-    queryKey: ['me'],
-    queryFn: getMe,
-  });
-
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ['broker-client', id],
     queryFn: () => getBrokerClient(id!),
@@ -74,11 +61,6 @@ const ClientDetailPage = () => {
     queryFn: () => getDeclarations({ page: 1, page_size: 50, company_id: client?.client_company_id }),
     enabled: !!client?.client_company_id,
   });
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const declarations = useMemo(() => {
     return declarationsData?.items || [];
@@ -97,16 +79,7 @@ const ClientDetailPage = () => {
 
   const tariff = tariffLabels[client?.tariff_plan || 'basic'] || tariffLabels.basic;
 
-  const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
-    { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" /> },
-    { label: 'Декларации', path: '/declarations', icon: <DescriptionIcon fontSize="small" /> },
-    { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" /> },
-  ];
-
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  };
+  const clientName = client?.client_company?.name || 'Клиент';
 
   const handleCreateDeclaration = () => {
     // Navigate to declarations page — the company_id will be pre-set
@@ -114,72 +87,11 @@ const ClientDetailPage = () => {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f5f7fa' }}>
-      {/* Header */}
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
-        <Toolbar sx={{ px: { xs: 2, md: 4 } }}>
-          <Box
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: 2,
-              background: 'rgba(255,255,255,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              mr: 2,
-            }}
-          >
-            <Typography sx={{ color: 'white', fontWeight: 700, fontSize: 14 }}>ТД</Typography>
-          </Box>
-          <Typography variant="h6" sx={{ fontWeight: 700, mr: 4 }}>
-            Карточка клиента
-          </Typography>
-
-          <Box sx={{ display: 'flex', gap: 0.5, flexGrow: 1 }}>
-            {navItems.map((item) => (
-              <Button
-                key={item.path}
-                startIcon={item.icon}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  color: 'white',
-                  textTransform: 'none',
-                  fontWeight: item.path === '/clients' ? 700 : 400,
-                  bgcolor: item.path === '/clients' ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  borderRadius: 2,
-                  px: 2,
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </Box>
-
-          <Tooltip title={meData?.full_name || 'Пользователь'}>
-            <IconButton color="inherit" sx={{ ml: 1 }}>
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(255,255,255,0.2)', fontSize: 14, fontWeight: 600 }}>
-                {meData?.full_name ? getInitials(meData.full_name) : 'А'}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Выйти">
-            <IconButton color="inherit" onClick={handleLogout} sx={{ ml: 0.5 }}>
-              <LogoutIcon />
-            </IconButton>
-          </Tooltip>
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ px: { xs: 2, md: 4 }, py: 3, maxWidth: 1400, mx: 'auto' }}>
-        {/* Back + Actions */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton onClick={() => navigate('/clients')} sx={{ bgcolor: 'white', boxShadow: 1 }}>
-              <ArrowBackIcon />
-            </IconButton>
-            <Box>
+    <AppLayout breadcrumbs={[{ label: 'Клиенты', path: '/clients' }, { label: clientName }]}>
+      {/* Header + Actions */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box>
               {clientLoading ? (
                 <Skeleton width={250} height={32} />
               ) : (
@@ -457,8 +369,7 @@ const ClientDetailPage = () => {
             </Table>
           </TableContainer>
         </Paper>
-      </Box>
-    </Box>
+    </AppLayout>
   );
 };
 

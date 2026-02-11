@@ -1,9 +1,7 @@
 import { useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AppBar,
-  Toolbar,
   Typography,
   Button,
   Box,
@@ -18,9 +16,6 @@ import {
   CardContent,
   Skeleton,
   Chip,
-  Avatar,
-  IconButton,
-  Tooltip,
   Divider,
 } from '@mui/material';
 import {
@@ -28,24 +23,20 @@ import {
   WorkOutline as WorkIcon,
   CheckCircleOutline as CheckIcon,
   ErrorOutline as ErrorIcon,
-  Dashboard as DashboardIcon,
-  Description as DeclarationsIcon,
-  Settings as SettingsIcon,
   ArrowForward as ArrowForwardIcon,
-  Logout as LogoutIcon,
   CallMade as ImportIcon,
   CallReceived as ExportIcon,
 } from '@mui/icons-material';
 import { getDeclarations } from '../api/declarations';
 import { getBrokerClients, BrokerClient } from '../api/broker';
-import { logout, getMe } from '../api/auth';
+import { getMe } from '../api/auth';
+import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import { Declaration } from '../types';
 import dayjs from 'dayjs';
 
 const BrokerDashboard = () => {
   const navigate = useNavigate();
-  const location = useLocation();
 
   const { data: meData } = useQuery({
     queryKey: ['me'],
@@ -61,11 +52,6 @@ const BrokerDashboard = () => {
     queryKey: ['broker-clients'],
     queryFn: getBrokerClients,
   });
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
 
   const metrics = useMemo(() => {
     const items = declarationsData?.items || [];
@@ -86,83 +72,9 @@ const BrokerDashboard = () => {
       .slice(0, 10);
   }, [declarationsData?.items]);
 
-  const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
-    { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" /> },
-    { label: 'Декларации', path: '/declarations', icon: <DeclarationsIcon fontSize="small" /> },
-    { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" /> },
-  ];
-
-  const isActive = (path: string) => {
-    if (path === '/dashboard') return location.pathname === '/' || location.pathname === '/dashboard';
-    return location.pathname.startsWith(path);
-  };
-
-  const getInitials = (name: string) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  };
-
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f5f7fa' }}>
-      {/* Header */}
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
-        <Toolbar sx={{ px: { xs: 2, md: 4 } }}>
-          <Box
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: 2,
-              background: 'rgba(255,255,255,0.2)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              mr: 2,
-            }}
-          >
-            <Typography sx={{ color: 'white', fontWeight: 700, fontSize: 14 }}>ТД</Typography>
-          </Box>
-          <Typography variant="h6" sx={{ fontWeight: 700, mr: 4 }}>
-            Панель брокера
-          </Typography>
-
-          <Box sx={{ display: 'flex', gap: 0.5, flexGrow: 1 }}>
-            {navItems.map((item) => (
-              <Button
-                key={item.path}
-                startIcon={item.icon}
-                onClick={() => navigate(item.path)}
-                sx={{
-                  color: 'white',
-                  textTransform: 'none',
-                  fontWeight: isActive(item.path) ? 700 : 400,
-                  bgcolor: isActive(item.path) ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  borderRadius: 2,
-                  px: 2,
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </Box>
-
-          <Tooltip title={meData?.full_name || 'Пользователь'}>
-            <IconButton color="inherit" sx={{ ml: 1 }}>
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(255,255,255,0.2)', fontSize: 14, fontWeight: 600 }}>
-                {meData?.full_name ? getInitials(meData.full_name) : 'А'}
-              </Avatar>
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Выйти">
-            <IconButton color="inherit" onClick={handleLogout} sx={{ ml: 0.5 }}>
-              <LogoutIcon />
-            </IconButton>
-          </Tooltip>
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ px: { xs: 2, md: 4 }, py: 3, maxWidth: 1400, mx: 'auto' }}>
-        {/* Welcome */}
+    <AppLayout>
+      {/* Welcome */}
         <Typography variant="h5" fontWeight={700} gutterBottom>
           Добро пожаловать{meData?.full_name ? `, ${meData.full_name.split(' ')[0]}` : ''}
         </Typography>
@@ -457,8 +369,7 @@ const BrokerDashboard = () => {
             </TableContainer>
           </Paper>
         </Box>
-      </Box>
-    </Box>
+    </AppLayout>
   );
 };
 

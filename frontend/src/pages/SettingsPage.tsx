@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Container, Paper, Typography, TextField, Button, Box, Alert,
+  Paper, Typography, TextField, Button, Box, Alert,
   Chip, Divider, IconButton, InputAdornment, CircularProgress,
   Card, CardContent, Grid, LinearProgress,
 } from '@mui/material';
+import AppLayout from '../components/AppLayout';
 import {
   Visibility, VisibilityOff, Save as SaveIcon,
   CheckCircle as CheckIcon, Error as ErrorIcon,
@@ -158,7 +159,7 @@ const SettingsPage = () => {
   }, [trainingStats?.ai?.log?.length]);
 
   if (loading) {
-    return <Container maxWidth="md" sx={{ py: 4, textAlign: 'center' }}><CircularProgress /></Container>;
+    return <AppLayout breadcrumbs={[{ label: 'Настройки' }]}><Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box></AppLayout>;
   }
 
   const aiStats = trainingStats?.ai;
@@ -172,7 +173,7 @@ const SettingsPage = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
+    <AppLayout breadcrumbs={[{ label: 'Настройки' }]}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
         <SettingsIcon color="primary" />
         <Typography variant="h5" fontWeight={600}>Настройки системы</Typography>
@@ -436,7 +437,7 @@ const SettingsPage = () => {
           <Button variant="outlined" onClick={handleSaveModel}>Применить</Button>
         </Box>
       </Paper>
-    </Container>
+    </AppLayout>
   );
 };
 
