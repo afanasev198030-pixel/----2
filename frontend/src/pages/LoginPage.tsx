@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { Link as RouterLink } from 'react-router-dom';
 import {
   Card,
   CardContent,
@@ -10,6 +11,7 @@ import {
   Box,
   Snackbar,
   Alert,
+  Link,
 } from '@mui/material';
 import { login } from '../api/auth';
 
@@ -97,6 +99,14 @@ const LoginPage = () => {
                 {isSubmitting ? 'Вход...' : 'Войти'}
               </Button>
             </form>
+            <Box sx={{ textAlign: 'center', mt: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Нет аккаунта?{' '}
+                <Link component={RouterLink} to="/register" underline="hover">
+                  Зарегистрироваться
+                </Link>
+              </Typography>
+            </Box>
           </CardContent>
         </Card>
       </Box>

@@ -17,3 +17,11 @@ class RegisterRequest(BaseModel):
     full_name: str
     role: str = "ved_specialist"
     company_id: str | None = None
+
+
+class PublicRegisterRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=6)
+    full_name: str
+    phone: str | None = None
+    company_name: str | None = None

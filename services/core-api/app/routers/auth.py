@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -15,8 +15,8 @@ from app.middleware.auth import (
     get_current_user,
     require_role,
 )
-from app.models import User, UserRole
-from app.schemas import LoginRequest, TokenResponse, RegisterRequest, UserResponse
+from app.models import User, UserRole, Company
+from app.schemas import LoginRequest, TokenResponse, RegisterRequest, PublicRegisterRequest, UserResponse
 
 logger = structlog.get_logger()
 
@@ -26,40 +26,32 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 @router.post("/login", response_model=TokenResponse)
 async def login(
     credentials: LoginRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Login endpoint - accepts email and password, returns JWT token."""
-    # Query user by email
+    from app.services.audit import log_action
+
     result = await db.execute(select(User).where(User.email == credentials.email))
     user = result.scalar_one_or_none()
-    
+
     if not user:
-        logger.warning("login_failed", email=credentials.email, reason="user_not_found")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-        )
-    
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный email или пароль")
+
     if not user.is_active:
-        logger.warning("login_failed", email=credentials.email, reason="user_inactive")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User account is inactive",
-        )
-    
-    # Verify password
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Аккаунт деактивирован")
+
     if not verify_password(credentials.password, user.hashed_password):
-        logger.warning("login_failed", email=credentials.email, reason="invalid_password")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-        )
-    
-    # Create access token
+        await log_action(db, user.id, "login_failed", details={"reason": "invalid_password"}, request=request)
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный email или пароль")
+
     access_token = create_access_token(data={"sub": str(user.id)})
-    
+
+    await log_action(db, user.id, "login", resource_type="user", resource_id=str(user.id), request=request)
+    await db.commit()
+
     logger.info("user_logged_in", user_id=str(user.id), email=user.email)
-    
     return TokenResponse(access_token=access_token, token_type="bearer")
 
 
@@ -139,6 +131,64 @@ async def register(
     )
     
     return UserResponse.model_validate(new_user)
+
+
+@router.post("/register-public", response_model=TokenResponse)
+async def register_public(
+    data: PublicRegisterRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Public registration — anyone can register as a client."""
+    from app.services.audit import log_action
+
+    # Check uniqueness
+    result = await db.execute(select(User).where(User.email == data.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Пользователь с таким email уже существует",
+        )
+
+    # Create company if provided
+    company_id = None
+    if data.company_name and data.company_name.strip():
+        company = Company(
+            name=data.company_name.strip(),
+            company_type="client",
+        )
+        db.add(company)
+        await db.flush()
+        company_id = company.id
+
+    # Create user with client role
+    new_user = User(
+        email=data.email,
+        hashed_password=get_password_hash(data.password),
+        full_name=data.full_name,
+        phone=data.phone,
+        role=UserRole.CLIENT.value,
+        company_id=company_id,
+        is_active=True,
+    )
+    db.add(new_user)
+    await db.flush()
+
+    # Audit log
+    await log_action(
+        db, new_user.id, "register",
+        resource_type="user", resource_id=str(new_user.id),
+        details={"email": data.email, "company_name": data.company_name},
+        request=request,
+    )
+    await db.commit()
+
+    # Auto-login: return token
+    access_token = create_access_token(data={"sub": str(new_user.id)})
+
+    logger.info("user_registered_public", user_id=str(new_user.id), email=data.email)
+
+    return TokenResponse(access_token=access_token, token_type="bearer")
 
 
 class ProfileUpdate(BaseModel):

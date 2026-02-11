@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.orm import selectinload
@@ -121,6 +121,7 @@ async def list_declarations(
 @router.post("/", response_model=DeclarationResponse, status_code=status.HTTP_201_CREATED)
 async def create_declaration(
     data: DeclarationCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -186,6 +187,12 @@ async def create_declaration(
         new_value={"status": "draft", "type_code": data.type_code},
     )
     db.add(log_entry)
+
+    # Audit log
+    from app.services.audit import log_action
+    await log_action(db, current_user.id, "create_declaration",
+        resource_type="declaration", resource_id=str(declaration.id),
+        details={"type_code": data.type_code}, request=request)
     await db.commit()
     
     # Re-fetch with relationships
@@ -245,6 +252,7 @@ async def get_declaration(
 async def update_declaration(
     id: uuid.UUID,
     data: DeclarationUpdate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -302,6 +310,11 @@ async def update_declaration(
             new_value={k: v["new"] for k, v in changed_fields.items()},
         )
         db.add(log_entry)
+
+        from app.services.audit import log_action
+        await log_action(db, current_user.id, "update_declaration",
+            resource_type="declaration", resource_id=str(id),
+            details={"changed": list(changed_fields.keys())}, request=request)
     await db.commit()
     
     # Re-fetch with relationships

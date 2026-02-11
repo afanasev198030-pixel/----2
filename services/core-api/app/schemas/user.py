@@ -14,8 +14,11 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    company_id: Optional[uuid.UUID] = None
 
 
 class UserResponse(BaseModel):
@@ -24,6 +27,7 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: str
     full_name: Optional[str]
+    phone: Optional[str] = None
     role: str
     company_id: Optional[uuid.UUID]
     is_active: bool

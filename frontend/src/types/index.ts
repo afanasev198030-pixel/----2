@@ -2,7 +2,8 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
-  role: 'ved_specialist' | 'head' | 'accountant' | 'lawyer' | 'broker' | 'admin';
+  phone?: string;
+  role: 'client' | 'ved_specialist' | 'head' | 'accountant' | 'lawyer' | 'broker' | 'admin';
   company_id: string;
   is_active: boolean;
   created_at: string;

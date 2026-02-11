@@ -19,13 +19,28 @@ router = APIRouter(prefix="/api/v1/users", tags=["users"])
 async def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    search: Optional[str] = Query(None),
+    role: Optional[str] = Query(None),
+    is_active: Optional[bool] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
-    """List users (admin only)."""
-    # Build query
+    """List users (admin only) with search and filters."""
+    from sqlalchemy import or_
     query = select(User)
     count_query = select(func.count()).select_from(User)
+
+    if search:
+        s = f"%{search}%"
+        flt = or_(User.email.ilike(s), User.full_name.ilike(s))
+        query = query.where(flt)
+        count_query = count_query.where(flt)
+    if role:
+        query = query.where(User.role == role)
+        count_query = count_query.where(User.role == role)
+    if is_active is not None:
+        query = query.where(User.is_active == is_active)
+        count_query = count_query.where(User.is_active == is_active)
     
     # Get total count
     total_result = await db.execute(count_query)
@@ -99,6 +114,20 @@ async def create_user(
     )
     
     return UserResponse.model_validate(new_user)
+
+
+@router.get("/{id}", response_model=UserResponse)
+async def get_user(
+    id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Get user details (admin only)."""
+    result = await db.execute(select(User).where(User.id == id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return UserResponse.model_validate(user)
 
 
 @router.put("/{id}", response_model=UserResponse)

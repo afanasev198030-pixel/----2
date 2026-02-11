@@ -1,4 +1,4 @@
-from .auth import LoginRequest, TokenResponse, RegisterRequest
+from .auth import LoginRequest, TokenResponse, RegisterRequest, PublicRegisterRequest
 from .user import UserCreate, UserUpdate, UserResponse
 from .company import CompanyCreate, CompanyUpdate, CompanyResponse
 from .counterparty import CounterpartyCreate, CounterpartyUpdate, CounterpartyResponse
@@ -24,6 +24,7 @@ __all__ = [
     "LoginRequest",
     "TokenResponse",
     "RegisterRequest",
+    "PublicRegisterRequest",
     # User
     "UserCreate",
     "UserUpdate",

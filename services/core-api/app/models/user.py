@@ -10,6 +10,7 @@ from .base import Base
 
 
 class UserRole(str, PyEnum):
+    CLIENT = "client"
     VED_SPECIALIST = "ved_specialist"
     HEAD = "head"
     ACCOUNTANT = "accountant"
@@ -32,6 +33,7 @@ class User(Base):
     company_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.companies.id"), nullable=True
     )
+    phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

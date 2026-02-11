@@ -7,6 +7,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { ruRU } from '@mui/material/locale';
 import { createTheme } from '@mui/material/styles';
 import App from './App';
+import { AuthProvider } from './contexts/AuthContext';
 import { lightTheme, darkTheme } from './theme';
 
 export const ThemeToggleContext = createContext({
@@ -45,7 +46,9 @@ const Root = () => {
         <BrowserRouter>
           <ThemeProvider theme={theme}>
             <CssBaseline />
-            <App />
+            <AuthProvider>
+              <App />
+            </AuthProvider>
           </ThemeProvider>
         </BrowserRouter>
       </QueryClientProvider>

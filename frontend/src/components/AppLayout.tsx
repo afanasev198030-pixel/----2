@@ -18,6 +18,7 @@ import {
   LightMode as LightModeIcon,
 } from '@mui/icons-material';
 import { getMe, logout } from '../api/auth';
+import { useAuth } from '../contexts/AuthContext';
 import { ThemeToggleContext } from '../index';
 
 interface AppLayoutProps {
@@ -26,6 +27,11 @@ interface AppLayoutProps {
   noPadding?: boolean;
 }
 
+import {
+  AdminPanelSettings as AdminIcon,
+  History as AuditIcon,
+} from '@mui/icons-material';
+
 const NAV_ITEMS = [
   { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
   { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" /> },
@@ -33,10 +39,16 @@ const NAV_ITEMS = [
   { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" /> },
 ];
 
+const ADMIN_NAV_ITEMS = [
+  { label: 'Пользователи', path: '/admin/users', icon: <AdminIcon fontSize="small" /> },
+  { label: 'Аудит-лог', path: '/admin/audit', icon: <AuditIcon fontSize="small" /> },
+];
+
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const themeCtx = useContext(ThemeToggleContext);
+  const { isAdmin } = useAuth();
 
   const { data: me } = useQuery({
     queryKey: ['me'],
@@ -120,6 +132,30 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
                 {item.label}
               </Button>
             ))}
+            {isAdmin && (
+              <>
+                <Box sx={{ width: 1, height: 20, borderLeft: '1px solid rgba(255,255,255,0.3)', mx: 0.5 }} />
+                {ADMIN_NAV_ITEMS.map((item) => (
+                  <Button
+                    key={item.path}
+                    startIcon={item.icon}
+                    onClick={() => navigate(item.path)}
+                    size="small"
+                    sx={{
+                      color: '#ffcc80',
+                      textTransform: 'none',
+                      fontWeight: isActive(item.path) ? 700 : 400,
+                      bgcolor: isActive(item.path) ? 'rgba(255,204,128,0.15)' : 'transparent',
+                      borderRadius: 2,
+                      px: 1.5,
+                      '&:hover': { bgcolor: 'rgba(255,204,128,0.2)' },
+                    }}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
+              </>
+            )}
           </Box>
 
           <Tooltip title={themeCtx.mode === 'light' ? 'Тёмная тема' : 'Светлая тема'}>
