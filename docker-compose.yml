@@ -220,11 +220,11 @@ services:
     environment:
       - ANONYMIZED_TELEMETRY=false
     healthcheck:
-      test: ["CMD-SHELL", "chroma vacuum --no-confirm 2>&1 || true"]
+      test: ["CMD-SHELL", "perl -e 'use IO::Socket::INET; exit(IO::Socket::INET->new(PeerAddr=>\"localhost\",PeerPort=>8000,Proto=>\"tcp\",Timeout=>2) ? 0 : 1);'"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 10s
 
   phoenix:
     image: arizephoenix/phoenix:latest

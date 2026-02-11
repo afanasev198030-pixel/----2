@@ -73,7 +73,8 @@ const DeclarationEditPage = () => {
     const copy = { ...d };
     for (const f of numFields) {
       if (copy[f] !== null && copy[f] !== undefined) {
-        copy[f] = Number(copy[f]) || copy[f];
+        const num = Number(copy[f]);
+        copy[f] = Number.isNaN(num) ? copy[f] : num;
       }
     }
     return copy;
