@@ -331,7 +331,22 @@ const DeclarationEditPage = () => {
               <Button variant="contained" color="primary" onClick={async () => {
                 try { const r = await client.get(`/declarations/${id}/export-pdf`, { responseType: 'blob' }); const u = window.URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' })); const a = document.createElement('a'); a.href = u; a.download = `DT_${(id||'').slice(0,8)}.pdf`; a.click(); setSnackMsg('PDF скачан'); } catch { setSnackMsg('Ошибка PDF'); }
               }}>Скачать PDF</Button>
-              <Button variant="outlined" color="secondary" onClick={() => setSnackMsg('XML: будет в следующей версии')}>Сформировать XML</Button>
+              <Button variant="outlined" color="secondary" onClick={async () => {
+                try {
+                  const r = await client.get(`/integration/export-xml/${id}`, { responseType: 'blob', baseURL: '/api/v1' });
+                  const u = window.URL.createObjectURL(new Blob([r.data], { type: 'application/xml' }));
+                  const a = document.createElement('a'); a.href = u; a.download = `DT_${(id||'').slice(0,8)}.xml`; a.click();
+                  setSnackMsg('XML скачан');
+                } catch { setSnackMsg('Ошибка XML'); }
+              }}>Сформировать XML</Button>
+              <Button variant="text" color="secondary" size="small" onClick={async () => {
+                try {
+                  const r = await client.get(`/integration/validate-xml/${id}`, { baseURL: '/api/v1' });
+                  const d = r.data;
+                  if (d.valid) setSnackMsg('XML валиден — готов к подаче');
+                  else setSnackMsg(`XML ошибки: ${(d.errors || []).join('; ')}`);
+                } catch { setSnackMsg('Ошибка проверки XML'); }
+              }}>Проверить XML</Button>
               <Button variant="outlined" color="secondary" onClick={() => setSnackMsg('ЭЦП: будет в следующей версии')}>Подписать ЭЦП</Button>
               <Button variant="contained" color="secondary" onClick={() => setSnackMsg('ФТС: будет в следующей версии')}>Отправить в таможню</Button>
             </Box>

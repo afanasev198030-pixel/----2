@@ -66,7 +66,10 @@ async def get_counterparty(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Counterparty).where(Counterparty.id == id))
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(Counterparty).options(selectinload(Counterparty.company)).where(Counterparty.id == id)
+    )
     cp = result.scalar_one_or_none()
     if not cp:
         raise HTTPException(status_code=404, detail="Counterparty not found")

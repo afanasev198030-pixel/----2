@@ -22,6 +22,7 @@ export interface BrokerClient {
 }
 
 export interface CreateBrokerClientData {
+  // Flat fields from UI form
   client_company_name: string;
   client_company_inn: string;
   client_company_kpp?: string;
@@ -29,6 +30,22 @@ export interface CreateBrokerClientData {
   contract_number?: string;
   contract_date?: string;
   tariff_plan: 'basic' | 'standard' | 'premium';
+}
+
+function toApiPayload(data: CreateBrokerClientData) {
+  return {
+    new_company: {
+      name: data.client_company_name,
+      inn: data.client_company_inn,
+      kpp: data.client_company_kpp || undefined,
+      address: data.client_company_address || undefined,
+      company_type: 'client',
+      country_code: 'RU',
+    },
+    contract_number: data.contract_number || undefined,
+    contract_date: data.contract_date || undefined,
+    tariff_plan: data.tariff_plan,
+  };
 }
 
 export const getBrokerClients = async (): Promise<BrokerClient[]> => {
@@ -42,7 +59,7 @@ export const getBrokerClient = async (id: string): Promise<BrokerClient> => {
 };
 
 export const createBrokerClient = async (data: CreateBrokerClientData): Promise<BrokerClient> => {
-  const response = await client.post('/broker/clients', data);
+  const response = await client.post('/broker/clients', toApiPayload(data));
   return response.data;
 };
 
