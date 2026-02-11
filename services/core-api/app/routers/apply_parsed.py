@@ -174,10 +174,27 @@ async def apply_parsed_data(
         if receiver_id:
             declaration.receiver_counterparty_id = receiver_id
 
+        # Конвертация валюты через курс ЦБ
+        exchange_rate = Decimal("1")
+        currency = data.currency or declaration.currency_code
         if data.currency:
             declaration.currency_code = data.currency
         if data.total_amount is not None:
             declaration.total_invoice_value = Decimal(str(data.total_amount))
+            # Рассчитать таможенную стоимость в рублях
+            if currency and currency != "RUB":
+                from app.services.cbr_rates import convert_to_rub
+                total_rub, exchange_rate = await convert_to_rub(
+                    Decimal(str(data.total_amount)), currency
+                )
+                declaration.total_customs_value = total_rub
+                declaration.exchange_rate = exchange_rate
+                logger.info("currency_converted",
+                    currency=currency, amount=data.total_amount,
+                    rate=float(exchange_rate), rub=float(total_rub))
+            else:
+                declaration.total_customs_value = Decimal(str(data.total_amount))
+                exchange_rate = Decimal("1")
         if data.incoterms:
             declaration.incoterms_code = data.incoterms
         if data.country_origin:
@@ -226,9 +243,10 @@ async def apply_parsed_data(
                 risk_flags=data.risk_flags,
             )
 
-            # Рассчитать customs_value_rub (заглушка — нужен курс ЦБ)
+            # Рассчитать customs_value_rub через курс ЦБ
             if item_data.unit_price and item_data.quantity:
-                item.customs_value_rub = Decimal(str(item_data.unit_price * item_data.quantity))
+                line_val_currency = Decimal(str(item_data.unit_price * item_data.quantity))
+                item.customs_value_rub = (line_val_currency * exchange_rate).quantize(Decimal("0.01"))
 
             db.add(item)
             counters["items"] += 1

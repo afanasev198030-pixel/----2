@@ -25,6 +25,42 @@ const ACTION_CONFIG: Record<string, { label: string; color: string; icon: React.
   duplicate: { label: 'Дублирована', color: '#607d8b', icon: <Add sx={{ fontSize: 14 }} /> },
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  type_code: 'Тип ДТ',
+  status: 'Статус',
+  currency_code: 'Валюта',
+  total_invoice_value: 'Сумма инвойса',
+  total_customs_value: 'Тамож. стоимость',
+  exchange_rate: 'Курс',
+  country_origin_code: 'Страна происх.',
+  country_dispatch_code: 'Страна отправл.',
+  country_destination_code: 'Страна назнач.',
+  incoterms_code: 'Incoterms',
+  total_gross_weight: 'Вес брутто',
+  total_net_weight: 'Вес нетто',
+  total_packages_count: 'Кол-во мест',
+  deal_nature_code: 'Хар. сделки',
+  transport_type_border: 'Транспорт',
+  customs_office_code: 'Тамож. пост',
+  delivery_place: 'Город поставки',
+  forms_count: 'Кол-во бланков',
+  number_internal: 'Номер',
+  source: 'Источник',
+  confidence: 'Точность AI',
+  invoice_number: 'Инвойс №',
+  total_amount: 'Сумма',
+  items_created: 'Позиций создано',
+};
+
+const formatLogValue = (newValue: any): string => {
+  if (!newValue || typeof newValue !== 'object') return '';
+  return Object.entries(newValue)
+    .filter(([_, v]) => v !== null && v !== undefined && v !== '')
+    .slice(0, 4)
+    .map(([k, v]) => `${FIELD_LABELS[k] || k}: ${v}`)
+    .join(' | ');
+};
+
 const HistoryPanel = ({ declarationId }: HistoryPanelProps) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +115,7 @@ const HistoryPanel = ({ declarationId }: HistoryPanelProps) => {
               <Typography variant="body2" fontWeight={600}>{config.label}</Typography>
               {log.new_value && typeof log.new_value === 'object' && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                  {Object.entries(log.new_value).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                  {formatLogValue(log.new_value)}
                 </Typography>
               )}
               <Typography variant="caption" color="text.disabled">

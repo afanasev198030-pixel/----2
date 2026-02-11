@@ -141,6 +141,7 @@ class InvoiceExtractor:
             "buyer": {
                 "name": parsed.buyer.name if parsed.buyer else None,
                 "country_code": parsed.buyer.country_code if parsed.buyer else None,
+                "address": parsed.buyer.address if parsed.buyer else None,
             } if parsed.buyer else None,
             "currency": parsed.currency,
             "total_amount": parsed.total_amount,
@@ -153,11 +154,19 @@ class InvoiceExtractor:
                     "unit": item.unit,
                     "unit_price": item.unit_price,
                     "line_total": item.line_total,
+                    "hs_code": item.hs_code or "",
+                    "gross_weight": item.gross_weight,
+                    "net_weight": item.net_weight,
+                    "country_origin_code": item.country_origin,
                 }
                 for item in parsed.items
             ],
             "contract_number": parsed.contract_number,
             "country_origin": parsed.country_origin,
+            "country_destination": parsed.country_destination,
+            "total_gross_weight": parsed.total_gross_weight,
+            "total_net_weight": parsed.total_net_weight,
+            "total_packages": parsed.total_packages,
             "confidence": parsed.confidence,
             "source": "regex",
             "raw_text": parsed.raw_text,

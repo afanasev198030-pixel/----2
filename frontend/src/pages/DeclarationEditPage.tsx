@@ -235,10 +235,51 @@ const DeclarationEditPage = () => {
         {activeStep === 0 && (
           <Box>
             <DocumentUploadPanel declarationId={id} onParsedData={handleApplyParsed} />
-            <Alert severity="info" sx={{ mt: 2 }}>Загрузите PDF-документы. AI автоматически распознает и заполнит декларацию.</Alert>
-            {items.length > 0 && (
-              <Button variant="contained" onClick={() => setActiveStep(1)} sx={{ mt: 2 }}>Данные загружены — перейти к проверке</Button>
+            {items.length === 0 && (
+              <Alert severity="info" sx={{ mt: 2 }}>Загрузите PDF-документы. AI автоматически распознает и заполнит декларацию.</Alert>
             )}
+            {items.length > 0 && (() => {
+              const missing: string[] = [];
+              if (!watchedValues.currency_code) missing.push('Валюта (22)');
+              if (!watchedValues.total_invoice_value) missing.push('Сумма инвойса (22)');
+              if (!watchedValues.country_origin_code) missing.push('Страна происхождения (16)');
+              if (!watchedValues.country_dispatch_code) missing.push('Страна отправления (15)');
+              if (!watchedValues.incoterms_code) missing.push('Incoterms (20)');
+              if (!watchedValues.total_gross_weight) missing.push('Вес брутто (35)');
+              if (!watchedValues.total_net_weight) missing.push('Вес нетто (38)');
+              if (!watchedValues.total_packages_count) missing.push('Кол-во мест (6)');
+              if (!watchedValues.exchange_rate) missing.push('Курс валюты (23)');
+              if (!watchedValues.transport_type_border) missing.push('Вид транспорта (25)');
+              if (!watchedValues.customs_office_code) missing.push('Таможенный пост (29)');
+              if (!watchedValues.goods_location) missing.push('Местонахождение товаров (30)');
+              const itemsMissing: string[] = [];
+              items.forEach((it: any) => {
+                if (!it.hs_code || it.hs_code.length < 10) itemsMissing.push(`Поз. #${it.item_no}: код ТН ВЭД`);
+                if (!it.gross_weight) itemsMissing.push(`Поз. #${it.item_no}: вес брутто`);
+                if (!it.net_weight) itemsMissing.push(`Поз. #${it.item_no}: вес нетто`);
+              });
+              return (
+                <Box sx={{ mt: 2 }}>
+                  {missing.length > 0 && (
+                    <Alert severity="warning" sx={{ mb: 1 }}>
+                      <strong>Не заполнено ({missing.length}):</strong> {missing.join(', ')}.
+                      <br />Загрузите дополнительные документы (контракт, AWB, упак. лист) или заполните вручную на шаге 2.
+                    </Alert>
+                  )}
+                  {itemsMissing.length > 0 && (
+                    <Alert severity="info" sx={{ mb: 1 }}>
+                      <strong>Товарные позиции:</strong> {itemsMissing.join('; ')}
+                    </Alert>
+                  )}
+                  {missing.length === 0 && itemsMissing.length === 0 && (
+                    <Alert severity="success" sx={{ mb: 1 }}>Все основные поля заполнены. Перейдите к проверке.</Alert>
+                  )}
+                  <Button variant="contained" onClick={() => setActiveStep(1)} sx={{ mt: 1 }}>
+                    {missing.length > 0 ? 'Перейти к проверке и ручному заполнению' : 'Данные загружены — перейти к проверке'}
+                  </Button>
+                </Box>
+              );
+            })()}
           </Box>
         )}
 
@@ -252,7 +293,7 @@ const DeclarationEditPage = () => {
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тип (1)" {...register('type_code')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Номер (7)" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label="Валюта (22)" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Сумма (22)" type="number" {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={`Сумма инвойса (22) ${watchedValues.currency_code || ''}`} type="number" {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label="Страна отпр. (15)" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_code || ''} onChange={(c) => updateField('country_origin_code', c)} label="Происхождение (16)" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label="Назначение (17)" /></Grid>
@@ -289,10 +330,12 @@ const DeclarationEditPage = () => {
                       </Box>
                     </Box>
                     <Grid container spacing={1}>
-                      <Grid item xs={6}><Typography variant="caption" color="text.secondary">Описание (31)</Typography><Typography variant="body2" fontWeight={600}>{item.commercial_name || item.description || '—'}</Typography></Grid>
-                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Страна</Typography><Typography variant="body2">{item.country_origin_code || '—'}</Typography></Grid>
-                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Цена</Typography><Typography variant="body2">{item.unit_price ? Number(item.unit_price).toFixed(2) : '—'}</Typography></Grid>
-                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Стоимость</Typography><Typography variant="body2" fontWeight={600}>{item.customs_value_rub ? Number(item.customs_value_rub).toLocaleString('ru-RU') : '—'}</Typography></Grid>
+                      <Grid item xs={4}><Typography variant="caption" color="text.secondary">Описание (31)</Typography><Typography variant="body2" fontWeight={600}>{item.commercial_name || item.description || '—'}</Typography></Grid>
+                      <Grid item xs={1}><Typography variant="caption" color="text.secondary">Страна</Typography><Typography variant="body2">{item.country_origin_code || '—'}</Typography></Grid>
+                      <Grid item xs={1}><Typography variant="caption" color="text.secondary">Кол-во</Typography><Typography variant="body2">{item.additional_unit_qty || '—'} {item.additional_unit || ''}</Typography></Grid>
+                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Цена ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price ? Number(item.unit_price).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
+                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Сумма ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price && item.additional_unit_qty ? (Number(item.unit_price) * Number(item.additional_unit_qty)).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
+                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Тамож. стоимость (руб)</Typography><Typography variant="body2" fontWeight={600} color="primary.main">{item.customs_value_rub ? Number(item.customs_value_rub).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
                     </Grid>
                     {!item.hs_code && <Alert severity="warning" sx={{ mt: 1 }} icon={<AiIcon />}>Нажмите "Подобрать" или введите код вручную.</Alert>}
                     <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
@@ -314,13 +357,28 @@ const DeclarationEditPage = () => {
               {totals && (
                 <Paper sx={{ p: 2, mb: 2 }}>
                   <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Расчёт платежей (графа 47)</Typography>
-                  <Grid container spacing={1}>
-                    <Grid item xs={3}><Typography variant="caption">Тамож. стоимость</Typography><Typography variant="body2" fontWeight={700}>{num(totals.total_customs_value)} руб</Typography></Grid>
-                    <Grid item xs={2}><Typography variant="caption">Пошлина</Typography><Typography variant="body2">{num(totals.total_duty)} руб</Typography></Grid>
-                    <Grid item xs={2}><Typography variant="caption">НДС</Typography><Typography variant="body2">{num(totals.total_vat)} руб</Typography></Grid>
-                    <Grid item xs={2}><Typography variant="caption">Сбор</Typography><Typography variant="body2">{num(totals.customs_fee)} руб</Typography></Grid>
-                    <Grid item xs={3}><Typography variant="caption">ИТОГО</Typography><Typography variant="h6" color="primary.main" fontWeight={700}>{num(totals.grand_total)} руб</Typography></Grid>
-                  </Grid>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary">Таможенная стоимость ({watchedValues.currency_code || '?'} {watchedValues.total_invoice_value ? num(watchedValues.total_invoice_value) : '—'} × курс {watchedValues.exchange_rate ? num(watchedValues.exchange_rate, 4) : '—'})</Typography>
+                      <Typography variant="body2" fontWeight={700}>{num(totals.total_customs_value)} руб</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary">Ввозная пошлина ({payments?.items?.[0]?.duty?.rate || 0}%)</Typography>
+                      <Typography variant="body2">{num(totals.total_duty)} руб</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary">НДС ({payments?.items?.[0]?.vat?.rate || 20}%)</Typography>
+                      <Typography variant="body2">{num(totals.total_vat)} руб</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary">Таможенный сбор</Typography>
+                      <Typography variant="body2">{num(totals.customs_fee)} руб</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: '2px solid', borderColor: 'divider' }}>
+                      <Typography variant="subtitle1" fontWeight={700}>ИТОГО к уплате</Typography>
+                      <Typography variant="h6" color="primary.main" fontWeight={700}>{num(totals.grand_total)} руб</Typography>
+                    </Box>
+                  </Box>
                 </Paper>
               )}
             </Grid>

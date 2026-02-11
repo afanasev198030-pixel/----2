@@ -279,30 +279,29 @@ async def update_declaration(
             detail=f"Cannot update declaration with status: {declaration.status}",
         )
     
-    # Store old values for logging
-    old_value = {
-        "status": str(declaration.status),
-        "type_code": declaration.type_code,
-    }
-    
-    # Update fields
+    # Update fields, track what actually changed
     update_data = data.model_dump(exclude_unset=True)
+    changed_fields = {}
     for field, value in update_data.items():
+        old_val = getattr(declaration, field, None)
+        # Compare stringified values to handle Decimal/UUID
+        if str(old_val) != str(value) and not (old_val is None and value is None):
+            changed_fields[field] = {"old": str(old_val) if old_val is not None else None, "new": str(value) if value is not None else None}
         setattr(declaration, field, value)
     
     declaration.updated_at = datetime.utcnow()
     
-    # Log action — serialize UUIDs and Decimals for JSONB
-    import json
-    safe_update = json.loads(json.dumps(update_data, default=str))
-    log_entry = DeclarationLog(
-        declaration_id=declaration.id,
-        user_id=current_user.id,
-        action="update",
-        old_value=old_value,
-        new_value=safe_update,
-    )
-    db.add(log_entry)
+    # Only log if something actually changed
+    if changed_fields:
+        import json
+        log_entry = DeclarationLog(
+            declaration_id=declaration.id,
+            user_id=current_user.id,
+            action="update",
+            old_value={k: v["old"] for k, v in changed_fields.items()},
+            new_value={k: v["new"] for k, v in changed_fields.items()},
+        )
+        db.add(log_entry)
     await db.commit()
     
     # Re-fetch with relationships

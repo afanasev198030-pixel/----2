@@ -4,6 +4,7 @@ CrewAI мультиагентная оркестрация.
 Fallback на линейный pipeline при недоступности CrewAI/OpenAI.
 """
 import json
+import re
 from typing import Optional
 import structlog
 
@@ -28,12 +29,19 @@ def _detect_doc_type(filename: str, text: str) -> str:
     """Определить тип документа по имени файла и содержимому."""
     fn_lower = filename.lower()
 
-    # По имени файла
-    if any(k in fn_lower for k in ["invoice", "инвойс", "счёт", "счет"]):
+    # Combined INV+PL document (common in Russian customs docs)
+    if ("inv" in fn_lower and "pl" in fn_lower) or ("инвойс" in fn_lower and "упаков" in fn_lower):
+        return "invoice"  # Treat combined docs as invoice (parser extracts packing data too)
+
+    # По имени файла (check longer patterns first to avoid false positives)
+    if any(k in fn_lower for k in ["invoice", "инвойс", "счёт", "счет", "inv-", "inv_"]):
         return "invoice"
     if any(k in fn_lower for k in ["contract", "договор", "контракт"]):
         return "contract"
-    if any(k in fn_lower for k in ["packing", "pl", "упаков"]):
+    if any(k in fn_lower for k in ["packing", "упаков", "packing_list", "packing-list"]):
+        return "packing_list"
+    # "pl" only if it's a standalone word (not part of "simple", "platform" etc.)
+    if re.search(r'\bpl\b', fn_lower) and "inv" not in fn_lower:
         return "packing_list"
     if any(k in fn_lower for k in ["awb", "waybill", "накладная", "транспорт"]):
         return "transport_doc"
@@ -194,11 +202,22 @@ class DeclarationCrew:
             self._progress("crewai", "CrewAI агенты анализируют декларацию...", 72)
             result = self._run_crewai(parsed_docs, result)
 
-        # --- Шаг 3: Классификация ТН ВЭД для КАЖДОЙ позиции ---
+        # --- Шаг 3: Классификация ТН ВЭД для позиций БЕЗ кода ---
         items = result.get("items", [])
         for j, item in enumerate(items):
+            existing_hs = item.get("hs_code", "").strip()
             desc = item.get("description", "") or item.get("commercial_name", "")
             self._progress("classifying", f"Классификация ТН ВЭД: позиция {j+1}/{len(items)} — {desc[:40]}", 75 + int(10 * j / max(len(items), 1)))
+
+            # Skip if already have a good HS code from document parsing
+            if existing_hs and len(existing_hs) >= 8:
+                if len(existing_hs) < 10:
+                    item["hs_code"] = existing_hs.ljust(10, "0")
+                item.setdefault("hs_confidence", 0.9)
+                item.setdefault("hs_reasoning", "Extracted from document")
+                item["hs_needs_review"] = False
+                logger.info("hs_from_doc_kept", item_no=j+1, hs_code=item["hs_code"])
+                continue
 
             if desc:
                 # RAG поиск
@@ -216,7 +235,6 @@ class DeclarationCrew:
                 item["hs_confidence"] = hs_result.get("confidence", 0.0)
                 item["hs_reasoning"] = hs_result.get("reasoning", "")
 
-                # Пометить если confidence низкий
                 if hs_result.get("confidence", 0) < 0.5 or not hs_code:
                     item["hs_needs_review"] = True
                     item["hs_review_message"] = f"AI не уверен в коде ТН ВЭД для товара: {desc[:80]}. Пожалуйста, проверьте и укажите код вручную."
@@ -300,14 +318,15 @@ class DeclarationCrew:
             items.append({
                 "line_no": item_data.get("line_no", len(items) + 1),
                 "description": item_data.get("description", item_data.get("description_raw", "")),
-                "commercial_name": item_data.get("description", ""),
+                "commercial_name": item_data.get("description", item_data.get("description_raw", "")),
                 "quantity": item_data.get("quantity"),
                 "unit": item_data.get("unit"),
                 "unit_price": item_data.get("unit_price"),
                 "line_total": item_data.get("line_total"),
-                "country_origin_code": origin_code,
-                "gross_weight": None,  # будет заполнено из packing
-                "net_weight": None,
+                "hs_code": item_data.get("hs_code", ""),
+                "country_origin_code": item_data.get("country_origin_code") or origin_code,
+                "gross_weight": item_data.get("gross_weight"),
+                "net_weight": item_data.get("net_weight"),
             })
 
         # Обогащение из packing list
@@ -322,13 +341,23 @@ class DeclarationCrew:
                     item["gross_weight"] = round(per_item_gross, 3)
                     item["net_weight"] = round(per_item_net, 3)
 
-        # Auto-classify HS codes via GPT-4o + RAG
+        # Auto-classify HS codes via GPT-4o + RAG (only for items WITHOUT HS code from parser)
         from app.services.dspy_modules import HSCodeClassifier
         from app.services.index_manager import get_index_manager
         hs_classifier = HSCodeClassifier()
         idx_mgr = get_index_manager()
         for item in items:
-            if not item.get("hs_code") and item.get("description"):
+            existing_hs = item.get("hs_code", "").strip()
+            if existing_hs and len(existing_hs) >= 8:
+                # Already has a good HS code from PDF parsing — keep it, pad to 10 if needed
+                if len(existing_hs) < 10:
+                    item["hs_code"] = existing_hs.ljust(10, "0")
+                item["hs_code_name"] = ""
+                item["hs_confidence"] = 0.9
+                item["hs_reasoning"] = "Extracted from invoice/packing list"
+                item["hs_needs_review"] = False
+                logger.info("hs_from_document", code=item["hs_code"], description=item.get("description", "")[:50])
+            elif item.get("description"):
                 try:
                     rag_results = idx_mgr.search_hs_codes(item["description"])
                     hs_result = hs_classifier.classify(item["description"], rag_results)
@@ -364,10 +393,10 @@ class DeclarationCrew:
             "country_destination": inv.get("country_destination", "RU"),
             "contract_number": inv.get("contract_number") or contract.get("contract_number"),
             "contract_date": contract.get("contract_date"),
-            "total_packages": packing.get("total_packages"),
+            "total_packages": packing.get("total_packages") or inv.get("total_packages"),
             "package_type": packing.get("package_type"),
-            "total_gross_weight": packing.get("total_gross_weight"),
-            "total_net_weight": packing.get("total_net_weight"),
+            "total_gross_weight": packing.get("total_gross_weight") or inv.get("total_gross_weight"),
+            "total_net_weight": packing.get("total_net_weight") or inv.get("total_net_weight"),
             "transport_type": "40",  # Воздушный (по AWB)
             "transport_doc_number": awb_number,
             "deal_nature_code": "01",  # Купля-продажа

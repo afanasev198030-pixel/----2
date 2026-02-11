@@ -224,7 +224,9 @@ class IndexManager:
                 emb = self._embed_one(f"Товар: {description}")
                 results = col.query(query_embeddings=[emb], n_results=top_k)
             else:
-                results = col.query(query_texts=[description], n_results=top_k)
+                # Without OpenAI, skip ChromaDB default embedding (downloads 80MB ONNX model, poor for Russian)
+                logger.debug("hs_search_skipped_no_openai", description=description[:50])
+                return []
 
             out = []
             for i, doc_id in enumerate(results["ids"][0]):

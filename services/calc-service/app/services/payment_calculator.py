@@ -30,9 +30,9 @@ DEFAULT_DUTY_RATES: dict[str, dict] = {
     "DEFAULT": {"type": "ad_valorem", "rate": Decimal("11")}, # По умолчанию
 }
 
-# Ставки НДС
+# Ставки НДС (с 2025 года — 22%)
 VAT_RATES: dict[str, Decimal] = {
-    "DEFAULT": Decimal("20"),
+    "DEFAULT": Decimal("22"),
     "FOOD": Decimal("10"),       # Продовольствие (группы 01-24)
     "CHILDREN": Decimal("10"),   # Детские товары
     "MEDICAL": Decimal("10"),    # Медицинские (30, 9018)
