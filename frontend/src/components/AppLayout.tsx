@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AppBar, Toolbar, Typography, Button, Box, Avatar, IconButton,
-  Tooltip, Breadcrumbs, Link, Chip,
+  Tooltip, Breadcrumbs, Link,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -112,7 +112,8 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
             Панель брокера
           </Typography>
 
-          <Box sx={{ display: 'flex', gap: 0.5, flexGrow: 1 }}>
+          {/* Main nav */}
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
             {NAV_ITEMS.map((item) => (
               <Button
                 key={item.path}
@@ -132,49 +133,47 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
                 {item.label}
               </Button>
             ))}
-            {isAdmin && (
-              <>
-                <Box sx={{ width: 1, height: 20, borderLeft: '1px solid rgba(255,255,255,0.3)', mx: 0.5 }} />
-                {ADMIN_NAV_ITEMS.map((item) => (
-                  <Button
-                    key={item.path}
-                    startIcon={item.icon}
+          </Box>
+
+          {/* Admin nav (icon-only) */}
+          {isAdmin && (
+            <Box sx={{ display: 'flex', gap: 0.3, ml: 1, pl: 1, borderLeft: '1px solid rgba(255,255,255,0.25)' }}>
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <Tooltip key={item.path} title={item.label}>
+                  <IconButton
                     onClick={() => navigate(item.path)}
                     size="small"
                     sx={{
-                      color: '#ffcc80',
-                      textTransform: 'none',
-                      fontWeight: isActive(item.path) ? 700 : 400,
+                      color: isActive(item.path) ? '#ffcc80' : 'rgba(255,255,255,0.7)',
                       bgcolor: isActive(item.path) ? 'rgba(255,204,128,0.15)' : 'transparent',
-                      borderRadius: 2,
-                      px: 1.5,
-                      '&:hover': { bgcolor: 'rgba(255,204,128,0.2)' },
+                      '&:hover': { bgcolor: 'rgba(255,204,128,0.2)', color: '#ffcc80' },
                     }}
                   >
-                    {item.label}
-                  </Button>
-                ))}
-              </>
-            )}
-          </Box>
+                    {item.icon}
+                  </IconButton>
+                </Tooltip>
+              ))}
+            </Box>
+          )}
 
+          <Box sx={{ flexGrow: 1 }} />
+
+          {/* Right side: theme, notifications, profile, logout */}
           <Tooltip title={themeCtx.mode === 'light' ? 'Тёмная тема' : 'Светлая тема'}>
-            <IconButton color="inherit" size="small" onClick={themeCtx.toggleTheme} sx={{ mr: 0.5 }}>
+            <IconButton color="inherit" size="small" onClick={themeCtx.toggleTheme}>
               {themeCtx.mode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
           <Tooltip title="Уведомления">
-            <IconButton color="inherit" size="small" onClick={() => navigate('/declarations')} sx={{ mr: 0.5 }}>
+            <IconButton color="inherit" size="small" onClick={() => navigate('/declarations')}>
               <NotificationsIcon fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Chip
-            label={me?.full_name || 'Пользователь'}
-            avatar={<Avatar sx={{ bgcolor: 'rgba(255,255,255,0.3) !important', color: 'white !important', fontSize: 12, fontWeight: 600 }}>{initials}</Avatar>}
-            onClick={() => navigate('/profile')}
-            sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)', fontWeight: 500, mr: 0.5, display: { xs: 'none', sm: 'flex' }, cursor: 'pointer' }}
-            size="small"
-          />
+          <Tooltip title={me?.full_name || 'Профиль'}>
+            <IconButton color="inherit" size="small" onClick={() => navigate('/profile')}>
+              <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(255,255,255,0.25)', fontSize: 11, fontWeight: 700 }}>{initials}</Avatar>
+            </IconButton>
+          </Tooltip>
           <Tooltip title="Выйти">
             <IconButton color="inherit" onClick={handleLogout} size="small">
               <LogoutIcon fontSize="small" />
