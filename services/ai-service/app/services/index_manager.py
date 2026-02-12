@@ -1,5 +1,5 @@
 """
-RAG ядро: ChromaDB + OpenAI embeddings напрямую (без LlamaIndex).
+RAG ядро: ChromaDB + OpenAI embeddings.
 Индексы ТН ВЭД, правил СУР и прецедентов.
 """
 import time
@@ -45,7 +45,7 @@ def get_training_log() -> list[dict]:
 
 
 class IndexManager:
-    """RAG через ChromaDB + OpenAI embeddings (без LlamaIndex)."""
+    """RAG через ChromaDB + OpenAI embeddings."""
 
     EMBED_MODEL = "text-embedding-3-small"
     EMBED_DIM = 1536

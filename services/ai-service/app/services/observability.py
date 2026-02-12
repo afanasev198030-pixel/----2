@@ -1,6 +1,6 @@
 """
 Arize-Phoenix observability для LLM трейсинга.
-Автоинструментация LlamaIndex + DSPy.
+Автоинструментация OpenAI calls.
 """
 import structlog
 
@@ -23,24 +23,14 @@ def init_observability(phoenix_host: str = "", phoenix_port: int = 6006):
     except Exception as e:
         logger.warning("phoenix_launch_failed", error=str(e))
 
-    # Instrument LlamaIndex
+    # Instrument OpenAI calls
     try:
-        from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
-        LlamaIndexInstrumentor().instrument()
-        logger.info("llamaindex_instrumented")
+        from openinference.instrumentation.openai import OpenAIInstrumentor
+        OpenAIInstrumentor().instrument()
+        logger.info("openai_instrumented")
     except ImportError:
-        logger.info("llamaindex_instrumentor_not_installed")
+        logger.debug("openai_instrumentor_not_installed", msg="pip install openinference-instrumentation-openai")
     except Exception as e:
-        logger.warning("llamaindex_instrument_failed", error=str(e))
-
-    # Instrument DSPy
-    try:
-        from openinference.instrumentation.dspy import DSPyInstrumentor
-        DSPyInstrumentor().instrument()
-        logger.info("dspy_instrumented")
-    except ImportError:
-        logger.info("dspy_instrumentor_not_installed")
-    except Exception as e:
-        logger.warning("dspy_instrument_failed", error=str(e))
+        logger.warning("openai_instrument_failed", error=str(e))
 
     logger.info("observability_initialized")

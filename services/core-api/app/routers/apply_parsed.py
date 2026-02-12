@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+import httpx
 import structlog
 
 from app.database import get_db
@@ -174,19 +175,30 @@ async def apply_parsed_data(
         if receiver_id:
             declaration.receiver_counterparty_id = receiver_id
 
-        # Конвертация валюты через курс ЦБ
+        # Конвертация валюты через calc-service
         exchange_rate = Decimal("1")
         currency = data.currency or declaration.currency_code
         if data.currency:
             declaration.currency_code = data.currency
         if data.total_amount is not None:
             declaration.total_invoice_value = Decimal(str(data.total_amount))
-            # Рассчитать таможенную стоимость в рублях
+            # Рассчитать таможенную стоимость в рублях через calc-service
             if currency and currency != "RUB":
-                from app.services.cbr_rates import convert_to_rub
-                total_rub, exchange_rate = await convert_to_rub(
-                    Decimal(str(data.total_amount)), currency
-                )
+                try:
+                    async with httpx.AsyncClient(timeout=10) as http:
+                        resp = await http.get(
+                            "http://calc-service:8005/api/v1/rates/convert",
+                            params={"amount": str(data.total_amount), "currency": currency},
+                        )
+                        resp.raise_for_status()
+                        conv = resp.json()
+                        total_rub = Decimal(str(conv["amount_rub"]))
+                        exchange_rate = Decimal(str(conv["rate"]))
+                except Exception as conv_err:
+                    logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
+                    # Fallback: store amount as-is, rate = 1
+                    total_rub = Decimal(str(data.total_amount))
+                    exchange_rate = Decimal("1")
                 declaration.total_customs_value = total_rub
                 declaration.exchange_rate = exchange_rate
                 logger.info("currency_converted",

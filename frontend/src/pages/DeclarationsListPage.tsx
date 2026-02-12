@@ -32,6 +32,8 @@ import {
   TablePagination,
   TableSortLabel,
   Checkbox,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -50,8 +52,9 @@ import {
   PictureAsPdf as PdfIcon,
   FileDownload as FileDownloadIcon,
 } from '@mui/icons-material';
-import { getDeclarations, createDeclaration, deleteDeclaration } from '../api/declarations';
+import { getDeclarations, getDeclaration, createDeclaration, deleteDeclaration } from '../api/declarations';
 import { getMe } from '../api/auth';
+import client from '../api/client';
 import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import { Declaration } from '../types';
@@ -84,6 +87,11 @@ const DeclarationsListPage = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [rowActionMenuAnchor, setRowActionMenuAnchor] = useState<null | HTMLElement>(null);
   const [rowActionDeclarationId, setRowActionDeclarationId] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false, message: '', severity: 'success',
+  });
 
   const { data: meData } = useQuery({
     queryKey: ['me'],
@@ -144,11 +152,30 @@ const DeclarationsListPage = () => {
     setRowActionDeclarationId(null);
   };
 
-  const handleDuplicate = () => {
+  const handleDuplicate = async () => {
     if (!rowActionDeclarationId) return;
-    // TODO: Implement duplicate functionality
-    console.log('Duplicate declaration:', rowActionDeclarationId);
     handleRowActionClose();
+    try {
+      const original = await getDeclaration(rowActionDeclarationId);
+      const copy = await createDeclaration({
+        type_code: original.type_code,
+        company_id: original.company_id,
+        currency_code: original.currency_code,
+        country_dispatch_code: original.country_dispatch_code,
+        country_destination_code: original.country_destination_code,
+        country_origin_code: original.country_origin_code,
+        incoterms_code: original.incoterms_code,
+        deal_nature_code: original.deal_nature_code,
+        transport_type_border: original.transport_type_border,
+        customs_office_code: original.customs_office_code,
+      });
+      queryClient.invalidateQueries({ queryKey: ['declarations'] });
+      setSnackbar({ open: true, message: 'Декларация успешно дублирована', severity: 'success' });
+      navigate(`/declarations/${copy.id}/edit`);
+    } catch (err: any) {
+      console.error('Duplicate declaration error:', err?.response?.data || err);
+      setSnackbar({ open: true, message: 'Ошибка при дублировании декларации', severity: 'error' });
+    }
   };
 
   const handleDelete = () => {
@@ -200,11 +227,25 @@ const DeclarationsListPage = () => {
     a.href = url; a.download = 'declarations.csv'; a.click();
   };
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (!rowActionDeclarationId) return;
-    // TODO: Implement PDF export functionality
-    console.log('Export PDF for declaration:', rowActionDeclarationId);
+    const declId = rowActionDeclarationId;
     handleRowActionClose();
+    try {
+      const resp = await client.get(`/declarations/${declId}/export-pdf`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `DT_${declId.slice(0, 8)}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      setSnackbar({ open: true, message: 'PDF экспортирован', severity: 'success' });
+    } catch (err: any) {
+      console.error('PDF export error:', err?.response?.data || err);
+      setSnackbar({ open: true, message: 'Ошибка при экспорте PDF', severity: 'error' });
+    }
   };
 
   const handleMetricClick = (statuses: string[] | null) => {
@@ -233,6 +274,14 @@ const DeclarationsListPage = () => {
     // Apply status filter
     if (statusFilter) {
       filtered = filtered.filter((decl: Declaration) => statusFilter.includes(decl.status));
+    }
+
+    // Apply date range filter
+    if (dateFrom) {
+      filtered = filtered.filter((decl: Declaration) => decl.created_at >= dateFrom);
+    }
+    if (dateTo) {
+      filtered = filtered.filter((decl: Declaration) => decl.created_at.slice(0, 10) <= dateTo);
     }
 
     // Apply sorting
@@ -271,7 +320,7 @@ const DeclarationsListPage = () => {
     });
 
     return filtered;
-  }, [data?.items, searchQuery, statusFilter, sortField, sortOrder]);
+  }, [data?.items, searchQuery, statusFilter, dateFrom, dateTo, sortField, sortOrder]);
 
   // Check if all values in "Стоимость" column are empty
   const hasAnyValue = useMemo(() => {
@@ -332,6 +381,37 @@ const DeclarationsListPage = () => {
         >
           Создать
         </Button>
+      </Box>
+
+      {/* Date Filters */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <TextField
+          size="small"
+          type="date"
+          label="С даты"
+          value={dateFrom}
+          onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ width: 180, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' } }}
+        />
+        <TextField
+          size="small"
+          type="date"
+          label="По дату"
+          value={dateTo}
+          onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+          InputLabelProps={{ shrink: true }}
+          sx={{ width: 180, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' } }}
+        />
+        {(dateFrom || dateTo || statusFilter) && (
+          <Button
+            size="small"
+            onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(null); setSearchQuery(''); setPage(1); }}
+            sx={{ textTransform: 'none', borderRadius: 2 }}
+          >
+            Сбросить фильтры
+          </Button>
+        )}
       </Box>
 
       {/* Metrics */}
@@ -697,6 +777,23 @@ const DeclarationsListPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Snackbar notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          severity={snackbar.severity}
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </AppLayout>
   );
 };
