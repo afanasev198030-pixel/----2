@@ -344,7 +344,7 @@ export default function LandingPage() {
         <Container maxWidth="lg">
           <Reveal>
             <Grid container spacing={6} alignItems="center">
-              <Grid size={{ xs: 12, md: 7 }}>
+              <Grid item xs={12} md={7}>
                 <Typography sx={{ fontWeight: 800, fontSize: { xs: 28, md: 36 }, mb: 1 }}>
                   Таможенное оформление сегодня —
                 </Typography>
@@ -365,7 +365,7 @@ export default function LandingPage() {
                   ))}
                 </Box>
               </Grid>
-              <Grid size={{ xs: 12, md: 5 }}>
+              <Grid item xs={12} md={5}>
                 <GlassCard sx={{ textAlign: 'center', py: 6 }}>
                   <Typography sx={{ fontSize: 64, mb: 1 }}>⏱</Typography>
                   <Typography sx={{ fontSize: 48, fontWeight: 900, color: C.red }}>2–4 ч</Typography>
@@ -399,7 +399,7 @@ export default function LandingPage() {
               { n: '4', t: 'Расчёт платежей', d: 'Считает все платежи', c: C.orange },
               { n: '5', t: 'Готовая ДТ', d: 'Формирует декларацию, готовую к подаче', c: C.yellow },
             ].map((s, i) => (
-              <Grid size={{ xs: 12, sm: 6, md: 2.4 }} key={i}>
+              <Grid item xs={12} sm={6} md={2.4} key={i}>
                 <Reveal delay={i * 0.1}>
                   <GlassCard sx={{ textAlign: 'center', height: '100%' }}>
                     <Box
@@ -477,7 +477,7 @@ export default function LandingPage() {
                 icon: '🛡️',
               },
             ].map((f, i) => (
-              <Grid size={{ xs: 12, md: 6 }} key={i}>
+              <Grid item xs={12} md={6} key={i}>
                 <Reveal delay={i * 0.1}>
                   <GlassCard sx={{ height: '100%' }}>
                     <AccentBadge bg={f.badgeColor}>{f.badge}</AccentBadge>
@@ -521,7 +521,7 @@ export default function LandingPage() {
                 lines: ['Автоматизируют оформление для клиентов', 'Делают сервис более технологичным'],
               },
             ].map((col, i) => (
-              <Grid size={{ xs: 12, md: 4 }} key={i}>
+              <Grid item xs={12} md={4} key={i}>
                 <Reveal delay={i * 0.15}>
                   <GlassCard sx={{ height: '100%', textAlign: 'center' }}>
                     <Typography sx={{ fontSize: 48, mb: 2 }}>{col.icon}</Typography>
@@ -585,7 +585,7 @@ export default function LandingPage() {
               { n: '3', t: 'Проверка', d: 'Финальная правка специалистом', c: C.accent3 },
               { n: '4', t: 'Экспорт', d: 'Выгрузка в нужный формат', c: C.orange },
             ].map((s, i) => (
-              <Grid size={{ xs: 12, sm: 6, md: 3 }} key={i}>
+              <Grid item xs={12} sm={6} md={3} key={i}>
                 <Reveal delay={i * 0.15}>
                   <FlowStep accentColor={s.c}>
                     <GlassCard>
@@ -617,7 +617,7 @@ export default function LandingPage() {
               { icon: '🖥️', title: 'On-Premise', desc: 'Установка в инфраструктуре компании, полный контроль', color: C.accent2 },
               { icon: '⭐', title: 'White Label', desc: 'Под вашим брендом и в ваших продуктах', color: C.accent3 },
             ].map((f, i) => (
-              <Grid size={{ xs: 12, md: 4 }} key={i}>
+              <Grid item xs={12} md={4} key={i}>
                 <Reveal delay={i * 0.1}>
                   <GlassCard sx={{ textAlign: 'center', height: '100%' }}>
                     <Typography sx={{ fontSize: 48, mb: 2 }}>{f.icon}</Typography>
@@ -682,7 +682,7 @@ export default function LandingPage() {
                 { label: 'Telegram', value: '@digital_broker' },
                 { label: 'Телефон', value: '+7 (___) ___-__-__' },
               ].map((c, i) => (
-                <Grid size={{ xs: 12, sm: 6 }} key={i}>
+                <Grid item xs={12} sm={6} key={i}>
                   <GlassCard sx={{ py: 2, px: 3 }}>
                     <Typography sx={{ fontSize: 12, color: C.textGray, mb: 0.5, textTransform: 'uppercase', letterSpacing: 1 }}>
                       {c.label}
