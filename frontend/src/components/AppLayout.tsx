@@ -33,10 +33,10 @@ import {
 } from '@mui/icons-material';
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" /> },
-  { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" /> },
-  { label: 'Декларации', path: '/declarations', icon: <DeclarationsIcon fontSize="small" /> },
-  { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" /> },
+  { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" />, adminOnly: false },
+  { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" />, adminOnly: false },
+  { label: 'Декларации', path: '/declarations', icon: <DeclarationsIcon fontSize="small" />, adminOnly: false },
+  { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" />, adminOnly: true },
 ];
 
 const ADMIN_NAV_ITEMS = [
@@ -114,7 +114,7 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
           {/* Main nav */}
           <Box sx={{ display: 'flex', gap: 0.5 }}>
-            {NAV_ITEMS.map((item) => (
+            {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => (
               <Button
                 key={item.path}
                 startIcon={item.icon}
@@ -159,11 +159,6 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
           <Box sx={{ flexGrow: 1 }} />
 
           {/* Right side: theme, notifications, profile, logout */}
-          <Tooltip title={themeCtx.mode === 'light' ? 'Тёмная тема' : 'Светлая тема'}>
-            <IconButton color="inherit" size="small" onClick={themeCtx.toggleTheme}>
-              {themeCtx.mode === 'light' ? <DarkModeIcon fontSize="small" /> : <LightModeIcon fontSize="small" />}
-            </IconButton>
-          </Tooltip>
           <Tooltip title="Уведомления">
             <IconButton color="inherit" size="small" onClick={() => navigate('/declarations')}>
               <NotificationsIcon fontSize="small" />

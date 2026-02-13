@@ -1,7 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Button, Container, Typography, Grid, Stack, Divider } from '@mui/material';
+import { useForm } from 'react-hook-form';
+import {
+  Box, Button, Container, Typography, Grid, Stack, Divider,
+  TextField, Popover, Alert, CircularProgress, ClickAwayListener,
+} from '@mui/material';
 import { styled, keyframes } from '@mui/material/styles';
+import { login } from '../api/auth';
+import client from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 // ── Animations ───────────────────────────────────────────────────────
 const fadeInUp = keyframes`
@@ -210,11 +217,75 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   );
 }
 
+// ── Login/Register forms ─────────────────────────────────────────
+interface LoginForm { email: string; password: string; }
+interface RegisterForm {
+  email: string; password: string; password_confirm: string;
+  full_name: string; phone: string; company_name: string;
+}
+
 // ── Page Component ──────────────────────────────────────────────────
 export default function LandingPage() {
   const navigate = useNavigate();
-  const goLogin = () => navigate('/login');
-  const goDashboard = () => navigate('/login');
+  const { reload } = useAuth();
+
+  // Popover anchors
+  const [loginAnchor, setLoginAnchor] = useState<HTMLElement | null>(null);
+  const [regAnchor, setRegAnchor] = useState<HTMLElement | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Login form
+  const loginForm = useForm<LoginForm>();
+  const onLogin = async (data: LoginForm) => {
+    try {
+      setAuthError(null);
+      await login(data.email, data.password);
+      reload();
+      navigate('/dashboard');
+    } catch (err: any) {
+      setAuthError(err instanceof Error ? err.message : 'Неверный email или пароль');
+    }
+  };
+
+  // Register form
+  const regForm = useForm<RegisterForm>();
+  const regPwd = regForm.watch('password');
+  const onRegister = async (data: RegisterForm) => {
+    try {
+      setAuthError(null);
+      const resp = await client.post('/auth/register-public', {
+        email: data.email, password: data.password,
+        full_name: data.full_name, phone: data.phone || null,
+        company_name: data.company_name || null,
+      });
+      if (resp.data.access_token) {
+        localStorage.setItem('token', resp.data.access_token);
+        reload();
+        navigate('/dashboard');
+      }
+    } catch (err: any) {
+      setAuthError(err?.response?.data?.detail || 'Ошибка регистрации');
+    }
+  };
+
+  const popoverSx = {
+    '& .MuiPaper-root': {
+      background: 'rgba(19,28,46,0.97)', backdropFilter: 'blur(20px)',
+      border: `1px solid ${C.border}`, borderRadius: 3, p: 3, width: 340,
+      boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+    },
+  };
+  const fieldSx = {
+    mb: 1.5,
+    '& .MuiOutlinedInput-root': {
+      color: C.textWhite, background: 'rgba(255,255,255,0.04)', borderRadius: 2,
+      '& fieldset': { borderColor: 'rgba(255,255,255,0.12)' },
+      '&:hover fieldset': { borderColor: C.accent },
+      '&.Mui-focused fieldset': { borderColor: C.accent },
+    },
+    '& .MuiInputLabel-root': { color: C.textGray },
+    '& .MuiInputLabel-root.Mui-focused': { color: C.accent },
+  };
 
   return (
     <Page>
@@ -242,30 +313,130 @@ export default function LandingPage() {
               letterSpacing: 1,
             }}
           >
-            ЦИФРОВОЙ БРОКЕР
+            DIGITAL BROKER
           </Typography>
-          <Stack direction="row" spacing={2}>
-            <Button sx={{ color: C.textGray, textTransform: 'none', fontWeight: 500, '&:hover': { color: C.accent } }} onClick={goLogin}>
+          <Stack direction="row" spacing={1.5}>
+            <Button
+              data-login-btn
+              onClick={(e) => { setLoginAnchor(e.currentTarget); setRegAnchor(null); setAuthError(null); }}
+              sx={{ color: C.textGray, textTransform: 'none', fontWeight: 600, '&:hover': { color: C.accent } }}
+            >
               Войти
             </Button>
             <Button
+              data-reg-btn
               variant="contained"
-              onClick={goLogin}
+              onClick={(e) => { setRegAnchor(e.currentTarget); setLoginAnchor(null); setAuthError(null); }}
               sx={{
-                background: C.accent,
-                color: C.bgDark,
-                fontWeight: 700,
-                textTransform: 'none',
-                borderRadius: 2,
-                px: 3,
+                background: C.accent, color: C.bgDark, fontWeight: 700,
+                textTransform: 'none', borderRadius: 2, px: 3,
                 '&:hover': { background: '#33DDFF' },
               }}
             >
-              Попробовать
+              Регистрация
             </Button>
           </Stack>
         </Container>
       </Box>
+
+      {/* ── Login Popover ── */}
+      <Popover
+        open={!!loginAnchor}
+        anchorEl={loginAnchor}
+        onClose={() => setLoginAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        sx={popoverSx}
+      >
+        <Typography sx={{ fontWeight: 700, fontSize: 18, color: C.textWhite, mb: 2 }}>
+          Вход в систему
+        </Typography>
+        {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
+        <form onSubmit={loginForm.handleSubmit(onLogin)}>
+          <TextField
+            {...loginForm.register('email', { required: 'Email обязателен' })}
+            label="Email" type="email" fullWidth size="small" sx={fieldSx}
+            error={!!loginForm.formState.errors.email}
+            helperText={loginForm.formState.errors.email?.message}
+            autoComplete="email"
+          />
+          <TextField
+            {...loginForm.register('password', { required: 'Пароль обязателен' })}
+            label="Пароль" type="password" fullWidth size="small" sx={fieldSx}
+            error={!!loginForm.formState.errors.password}
+            helperText={loginForm.formState.errors.password?.message}
+            autoComplete="current-password"
+          />
+          <Button
+            type="submit" variant="contained" fullWidth disabled={loginForm.formState.isSubmitting}
+            sx={{
+              mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15,
+              background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`,
+              borderRadius: 2,
+              '&:hover': { boxShadow: `0 4px 20px ${C.accent}55` },
+            }}
+          >
+            {loginForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Войти'}
+          </Button>
+          <Typography
+            sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
+            onClick={() => { setLoginAnchor(null); setTimeout(() => setRegAnchor(document.querySelector('[data-reg-btn]') as HTMLElement), 100); }}
+          >
+            Нет аккаунта? Зарегистрируйтесь
+          </Typography>
+        </form>
+      </Popover>
+
+      {/* ── Register Popover ── */}
+      <Popover
+        open={!!regAnchor}
+        anchorEl={regAnchor}
+        onClose={() => setRegAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        sx={popoverSx}
+      >
+        <Typography sx={{ fontWeight: 700, fontSize: 18, color: C.textWhite, mb: 2 }}>
+          Регистрация
+        </Typography>
+        {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
+        <form onSubmit={regForm.handleSubmit(onRegister)}>
+          <TextField {...regForm.register('full_name', { required: 'ФИО обязательно' })}
+            label="ФИО" fullWidth size="small" sx={fieldSx}
+            error={!!regForm.formState.errors.full_name} helperText={regForm.formState.errors.full_name?.message}
+          />
+          <TextField {...regForm.register('email', { required: 'Email обязателен', pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Неверный формат' }})}
+            label="Email" type="email" fullWidth size="small" sx={fieldSx}
+            error={!!regForm.formState.errors.email} helperText={regForm.formState.errors.email?.message}
+          />
+          <TextField {...regForm.register('phone')} label="Телефон" fullWidth size="small" sx={fieldSx} placeholder="+7 (999) 123-45-67" />
+          <TextField {...regForm.register('company_name')} label="Компания (необязательно)" fullWidth size="small" sx={fieldSx} />
+          <TextField {...regForm.register('password', { required: 'Пароль обязателен', minLength: { value: 6, message: 'Минимум 6 символов' }})}
+            label="Пароль" type="password" fullWidth size="small" sx={fieldSx}
+            error={!!regForm.formState.errors.password} helperText={regForm.formState.errors.password?.message}
+          />
+          <TextField {...regForm.register('password_confirm', { required: 'Подтвердите', validate: v => v === regPwd || 'Пароли не совпадают' })}
+            label="Подтверждение" type="password" fullWidth size="small" sx={fieldSx}
+            error={!!regForm.formState.errors.password_confirm} helperText={regForm.formState.errors.password_confirm?.message}
+          />
+          <Button
+            type="submit" variant="contained" fullWidth disabled={regForm.formState.isSubmitting}
+            sx={{
+              mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15,
+              background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`,
+              borderRadius: 2,
+            }}
+          >
+            {regForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Создать аккаунт'}
+          </Button>
+          <Typography
+            sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
+            onClick={() => { setRegAnchor(null); }}
+          >
+            Уже есть аккаунт? Войти
+          </Typography>
+        </form>
+      </Popover>
 
       {/* ═══ HERO ═══ */}
       <Section sx={{ pt: '180px', pb: '120px', textAlign: 'center', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
@@ -298,7 +469,7 @@ export default function LandingPage() {
               От PDF до готовой ДТ за минуты
             </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
-              <CtaButton onClick={goDashboard}>Войти в систему</CtaButton>
+              <CtaButton onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => setLoginAnchor(document.querySelector('[data-login-btn]') as HTMLElement), 400); }}>Войти в систему</CtaButton>
               <SecondaryBtn onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })}>
                 Как это работает
               </SecondaryBtn>
@@ -661,8 +832,8 @@ export default function LandingPage() {
                 </Stack>
               ))}
             </Stack>
-            <CtaButton onClick={goDashboard} sx={{ fontSize: 20, px: 6, py: 2 }}>
-              Войти в систему
+            <CtaButton onClick={() => { window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => setRegAnchor(document.querySelector('[data-reg-btn]') as HTMLElement), 400); }} sx={{ fontSize: 20, px: 6, py: 2 }}>
+              Начать бесплатно
             </CtaButton>
           </Reveal>
         </Container>
