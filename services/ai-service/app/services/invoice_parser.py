@@ -756,6 +756,14 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         import json as _json
         client = get_llm_client()
 
+        # Check if items have placeholder descriptions (regex failed)
+        items = result.get("items", [])
+        has_bad_items = any(
+            (it.get("description_raw", "") or "").lower().startswith("item ")
+            or not it.get("description_raw")
+            for it in items
+        ) if items else True
+
         missing = []
         if not result.get("invoice_number"):
             missing.append("invoice_number")
@@ -768,17 +776,28 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         if not result.get("buyer_name"):
             missing.append("buyer_name")
 
-        if not missing:
+        if not missing and not has_bad_items:
             return {}
+
+        # Always ask for items when descriptions are bad
+        item_prompt = "Also extract items: [{description, quantity, unit_price, line_total, country_origin}]" if has_bad_items else ""
 
         resp = client.chat.completions.create(
             model=get_model(),
             messages=[
-                {"role": "system", "content": "Extract missing fields from a commercial invoice/packing list. Return JSON only."},
-                {"role": "user", "content": f"Extract: {', '.join(missing)}\n\nAlso items: [{{description, quantity, unit_price, line_total, hs_code, gross_weight, net_weight}}]\n\nText:\n{raw_text[:6000]}\n\nReturn ONLY valid JSON."},
+                {"role": "system", "content": "Extract data from a commercial invoice. Return ONLY valid JSON."},
+                {"role": "user", "content": f"""Extract from this invoice:
+{', '.join(missing) if missing else 'Verify existing data.'}
+
+{item_prompt}
+
+Text:
+{raw_text[:5000]}
+
+Return JSON with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"""},
             ],
             temperature=0,
-            max_tokens=2000,
+            max_tokens=3000,
         )
         text = resp.choices[0].message.content.strip()
         if text.startswith("```"):
@@ -842,12 +861,34 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
             "seller_name": seller.name if seller else None,
             "buyer_name": buyer.name if buyer else None,
         }
+        regex_result["items"] = [{"description_raw": it.description_raw} for it in items]
         llm_data = _llm_enrich(raw_text, regex_result)
         if llm_data:
             if not country_origin and llm_data.get("country_origin"):
                 country_origin = llm_data["country_origin"]
             if not invoice_number and llm_data.get("invoice_number"):
                 invoice_number = llm_data["invoice_number"]
+            # Replace items if LLM returned better ones
+            llm_items = llm_data.get("items", [])
+            if llm_items and isinstance(llm_items, list):
+                has_bad = any(
+                    (it.description_raw or "").lower().startswith("item ") or not it.description_raw
+                    for it in items
+                )
+                if has_bad:
+                    new_items = []
+                    for idx, li in enumerate(llm_items):
+                        new_items.append(InvoiceItemParsed(
+                            line_no=idx + 1,
+                            description_raw=li.get("description", ""),
+                            quantity=li.get("quantity"),
+                            unit_price=li.get("unit_price"),
+                            line_total=li.get("line_total"),
+                            confidence=0.85,
+                        ))
+                    if new_items:
+                        items = new_items
+                        logger.info("llm_replaced_items", count=len(new_items))
 
         # Confidence
         fields_found = sum([
