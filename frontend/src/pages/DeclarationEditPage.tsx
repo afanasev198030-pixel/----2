@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import {
-  Box, Typography, Button, Container,
+  Box, Typography, Button, Container, LinearProgress,
   Stepper, Step, StepLabel, Paper, TextField, Grid,
   IconButton, Chip, Alert, Snackbar, Divider,
 } from '@mui/material';
@@ -66,6 +66,15 @@ const DeclarationEditPage = () => {
     if (Array.isArray(itemsData)) return itemsData;
     return (itemsData as any)?.items || [];
   }, [itemsData]);
+
+  const formProgress = useMemo(() => {
+    if (!watchedValues) return 0;
+    const fields = ['type_code', 'currency_code', 'total_invoice_value', 'country_dispatch_code',
+      'country_destination_code', 'incoterms_code', 'deal_nature_code', 'transport_type_border',
+      'total_gross_weight', 'total_net_weight', 'total_packages_count', 'customs_office_code'];
+    const filled = fields.filter(f => watchedValues[f] !== null && watchedValues[f] !== undefined && watchedValues[f] !== '').length;
+    return Math.round((filled / fields.length) * 100);
+  }, [watchedValues]);
 
   // Convert Decimal strings ("870.000") to numbers for form fields
   const normalizeDecl = (d: any) => {
@@ -230,6 +239,18 @@ const DeclarationEditPage = () => {
             </Step>
           ))}
         </Stepper>
+
+        {activeStep === 1 && (
+          <Box sx={{ mb: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+              <Typography variant="caption" color="text.secondary">Заполнение формы</Typography>
+              <Typography variant="caption" color="text.secondary" fontWeight={600}>{formProgress}%</Typography>
+            </Box>
+            <LinearProgress variant="determinate" value={formProgress}
+              color={formProgress >= 80 ? 'success' : formProgress >= 50 ? 'warning' : 'error'}
+              sx={{ height: 6, borderRadius: 3 }} />
+          </Box>
+        )}
 
         {/* STEP 0 */}
         {activeStep === 0 && (

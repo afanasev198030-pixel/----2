@@ -34,6 +34,8 @@ import {
   Checkbox,
   Snackbar,
   Alert,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -51,12 +53,15 @@ import {
   Delete as DeleteIcon,
   PictureAsPdf as PdfIcon,
   FileDownload as FileDownloadIcon,
+  ViewList as TableViewIcon,
+  ViewColumn as KanbanIcon,
 } from '@mui/icons-material';
 import { getDeclarations, getDeclaration, createDeclaration, deleteDeclaration } from '../api/declarations';
 import { getMe } from '../api/auth';
 import client from '../api/client';
 import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
+import KanbanView from '../components/KanbanView';
 import { Declaration } from '../types';
 import dayjs from 'dayjs';
 
@@ -89,6 +94,7 @@ const DeclarationsListPage = () => {
   const [rowActionDeclarationId, setRowActionDeclarationId] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false, message: '', severity: 'success',
   });
@@ -365,6 +371,10 @@ const DeclarationsListPage = () => {
             ),
           }}
         />
+        <ToggleButtonGroup value={viewMode} exclusive onChange={(_, v) => v && setViewMode(v)} size="small" sx={{ mr: 'auto', ml: 1 }}>
+          <ToggleButton value="table"><TableViewIcon fontSize="small" /></ToggleButton>
+          <ToggleButton value="kanban"><KanbanIcon fontSize="small" /></ToggleButton>
+        </ToggleButtonGroup>
         <Button
           size="small"
           onClick={handleExportCSV}
@@ -412,6 +422,29 @@ const DeclarationsListPage = () => {
             Сбросить фильтры
           </Button>
         )}
+      </Box>
+
+      {/* Quick Filter Chips */}
+      <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Все', value: null },
+          { label: 'Черновики', value: ['draft'] },
+          { label: 'На проверке', value: ['checking_lvl1', 'checking_lvl2', 'final_check'] },
+          { label: 'Подписано', value: ['signed'] },
+          { label: 'Отправлено', value: ['sent'] },
+          { label: 'Выпущено', value: ['released'] },
+          { label: 'Отклонено', value: ['rejected'] },
+        ].map((chip) => (
+          <Chip
+            key={chip.label}
+            label={chip.label}
+            size="small"
+            variant={JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 'filled' : 'outlined'}
+            color={JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 'primary' : 'default'}
+            onClick={() => { setStatusFilter(chip.value); setPage(1); }}
+            sx={{ fontWeight: JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 700 : 400 }}
+          />
+        ))}
       </Box>
 
       {/* Metrics */}
@@ -515,6 +548,10 @@ const DeclarationsListPage = () => {
           </Card>
         </Box>
 
+        {viewMode === 'kanban' ? (
+          <KanbanView declarations={filteredAndSortedItems} onClickDeclaration={(id) => navigate(`/declarations/${id}/edit`)} />
+        ) : (
+        <>
         {/* Table */}
         <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
           <Table>
@@ -589,12 +626,13 @@ const DeclarationsListPage = () => {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell><Skeleton width={120} /></TableCell>
-                    <TableCell><Skeleton width={80} /></TableCell>
-                    <TableCell><Skeleton width={70} /></TableCell>
-                    <TableCell><Skeleton width={120} /></TableCell>
-                    {hasAnyValue && <TableCell><Skeleton width={100} /></TableCell>}
-                    <TableCell><Skeleton width={80} /></TableCell>
+                    <TableCell padding="checkbox"><Skeleton variant="rectangular" width={18} height={18} sx={{ borderRadius: 0.5 }} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={120} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={70} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                    {hasAnyValue && <TableCell><Skeleton variant="text" width={90} /></TableCell>}
+                    <TableCell><Skeleton variant="text" width={60} /></TableCell>
                   </TableRow>
                 ))
               ) : filteredAndSortedItems.length === 0 ? (
@@ -632,9 +670,11 @@ const DeclarationsListPage = () => {
                     </TableCell>
                     <TableCell>
                       {declaration.number_internal ? (
-                        <Typography sx={{ fontWeight: 600, color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
-                          {declaration.number_internal}
-                        </Typography>
+                        <Tooltip title={declaration.number_internal} placement="top" arrow>
+                          <Typography noWrap sx={{ maxWidth: 200, fontWeight: 600, color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
+                            {declaration.number_internal}
+                          </Typography>
+                        </Tooltip>
                       ) : (
                         <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
                           Не присвоен
@@ -726,6 +766,8 @@ const DeclarationsListPage = () => {
             labelDisplayedRows={({ from, to, count }) => `${from}-${to} из ${count !== -1 ? count : `более чем ${to}`}`}
             sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}
           />
+        )}
+        </>
         )}
 
         {/* Row Action Menu */}

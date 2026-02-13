@@ -2,6 +2,11 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
+  PieChart, Pie, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip as ReTooltip, ResponsiveContainer, Legend,
+} from 'recharts';
+import {
   Typography,
   Button,
   Box,
@@ -71,6 +76,34 @@ const BrokerDashboard = () => {
       .sort((a: Declaration, b: Declaration) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 10);
   }, [declarationsData?.items]);
+
+  const statusChartData = useMemo(() => {
+    const items = declarationsData?.items || [];
+    const counts: Record<string, number> = {};
+    items.forEach((d: Declaration) => {
+      const label = d.status === 'draft' ? 'Черновик'
+        : d.status === 'released' ? 'Выпущено'
+        : d.status === 'rejected' ? 'Отклонено'
+        : d.status.includes('checking') ? 'На проверке'
+        : d.status === 'sent' ? 'Отправлено'
+        : d.status === 'signed' ? 'Подписано'
+        : 'Прочее';
+      counts[label] = (counts[label] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [declarationsData?.items]);
+
+  const monthlyData = useMemo(() => {
+    const items = declarationsData?.items || [];
+    const months: Record<string, number> = {};
+    items.forEach((d: Declaration) => {
+      const month = dayjs(d.created_at).format('MMM');
+      months[month] = (months[month] || 0) + 1;
+    });
+    return Object.entries(months).map(([month, count]) => ({ month, count })).slice(-6);
+  }, [declarationsData?.items]);
+
+  const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#d32f2f', '#9c27b0', '#00838f'];
 
   return (
     <AppLayout>
@@ -381,6 +414,34 @@ const BrokerDashboard = () => {
                 </TableBody>
               </Table>
             </TableContainer>
+          </Paper>
+        </Box>
+
+        {/* Analytics */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mt: 3 }}>
+          <Paper sx={{ p: 2.5, borderRadius: 2 }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Статусы деклараций</Typography>
+            <ResponsiveContainer width="100%" height={250}>
+              <PieChart>
+                <Pie data={statusChartData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                  {statusChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                </Pie>
+                <ReTooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </Paper>
+          <Paper sx={{ p: 2.5, borderRadius: 2 }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Декларации по месяцам</Typography>
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis allowDecimals={false} />
+                <ReTooltip />
+                <Bar dataKey="count" fill="#1976d2" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </Paper>
         </Box>
     </AppLayout>

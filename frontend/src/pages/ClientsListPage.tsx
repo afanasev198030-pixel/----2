@@ -191,13 +191,13 @@ const ClientsListPage = () => {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell><Skeleton width={150} /></TableCell>
-                    <TableCell><Skeleton width={100} /></TableCell>
-                    <TableCell><Skeleton width={80} /></TableCell>
-                    <TableCell><Skeleton width={120} /></TableCell>
-                    <TableCell><Skeleton width={80} /></TableCell>
-                    <TableCell><Skeleton width={80} /></TableCell>
-                    <TableCell><Skeleton width={60} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={150} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={120} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell><Skeleton variant="text" width={60} /></TableCell>
                   </TableRow>
                 ))
               ) : filteredClients.length === 0 ? (
@@ -230,9 +230,11 @@ const ClientsListPage = () => {
                       onClick={() => navigate(`/clients/${client.id}`)}
                     >
                       <TableCell>
-                        <Typography variant="body2" fontWeight={600}>
-                          {client.client_company?.name || '—'}
-                        </Typography>
+                        <Tooltip title={client.client_company?.name || '—'} placement="top" arrow>
+                          <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 200 }}>
+                            {client.client_company?.name || '—'}
+                          </Typography>
+                        </Tooltip>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>

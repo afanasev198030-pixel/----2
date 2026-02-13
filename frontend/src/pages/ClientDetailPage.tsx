@@ -152,7 +152,9 @@ const ClientDetailPage = () => {
                   {client?.client_company?.address && (
                     <Grid item xs={12}>
                       <Typography variant="body2" color="text.secondary" gutterBottom>Адрес</Typography>
-                      <Typography variant="body1">{client.client_company.address}</Typography>
+                      <Tooltip title={client.client_company.address} placement="top" arrow>
+                        <Typography variant="body1" noWrap sx={{ maxWidth: 400 }}>{client.client_company.address}</Typography>
+                      </Tooltip>
                     </Grid>
                   )}
                   {client?.client_company?.contact_email && (
@@ -281,12 +283,12 @@ const ClientDetailPage = () => {
                 {declLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell><Skeleton width={120} /></TableCell>
-                      <TableCell><Skeleton width={80} /></TableCell>
-                      <TableCell><Skeleton width={70} /></TableCell>
-                      <TableCell><Skeleton width={100} /></TableCell>
-                      <TableCell><Skeleton width={90} /></TableCell>
-                      <TableCell><Skeleton width={40} /></TableCell>
+                      <TableCell><Skeleton variant="text" width={120} /></TableCell>
+                      <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                      <TableCell><Skeleton variant="text" width={70} /></TableCell>
+                      <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                      <TableCell><Skeleton variant="text" width={90} /></TableCell>
+                      <TableCell><Skeleton variant="text" width={40} /></TableCell>
                     </TableRow>
                   ))
                 ) : declarations.length === 0 ? (
