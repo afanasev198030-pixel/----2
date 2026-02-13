@@ -62,6 +62,29 @@ def extract_text_from_image(file_bytes: bytes) -> str:
         return ""
 
 
+def extract_text_from_excel(file_bytes: bytes, filename: str) -> str:
+    """Extract text from Excel (.xlsx/.xls) using openpyxl."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+        text_parts = []
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            text_parts.append(f"--- Sheet: {sheet_name} ---")
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(cell) if cell is not None else "" for cell in row]
+                line = "\t".join(cells).strip()
+                if line and line != "\t" * len(cells):
+                    text_parts.append(line)
+        wb.close()
+        text = "\n".join(text_parts)
+        logger.info("excel_extracted", filename=filename, chars=len(text), sheets=len(wb.sheetnames))
+        return text
+    except Exception as e:
+        logger.error("excel_extraction_failed", filename=filename, error=str(e))
+        return ""
+
+
 def extract_text(file_bytes: bytes, filename: str) -> str:
     """Determine file type and call appropriate extractor."""
     filename_lower = filename.lower()
@@ -69,6 +92,8 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
         return extract_text_from_pdf(file_bytes)
     elif filename_lower.endswith(('.jpg', '.jpeg', '.png', '.tiff', '.bmp')):
         return extract_text_from_image(file_bytes)
+    elif filename_lower.endswith(('.xlsx', '.xls')):
+        return extract_text_from_excel(file_bytes, filename)
     else:
         logger.warning("unknown_file_type", filename=filename)
         return extract_text_from_pdf(file_bytes)

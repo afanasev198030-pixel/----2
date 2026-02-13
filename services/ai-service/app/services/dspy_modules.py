@@ -288,19 +288,19 @@ class HSCodeClassifier:
             except Exception as e:
                 logger.warning("dspy_hs_classify_fallback", error=str(e))
 
-        # GPT-4o direct call (when DSPy unavailable but OpenAI configured)
+        # LLM direct call (when DSPy unavailable but LLM configured)
         try:
             from app.config import get_settings
             settings = get_settings()
-            if settings.has_openai and rag_results:
-                import openai as _oai
-                client = _oai.OpenAI(api_key=settings.OPENAI_API_KEY)
+            if settings.has_llm and rag_results:
+                from app.services.llm_client import get_llm_client, get_model
+                client = get_llm_client()
                 rag_text = "\n".join([
                     f"- {r.get('code', '')}: {r.get('name_ru', '')} (score: {r.get('score', 0):.2f})"
                     for r in rag_results[:10]
                 ])
                 resp = client.chat.completions.create(
-                    model=settings.OPENAI_MODEL,
+                    model=get_model(),
                     messages=[
                         {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Выбери точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название\",\"reasoning\":\"обоснование\",\"confidence\":0.95}"},
                         {"role": "user", "content": f"Товар: {description}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."},
@@ -317,16 +317,16 @@ class HSCodeClassifier:
                 code = data.get("hs_code", "").replace(".", "").replace(" ", "")
                 if len(code) < 10:
                     code = code.ljust(10, "0")
-                logger.info("hs_classified_by_gpt", code=code, description=description[:50])
+                logger.info("hs_classified_by_llm", code=code, description=description[:50], model=get_model())
                 return {
                     "hs_code": code[:10],
                     "name_ru": data.get("name_ru", ""),
-                    "reasoning": data.get("reasoning", "GPT-4o classification"),
+                    "reasoning": data.get("reasoning", f"LLM classification ({get_model()})"),
                     "confidence": float(data.get("confidence", 0.85)),
-                    "source": "gpt4o_rag",
+                    "source": "llm_rag",
                 }
         except Exception as e:
-            logger.warning("gpt4o_hs_classify_failed", error=str(e))
+            logger.warning("llm_hs_classify_failed", error=str(e))
 
         # Fallback на keyword classifier
         from app.services.hs_classifier import classify as keyword_classify, _pad_hs_code
@@ -406,13 +406,19 @@ def _safe_json_parse(text: str, default=None):
         return default if default is not None else []
 
 
-def configure_dspy(openai_api_key: str, model: str = "gpt-4o"):
-    """Настроить DSPy для использования OpenAI."""
+def configure_dspy(api_key: str = None, model: str = None, base_url: str = None):
+    """Настроить DSPy для использования LLM (DeepSeek, OpenAI, etc.)."""
     if not _dspy_available:
         return
     try:
-        lm = dspy.LM(f"openai/{model}", api_key=openai_api_key)
+        from app.config import get_settings
+        settings = get_settings()
+        key = api_key or settings.effective_api_key
+        mdl = model or settings.effective_model
+        url = base_url or settings.effective_base_url
+
+        lm = dspy.LM(f"openai/{mdl}", api_key=key, api_base=url)
         dspy.configure(lm=lm)
-        logger.info("dspy_configured", model=model)
+        logger.info("dspy_configured", model=mdl, provider=settings.LLM_PROVIDER, base_url=url)
     except Exception as e:
         logger.error("dspy_configure_failed", error=str(e))

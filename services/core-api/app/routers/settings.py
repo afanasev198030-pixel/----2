@@ -31,8 +31,10 @@ class ServiceStatus(BaseModel):
 
 
 class SettingsResponse(BaseModel):
-    openai_api_key_set: bool
-    openai_model: str
+    openai_api_key_set: bool  # backward compat
+    openai_model: str  # backward compat
+    llm_provider: str = "deepseek"
+    llm_model: str = "deepseek-chat"
     chromadb_status: str
     rag_available: bool
     ai_status: str
@@ -64,8 +66,11 @@ async def get_settings(
     openai_key = await _get_setting(db, "openai_api_key")
     openai_model = await _get_setting(db, "openai_model") or "gpt-4o"
 
-    # Check ai-service health
     import os
+    llm_provider = await _get_setting(db, "llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
+    llm_model = await _get_setting(db, "llm_model") or os.environ.get("LLM_MODEL", "deepseek-chat")
+
+    # Check ai-service health
     ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
     chromadb_status = "unknown"
     rag_available = False
@@ -74,21 +79,26 @@ async def get_settings(
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(f"{ai_url}/health")
-            data = resp.json()
-            rag_available = data.get("rag_available", False)
-            chromadb_connected = data.get("chromadb_connected", False)
-            openai_configured = data.get("openai_configured", False)
+            health_data = resp.json()
+            rag_available = health_data.get("rag_available", False)
+            chromadb_connected = health_data.get("chromadb_connected", False)
+            llm_configured = health_data.get("llm_configured", health_data.get("openai_configured", False))
             chromadb_status = "connected" if chromadb_connected else "disconnected"
 
-            if openai_configured and rag_available:
+            # Use provider/model from ai-service health if available
+            active_provider = health_data.get("llm_provider", llm_provider)
+            active_model = health_data.get("llm_model", llm_model)
+            provider_label = active_provider.capitalize()
+
+            if llm_configured and rag_available:
                 ai_status = "active"
-                ai_message = "AI работает: GPT-4o + RAG"
-            elif openai_key and not openai_configured:
+                ai_message = f"AI работает: {provider_label} ({active_model}) + RAG"
+            elif openai_key and not llm_configured:
                 ai_status = "key_not_applied"
                 ai_message = "Ключ сохранён, но не применён к AI-сервису. Нажмите Сохранить."
             elif not openai_key:
                 ai_status = "no_key"
-                ai_message = "OpenAI ключ не установлен. Используется regex-парсинг (базовая точность)."
+                ai_message = "API ключ не установлен. Используется regex-парсинг (базовая точность)."
             else:
                 ai_status = "partial"
                 ai_message = "AI частично работает."
@@ -182,6 +192,8 @@ async def get_settings(
     return SettingsResponse(
         openai_api_key_set=bool(openai_key),
         openai_model=openai_model,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
         chromadb_status=chromadb_status,
         rag_available=rag_available,
         ai_status=ai_status,
@@ -197,47 +209,78 @@ async def set_openai_key(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Установить OpenAI API ключ. Сохраняется в БД."""
-    if data.key != "openai_api_key":
+    """Установить LLM API ключ (DeepSeek/OpenAI). Сохраняется в БД. Обратная совместимость: key=openai_api_key."""
+    if data.key not in ("openai_api_key", "llm_api_key"):
         raise HTTPException(status_code=400, detail="Invalid key")
 
-    # Сохранить в БД
+    # Сохранить в БД (оба ключа для обратной совместимости)
     await _set_setting(db, "openai_api_key", data.value)
-    logger.info("openai_key_saved_to_db", user_id=str(current_user.id))
+    await _set_setting(db, "llm_api_key", data.value)
+    logger.info("llm_key_saved_to_db", user_id=str(current_user.id))
 
-    # Проверить ключ — попробовать вызвать OpenAI
+    # Определить провайдера и base_url из БД настроек или env
+    import os
+    llm_provider = await _get_setting(db, "llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
+    llm_base_url = await _get_setting(db, "llm_base_url") or os.environ.get("LLM_BASE_URL", "")
+    llm_model = await _get_setting(db, "llm_model") or os.environ.get("LLM_MODEL", "")
+
+    # Определить base_url для валидации
+    if llm_base_url:
+        validate_base_url = llm_base_url
+    elif llm_provider == "openai":
+        validate_base_url = "https://api.openai.com/v1"
+    else:
+        validate_base_url = "https://api.deepseek.com"
+
+    # Определить модель для валидации
+    if llm_model:
+        validate_model = llm_model
+    elif llm_provider == "openai":
+        validate_model = "gpt-4o-mini"
+    else:
+        validate_model = "deepseek-chat"
+
+    # Проверить ключ — попробовать вызвать LLM API
     ai_check = {"status": "unknown", "message": ""}
     try:
         import openai
-        client = openai.OpenAI(api_key=data.value)
+        client = openai.OpenAI(api_key=data.value, base_url=validate_base_url)
         # Тест: простой запрос
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=validate_model,
             messages=[{"role": "user", "content": "Say OK"}],
             max_tokens=5,
         )
-        ai_check = {"status": "ok", "message": "OpenAI API работает. Ключ валиден."}
-        logger.info("openai_key_validated")
+        provider_label = llm_provider.capitalize()
+        ai_check = {"status": "ok", "message": f"{provider_label} API работает. Ключ валиден."}
+        logger.info("llm_key_validated", provider=llm_provider, model=validate_model)
     except Exception as e:
         err_msg = str(e)
         if "insufficient_quota" in err_msg or "billing" in err_msg:
-            ai_check = {"status": "no_balance", "message": "Ключ валиден, но на счету недостаточно средств. Пополните баланс на platform.openai.com"}
-        elif "invalid_api_key" in err_msg or "Incorrect API key" in err_msg:
+            ai_check = {"status": "no_balance", "message": "Ключ валиден, но на счету недостаточно средств."}
+        elif "invalid_api_key" in err_msg or "Incorrect API key" in err_msg or "Authentication" in err_msg:
             ai_check = {"status": "invalid", "message": "Неверный API ключ. Проверьте и попробуйте снова."}
         else:
             ai_check = {"status": "error", "message": f"Ошибка проверки: {err_msg[:200]}"}
-        logger.warning("openai_key_check_failed", error=err_msg[:100])
+        logger.warning("llm_key_check_failed", error=err_msg[:100], provider=llm_provider)
 
     # Применить к ai-service (если ключ валиден)
     ai_result = {}
     if ai_check["status"] == "ok":
         try:
-            import os
             ai_svc = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
             async with httpx.AsyncClient(timeout=10) as http_client:
                 resp = await http_client.post(
                     f"{ai_svc}/api/v1/ai/configure",
-                    json={"openai_api_key": data.value, "openai_model": "gpt-4o"},
+                    json={
+                        "api_key": data.value,
+                        "model": validate_model,
+                        "base_url": validate_base_url,
+                        "provider": llm_provider,
+                        # backward compat fields
+                        "openai_api_key": data.value,
+                        "openai_model": validate_model,
+                    },
                 )
                 ai_result = resp.json()
         except Exception as e:
@@ -246,6 +289,7 @@ async def set_openai_key(
     return {
         "status": "saved",
         "key_set": True,
+        "provider": llm_provider,
         "ai_check": ai_check,
         "ai_service_response": ai_result,
     }

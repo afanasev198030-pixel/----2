@@ -19,16 +19,17 @@ class PackingListParsed(BaseModel):
 
 
 def _llm_parse_pl(raw_text: str) -> dict:
-    """Parse packing list using OpenAI GPT-4o."""
+    """Parse packing list using LLM (DeepSeek/OpenAI)."""
     try:
         from app.config import get_settings
         settings = get_settings()
-        if not settings.has_openai:
+        if not settings.has_llm:
             return {}
-        import openai, json
-        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        from app.services.llm_client import get_llm_client, get_model
+        import json
+        client = get_llm_client()
         resp = client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+            model=get_model(),
             messages=[
                 {"role": "system", "content": "Extract data from a packing list. Return JSON only."},
                 {"role": "user", "content": f"""Extract from this packing list:

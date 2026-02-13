@@ -51,6 +51,8 @@ const SettingsPage = () => {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('gpt-4o');
   const [showKey, setShowKey] = useState(false);
+  const [provider, setProvider] = useState('deepseek');
+  const [baseUrl, setBaseUrl] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning' | 'info'; text: string } | null>(null);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -68,6 +70,7 @@ const SettingsPage = () => {
       const resp = await client.get('/settings/');
       setSettings(resp.data);
       setModel(resp.data.openai_model || 'gpt-4o');
+      setProvider(resp.data.llm_provider || 'deepseek');
     } catch (e) {
       console.error('Failed to load settings:', e);
     } finally {
@@ -90,7 +93,14 @@ const SettingsPage = () => {
     setSaving(true);
     setMessage(null);
     try {
-      const resp = await client.post('/settings/openai-key', { key: 'openai_api_key', value: apiKey });
+      const resp = await client.post('/settings/openai-key', {
+        key: 'openai_api_key',
+        value: apiKey,
+        provider: provider,
+        base_url: provider === 'deepseek' ? 'https://api.deepseek.com'
+                 : provider === 'custom' ? baseUrl
+                 : undefined,
+      });
       if (resp.data.status === 'saved') {
         const check = resp.data.ai_check || {};
         if (check.status === 'ok') setMessage({ type: 'success', text: 'OpenAI API ключ сохранён, проверен и применён.' });
@@ -392,21 +402,51 @@ const SettingsPage = () => {
         </Box>
       </Paper>
 
-      {/* OpenAI API Key */}
+      {/* LLM Provider */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AiIcon color="primary" fontSize="small" /> OpenAI API Ключ
+          <AiIcon color="primary" fontSize="small" /> LLM Провайдер
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Введите OpenAI API ключ для AI функций. Получить на{' '}
-          <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com</a>.
+          DeepSeek рекомендуется — дешевле и быстрее OpenAI. Ключ можно получить на{' '}
+          <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a>.
         </Typography>
+
+        <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <TextField
+            select
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+            size="small"
+            sx={{ minWidth: 200 }}
+            SelectProps={{ native: true }}
+            label="Провайдер"
+          >
+            <option value="deepseek">DeepSeek (рекомендуется)</option>
+            <option value="openai">OpenAI</option>
+            <option value="custom">Custom (свой URL)</option>
+          </TextField>
+        </Box>
+
+        {/* Show base URL for custom provider */}
+        {provider === 'custom' && (
+          <TextField
+            fullWidth label="Base URL" placeholder="https://api.example.com/v1"
+            value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+            size="small" sx={{ mb: 2 }}
+          />
+        )}
+
+        {/* API Key (same for all providers) */}
         {settings?.openai_api_key_set && (
           <Alert severity="success" sx={{ mb: 2 }}>API ключ установлен. Для замены введите новый ниже.</Alert>
         )}
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-          <TextField fullWidth label="OpenAI API Key" placeholder="sk-..." value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)} type={showKey ? 'text' : 'password'} size="small"
+          <TextField
+            fullWidth label="API Key"
+            placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-...'}
+            value={apiKey} onChange={(e) => setApiKey(e.target.value)}
+            type={showKey ? 'text' : 'password'} size="small"
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">
@@ -417,7 +457,8 @@ const SettingsPage = () => {
               ),
             }}
           />
-          <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+          <Button variant="contained"
+            startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
             onClick={handleSaveKey} disabled={saving || !apiKey.trim()} sx={{ minWidth: 140 }}>
             Сохранить
           </Button>
@@ -426,13 +467,13 @@ const SettingsPage = () => {
 
       {/* Model Selection */}
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Модель OpenAI</Typography>
+        <Typography variant="h6" sx={{ mb: 2 }}>Модель LLM</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 200 }} SelectProps={{ native: true }}>
-            <option value="gpt-4o">GPT-4o (рекомендуется)</option>
-            <option value="gpt-4o-mini">GPT-4o Mini (дешевле)</option>
-            <option value="gpt-4-turbo">GPT-4 Turbo</option>
-            <option value="gpt-3.5-turbo">GPT-3.5 Turbo (быстрее)</option>
+            <option value="deepseek-chat">DeepSeek V3 (рекомендуется)</option>
+            <option value="deepseek-reasoner">DeepSeek R1 (рассуждения)</option>
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4o-mini">GPT-4o Mini</option>
           </TextField>
           <Button variant="outlined" onClick={handleSaveModel}>Применить</Button>
         </Box>

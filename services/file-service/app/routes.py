@@ -21,7 +21,8 @@ ALLOWED_MIME_TYPES = {
     "application/pdf",
     "image/jpeg",
     "image/png",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
+    "application/vnd.ms-excel",  # .xls
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/xml",
     "text/xml",

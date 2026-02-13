@@ -50,19 +50,19 @@ class IndexManager:
     EMBED_MODEL = "text-embedding-3-small"
     EMBED_DIM = 1536
 
-    def __init__(self, chromadb_url: str, openai_api_key: str, openai_model: str = "gpt-4o"):
+    def __init__(self, chromadb_url: str, openai_api_key: str = "", openai_model: str = "gpt-4o"):
         self._chromadb_url = chromadb_url
         self._openai_api_key = openai_api_key
         self._openai_model = openai_model
         self._initialized = False
         self._chromadb_connected = False
         self._chroma_client = None
-        self._openai_client = None
+        self._openai_client = None  # Used for embeddings only
 
     # ── properties ──────────────────────────────────────────────
     @property
     def available(self) -> bool:
-        return self._initialized and self._chromadb_connected and self._openai_client is not None
+        return self._initialized and self._chromadb_connected
 
     @property
     def chromadb_connected(self) -> bool:
@@ -101,12 +101,22 @@ class IndexManager:
             _log_event("chromadb_connect_failed", str(e), "error")
             return
 
-        # OpenAI client
-        if self._openai_api_key and self._openai_api_key != "sk-your-key-here" and _openai_available:
-            self._openai_client = _openai_mod.OpenAI(api_key=self._openai_api_key)
-            _log_event("openai_client_ready", f"model={self._openai_model}")
+        # Embeddings client (OpenAI only — DeepSeek doesn't provide embeddings API)
+        from app.config import get_settings
+        settings = get_settings()
+        if settings.EMBED_PROVIDER == "openai" and _openai_available:
+            embed_key = settings.effective_api_key
+            if embed_key and embed_key != "sk-your-key-here":
+                self._openai_client = _openai_mod.OpenAI(
+                    api_key=embed_key,
+                    base_url="https://api.openai.com/v1",  # Always OpenAI for embeddings
+                )
+                _log_event("openai_embed_client_ready", f"model={self.EMBED_MODEL}")
+            else:
+                _log_event("openai_embed_no_key", "Set key in Settings page", "warning")
         else:
-            _log_event("openai_not_configured", "Set key in Settings page", "warning")
+            self._openai_client = None  # Use ChromaDB default embeddings
+            _log_event("embed_provider_local", f"provider={settings.EMBED_PROVIDER}, using ChromaDB defaults")
 
         self._initialized = True
 
@@ -224,9 +234,8 @@ class IndexManager:
                 emb = self._embed_one(f"Товар: {description}")
                 results = col.query(query_embeddings=[emb], n_results=top_k)
             else:
-                # Without OpenAI, skip ChromaDB default embedding (downloads 80MB ONNX model, poor for Russian)
-                logger.debug("hs_search_skipped_no_openai", description=description[:50])
-                return []
+                # Use ChromaDB default embeddings (ONNX model)
+                results = col.query(query_texts=[f"Товар: {description}"], n_results=top_k)
 
             out = []
             for i, doc_id in enumerate(results["ids"][0]):
@@ -358,7 +367,7 @@ def get_index_manager() -> IndexManager:
         settings = get_settings()
         _index_manager = IndexManager(
             chromadb_url=settings.chromadb_url,
-            openai_api_key=settings.OPENAI_API_KEY,
-            openai_model=settings.OPENAI_MODEL,
+            openai_api_key=settings.effective_api_key,
+            openai_model=settings.effective_model,
         )
     return _index_manager

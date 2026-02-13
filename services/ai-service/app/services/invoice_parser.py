@@ -746,14 +746,15 @@ def _extract_weights(text: str) -> tuple[Optional[float], Optional[float], Optio
 
 # ── LLM Enrichment ───────────────────────────────────────────
 def _llm_enrich(raw_text: str, result: dict) -> dict:
-    """Use GPT-4o to fill missing fields that regex couldn't extract."""
+    """Use LLM (DeepSeek/OpenAI) to fill missing fields that regex couldn't extract."""
     try:
         from app.config import get_settings
         settings = get_settings()
-        if not settings.has_openai:
+        if not settings.has_llm:
             return {}
-        import openai, json as _json
-        client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+        from app.services.llm_client import get_llm_client, get_model
+        import json as _json
+        client = get_llm_client()
 
         missing = []
         if not result.get("invoice_number"):
@@ -771,7 +772,7 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
             return {}
 
         resp = client.chat.completions.create(
-            model=settings.OPENAI_MODEL,
+            model=get_model(),
             messages=[
                 {"role": "system", "content": "Extract missing fields from a commercial invoice/packing list. Return JSON only."},
                 {"role": "user", "content": f"Extract: {', '.join(missing)}\n\nAlso items: [{{description, quantity, unit_price, line_total, hs_code, gross_weight, net_weight}}]\n\nText:\n{raw_text[:6000]}\n\nReturn ONLY valid JSON."},

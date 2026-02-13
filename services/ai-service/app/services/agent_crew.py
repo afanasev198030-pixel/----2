@@ -29,6 +29,10 @@ def _detect_doc_type(filename: str, text: str) -> str:
     """Определить тип документа по имени файла и содержимому."""
     fn_lower = filename.lower()
 
+    if fn_lower.endswith(('.xlsx', '.xls')):
+        # Excel files are typically packing lists or specifications
+        return "packing_list"
+
     # Combined INV+PL document (common in Russian customs docs)
     if ("inv" in fn_lower and "pl" in fn_lower) or ("инвойс" in fn_lower and "упаков" in fn_lower):
         return "invoice"  # Treat combined docs as invoice (parser extracts packing data too)

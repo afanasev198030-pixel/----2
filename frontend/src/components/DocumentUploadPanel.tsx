@@ -60,7 +60,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
 
   const handleFilesSelected = useCallback((newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles).filter(
-      (f) => f.type === 'application/pdf' || f.type.startsWith('image/')
+      (f) => f.type === 'application/pdf' || f.type.startsWith('image/') || f.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || f.type === 'application/vnd.ms-excel' || f.name.endsWith('.xlsx') || f.name.endsWith('.xls')
     );
     setSelectedFiles((prev) => [...prev, ...fileArray]);
     setError(null);
@@ -303,7 +303,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
                 >
                   <input
                     type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
+                    accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls"
                     multiple
                     style={{ display: 'none' }}
                     id="upload-smart"
@@ -315,10 +315,10 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
                   <label htmlFor="upload-smart" style={{ cursor: 'pointer' }}>
                     <UploadIcon sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
                     <Typography variant="body1" fontWeight={600} color="primary.main">
-                      Перетащите PDF файлы сюда
+                      Перетащите файлы сюда
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      Invoice, Contract, Packing List, AWB, Specification
+                      Invoice, Contract, Packing List, AWB, Specification (PDF, Excel)
                     </Typography>
                     <Button component="span" size="small" variant="outlined" startIcon={<AddIcon />}>
                       Выбрать файлы
