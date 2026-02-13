@@ -812,12 +812,13 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
             return {}
 
         # Always ask for items when descriptions are bad
-        item_prompt = "Also extract items: [{description, quantity, unit_price, line_total, country_origin}]" if has_bad_items else ""
+        item_prompt = """Also extract items (ONLY physical goods, NOT freight/shipping/insurance/handling fees): [{description, quantity, unit, unit_price, line_total, country_origin}].
+IMPORTANT: quantity is REQUIRED for each item. Look for columns: Qty, Количество, Кол-во, Amount, pcs, шт. If not stated explicitly, calculate: quantity = line_total / unit_price.""" if has_bad_items else ""
 
         resp = client.chat.completions.create(
             model=get_model(),
             messages=[
-                {"role": "system", "content": "Extract data from a commercial invoice. Return ONLY valid JSON."},
+                {"role": "system", "content": "Extract data from a commercial invoice. Return ONLY valid JSON. Include ONLY physical goods as items — do NOT include freight charges, shipping fees, insurance, handling fees, delivery charges, or transport costs."},
                 {"role": "user", "content": f"""Extract from this invoice:
 {', '.join(missing) if missing else 'Verify existing data.'}
 

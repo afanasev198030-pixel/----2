@@ -267,7 +267,7 @@ class HSCodeClassifier:
         if _dspy_available:
             self._dspy_module = dspy.Predict(HSCodeSignature)
 
-    def classify(self, description: str, rag_results: list[dict]) -> dict:
+    def classify(self, description: str, rag_results: list[dict], context: str = "") -> dict:
         rag_text = ""
         if rag_results:
             rag_text = "\n".join([
@@ -299,14 +299,15 @@ class HSCodeClassifier:
             if settings.has_llm:
                 from app.services.llm_client import get_llm_client, get_model
                 llm = get_llm_client()
+                context_block = f"\n\nКонтекст декларации (другие позиции):\n{context}" if context else ""
                 if rag_text:
-                    user_msg = f"Товар: {description}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."
+                    user_msg = f"Товар: {description}{context_block}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."
                 else:
-                    user_msg = f"Товар: {description}\n\nОпредели 10-значный код ТН ВЭД ЕАЭС для этого товара. Учитывай материал, назначение и страну происхождения."
+                    user_msg = f"Товар: {description}{context_block}\n\nОпредели 10-значный код ТН ВЭД ЕАЭС для этого товара. Учитывай материал, назначение и страну происхождения."
                 resp = llm.chat.completions.create(
                     model=get_model(),
                     messages=[
-                        {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Определи точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название по-русски\",\"reasoning\":\"обоснование\",\"confidence\":0.95}"},
+                        {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Определи точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название по-русски\",\"reasoning\":\"обоснование\",\"confidence\":0.95}\n\nРаспространённые аббревиатуры электроники (НЕ путать с сельхозпродукцией):\n- ESC = Electronic Speed Controller (регулятор оборотов, группа 8504/8537)\n- FC = Flight Controller (полётный контроллер, группа 8537/8543)\n- VTX = Video Transmitter (видеопередатчик, группа 8525)\n- PDB = Power Distribution Board (плата распределения питания, группа 8536)\n- BEC = Battery Eliminator Circuit (стабилизатор напряжения, группа 8504)\n- FPV = First Person View (видеосистема для дронов, группа 8525/8528)"},
                         {"role": "user", "content": user_msg},
                     ],
                     temperature=0,

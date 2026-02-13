@@ -315,18 +315,35 @@ class DeclarationCrew:
                 "type": "buyer",
             }
 
-        # Items из инвойса
+        # Items из инвойса (только товары, не freight/shipping/insurance)
+        import re as _re
+        _SKIP_ITEM = _re.compile(
+            r'\b(freight|shipping|insurance|handling|delivery\s*fee|transport.*fee|'
+            r'фрахт|доставка|страхов|транспортн)',
+            _re.IGNORECASE,
+        )
         origin_code = inv.get("country_origin") or (packing.get("items", [{}])[0].get("country_origin") if packing.get("items") else None)
         items = []
         for item_data in inv.get("items", []):
+            desc = item_data.get("description", item_data.get("description_raw", ""))
+            # Пропускаем транспортные расходы, страховку и прочие сборы
+            if _SKIP_ITEM.search(desc or ""):
+                logger.info("skip_non_goods_item", description=desc[:60])
+                continue
+            # Fallback для quantity: line_total / unit_price
+            qty = item_data.get("quantity")
+            up = item_data.get("unit_price")
+            lt = item_data.get("line_total")
+            if not qty and lt and up and up > 0:
+                qty = round(lt / up, 2)
             items.append({
                 "line_no": item_data.get("line_no", len(items) + 1),
-                "description": item_data.get("description", item_data.get("description_raw", "")),
-                "commercial_name": item_data.get("description", item_data.get("description_raw", "")),
-                "quantity": item_data.get("quantity"),
+                "description": desc,
+                "commercial_name": desc,
+                "quantity": qty,
                 "unit": item_data.get("unit"),
-                "unit_price": item_data.get("unit_price"),
-                "line_total": item_data.get("line_total"),
+                "unit_price": up,
+                "line_total": lt,
                 "hs_code": item_data.get("hs_code", ""),
                 "country_origin_code": item_data.get("country_origin_code") or origin_code,
                 "gross_weight": item_data.get("gross_weight"),
@@ -345,11 +362,14 @@ class DeclarationCrew:
                     item["gross_weight"] = round(per_item_gross, 3)
                     item["net_weight"] = round(per_item_net, 3)
 
-        # Auto-classify HS codes via GPT-4o + RAG (only for items WITHOUT HS code from parser)
+        # Auto-classify HS codes via LLM + RAG (only for items WITHOUT HS code from parser)
         from app.services.dspy_modules import HSCodeClassifier
         from app.services.index_manager import get_index_manager
         hs_classifier = HSCodeClassifier()
         idx_mgr = get_index_manager()
+        # Контекст: описания всех позиций (помогает различать аббревиатуры вроде ESC)
+        all_descs = [it.get("description", "")[:60] for it in items if it.get("description")]
+        decl_context = "; ".join(all_descs) if len(all_descs) > 1 else ""
         for item in items:
             existing_hs = item.get("hs_code", "").strip()
             if existing_hs and len(existing_hs) >= 8:
@@ -364,7 +384,7 @@ class DeclarationCrew:
             elif item.get("description"):
                 try:
                     rag_results = idx_mgr.search_hs_codes(item["description"])
-                    hs_result = hs_classifier.classify(item["description"], rag_results)
+                    hs_result = hs_classifier.classify(item["description"], rag_results, context=decl_context)
                     if hs_result.get("hs_code"):
                         item["hs_code"] = hs_result["hs_code"]
                         item["hs_code_name"] = hs_result.get("name_ru", "")
