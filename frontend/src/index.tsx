@@ -24,10 +24,16 @@ const queryClient = new QueryClient({
   },
 });
 
-const savedMode = (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+const getInitialMode = (): 'light' | 'dark' => {
+  const saved = localStorage.getItem('theme') as 'light' | 'dark' | null;
+  if (saved) return saved;
+  // Detect browser preference
+  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+};
 
 const Root = () => {
-  const [mode, setMode] = useState<'light' | 'dark'>(savedMode);
+  const [mode, setMode] = useState<'light' | 'dark'>(getInitialMode);
 
   const toggleTheme = () => {
     const next = mode === 'light' ? 'dark' : 'light';

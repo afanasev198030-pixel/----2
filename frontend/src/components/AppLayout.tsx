@@ -90,7 +90,7 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   }, [breadcrumbs, location.pathname]);
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#f5f7fa' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
       <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
         <Toolbar sx={{ px: { xs: 2, md: 4 }, minHeight: { xs: 56 } }}>
           <Box
