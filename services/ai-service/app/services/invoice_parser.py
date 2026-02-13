@@ -3,13 +3,29 @@ Robust invoice/packing list parser for customs declaration system.
 Handles combined INV+PL documents, multi-format tables, Russian/English bilingual PDFs.
 """
 import re
-from typing import Optional
-from pydantic import BaseModel
+from typing import Optional, Any
+from pydantic import BaseModel, field_validator
 import structlog
 
 from app.services.ocr_service import extract_text
 
 logger = structlog.get_logger()
+
+
+def _safe_float(v: Any) -> Optional[float]:
+    """Безопасное преобразование в float — не падает на строках вроде 'N/A', '2pcs'."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        cleaned = re.sub(r'[^\d.\-]', '', v.strip())
+        if cleaned:
+            try:
+                return float(cleaned)
+            except (ValueError, TypeError):
+                pass
+    return None
 
 
 class CounterpartyParsed(BaseModel):
@@ -32,6 +48,17 @@ class InvoiceItemParsed(BaseModel):
     country_origin: Optional[str] = None
     confidence: float = 0.5
 
+    @field_validator('quantity', 'unit_price', 'line_total', 'gross_weight', 'net_weight', mode='before')
+    @classmethod
+    def parse_float_safe(cls, v: Any) -> Optional[float]:
+        return _safe_float(v)
+
+    @field_validator('confidence', mode='before')
+    @classmethod
+    def parse_confidence_safe(cls, v: Any) -> float:
+        r = _safe_float(v)
+        return r if r is not None else 0.5
+
 
 class InvoiceParsed(BaseModel):
     invoice_number: Optional[str] = None
@@ -40,6 +67,11 @@ class InvoiceParsed(BaseModel):
     buyer: Optional[CounterpartyParsed] = None
     currency: Optional[str] = None
     total_amount: Optional[float] = None
+
+    @field_validator('total_amount', mode='before')
+    @classmethod
+    def parse_total_safe(cls, v: Any) -> Optional[float]:
+        return _safe_float(v)
     total_quantity: Optional[float] = None
     country_origin: Optional[str] = None
     country_destination: Optional[str] = None
