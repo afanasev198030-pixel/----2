@@ -2,6 +2,7 @@
 API для системных настроек.
 OpenAI ключ и другие настройки хранятся в PostgreSQL core.system_settings.
 """
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,8 @@ router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 class SettingUpdate(BaseModel):
     key: str
     value: str
+    provider: Optional[str] = None
+    base_url: Optional[str] = None
 
 
 class ServiceStatus(BaseModel):
@@ -213,16 +216,26 @@ async def set_openai_key(
     if data.key not in ("openai_api_key", "llm_api_key"):
         raise HTTPException(status_code=400, detail="Invalid key")
 
-    # Сохранить в БД (оба ключа для обратной совместимости)
+    # Сохранить ключ в БД
     await _set_setting(db, "openai_api_key", data.value)
     await _set_setting(db, "llm_api_key", data.value)
-    logger.info("llm_key_saved_to_db", user_id=str(current_user.id))
 
-    # Определить провайдера и base_url из БД настроек или env
+    # Сохранить провайдера и base_url из запроса (если переданы)
     import os
-    llm_provider = await _get_setting(db, "llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
-    llm_base_url = await _get_setting(db, "llm_base_url") or os.environ.get("LLM_BASE_URL", "")
+    if data.provider:
+        await _set_setting(db, "llm_provider", data.provider)
+        llm_provider = data.provider
+    else:
+        llm_provider = await _get_setting(db, "llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
+
+    if data.base_url:
+        await _set_setting(db, "llm_base_url", data.base_url)
+        llm_base_url = data.base_url
+    else:
+        llm_base_url = await _get_setting(db, "llm_base_url") or os.environ.get("LLM_BASE_URL", "")
+
     llm_model = await _get_setting(db, "llm_model") or os.environ.get("LLM_MODEL", "")
+    logger.info("llm_key_saved", user_id=str(current_user.id), provider=llm_provider)
 
     # Определить base_url для валидации
     if llm_base_url:
@@ -240,51 +253,35 @@ async def set_openai_key(
     else:
         validate_model = "deepseek-chat"
 
-    # Проверить ключ — попробовать вызвать LLM API
+    # Проверить ключ через ai-service (у core-api нет openai SDK)
     ai_check = {"status": "unknown", "message": ""}
     try:
-        import openai
-        client = openai.OpenAI(api_key=data.value, base_url=validate_base_url)
-        # Тест: простой запрос
-        response = client.chat.completions.create(
-            model=validate_model,
-            messages=[{"role": "user", "content": "Say OK"}],
-            max_tokens=5,
-        )
-        provider_label = llm_provider.capitalize()
-        ai_check = {"status": "ok", "message": f"{provider_label} API работает. Ключ валиден."}
-        logger.info("llm_key_validated", provider=llm_provider, model=validate_model)
+        ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+        async with httpx.AsyncClient(timeout=30) as validate_client:
+            validate_resp = await validate_client.post(
+                f"{ai_url}/api/v1/ai/configure",
+                json={
+                    "api_key": data.value,
+                    "model": validate_model,
+                    "base_url": validate_base_url,
+                    "provider": llm_provider,
+                    "openai_api_key": data.value,
+                    "openai_model": validate_model,
+                },
+            )
+            validate_data = validate_resp.json()
+            if validate_data.get("openai_configured") or validate_data.get("llm_configured"):
+                provider_label = llm_provider.capitalize()
+                ai_check = {"status": "ok", "message": f"{provider_label} API ключ применён. AI работает."}
+                logger.info("llm_key_applied", provider=llm_provider, model=validate_model)
+            else:
+                ai_check = {"status": "error", "message": f"Ключ сохранён, но AI-сервис не смог его применить."}
     except Exception as e:
         err_msg = str(e)
-        if "insufficient_quota" in err_msg or "billing" in err_msg:
-            ai_check = {"status": "no_balance", "message": "Ключ валиден, но на счету недостаточно средств."}
-        elif "invalid_api_key" in err_msg or "Incorrect API key" in err_msg or "Authentication" in err_msg:
-            ai_check = {"status": "invalid", "message": "Неверный API ключ. Проверьте и попробуйте снова."}
-        else:
-            ai_check = {"status": "error", "message": f"Ошибка проверки: {err_msg[:200]}"}
+        ai_check = {"status": "error", "message": f"Ошибка проверки: {err_msg[:200]}"}
         logger.warning("llm_key_check_failed", error=err_msg[:100], provider=llm_provider)
 
-    # Применить к ai-service (если ключ валиден)
     ai_result = {}
-    if ai_check["status"] == "ok":
-        try:
-            ai_svc = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
-            async with httpx.AsyncClient(timeout=10) as http_client:
-                resp = await http_client.post(
-                    f"{ai_svc}/api/v1/ai/configure",
-                    json={
-                        "api_key": data.value,
-                        "model": validate_model,
-                        "base_url": validate_base_url,
-                        "provider": llm_provider,
-                        # backward compat fields
-                        "openai_api_key": data.value,
-                        "openai_model": validate_model,
-                    },
-                )
-                ai_result = resp.json()
-        except Exception as e:
-            ai_result = {"error": str(e)}
 
     return {
         "status": "saved",
