@@ -104,6 +104,7 @@ const BrokerDashboard = () => {
   }, [declarationsData?.items]);
 
   const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#d32f2f', '#9c27b0', '#00838f'];
+  const isEmpty = !declLoading && !clientsLoading && metrics.clients === 0 && recentDeclarations.length === 0;
 
   return (
     <AppLayout>
@@ -114,6 +115,24 @@ const BrokerDashboard = () => {
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Обзор активности по клиентам и декларациям
         </Typography>
+
+        {/* Onboarding empty state */}
+        {isEmpty && (
+          <Card sx={{ mb: 4, p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)', border: '1px dashed #1976d2' }}>
+            <Typography variant="h6" fontWeight={700} gutterBottom>Начните работу</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 480, mx: 'auto' }}>
+              Загрузите первый документ и создайте декларацию — система поможет с заполнением и кодами ТН ВЭД.
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center' }}>
+              <Button variant="contained" startIcon={<PeopleIcon />} onClick={() => navigate('/clients')} sx={{ textTransform: 'none' }}>
+                Добавить клиента
+              </Button>
+              <Button variant="outlined" startIcon={<ImportIcon />} onClick={() => navigate('/declarations')} sx={{ textTransform: 'none' }}>
+                Создать первую декларацию
+              </Button>
+            </Box>
+          </Card>
+        )}
 
         {/* Metrics */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 4 }}>

@@ -1,0 +1,35 @@
+# Деплой фронта на сервер по SSH при пуше в main.
+# Секреты в GitHub: Settings → Secrets and variables → Actions:
+#   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
+#   SERVER_HOST — хост (напр. 82.148.28.122)
+#   SERVER_USER — пользователь SSH (напр. root)
+# Опционально: DEPLOY_PATH — каталог на сервере (по умолчанию /home/2/----2)
+
+name: Deploy frontend to server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'docker-compose.prod.yml'
+      - '.github/workflows/deploy-frontend.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd /home/2/----2
+            git fetch origin && git reset --hard origin/main
+            docker-compose -f docker-compose.prod.yml build frontend --no-cache
+            docker-compose -f docker-compose.prod.yml up -d frontend
+            echo "Done. Open http://82.148.28.122/ and Ctrl+F5"

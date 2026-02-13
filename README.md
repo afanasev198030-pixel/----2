@@ -57,6 +57,37 @@ docker exec customs-core-api python -m app.seeds.update_tnved_online
 39722 актуальных 10-значных кода из официального файла ФНС РФ.
 Обновление: `python -m app.seeds.update_tnved_online`
 
+## Обновление фронта на сервере (82.148.28.122)
+
+### Вариант A: автоматически (рекомендуется)
+
+Деплой идёт на сервер по SSH при каждом пуше в `main` (менялись `frontend/`, `docker-compose.prod.yml` или этот workflow).
+
+1. **Один раз** в GitHub: репозиторий → Settings → Secrets and variables → Actions → New repository secret. Добавь:
+   - `SSH_PRIVATE_KEY` — приватный ключ (содержимое файла без пароля или с паролем, если ключ с паролем — укажи его в `SSH_PASSPHRASE`).
+   - `SERVER_HOST` — `82.148.28.122`.
+   - `SERVER_USER` — пользователь SSH на сервере (например `root`).
+
+2. На сервере репозиторий должен лежать в `/home/2/----2` (или отредактируй путь в `.github/workflows/deploy-frontend.yml`).
+
+3. Дальше: пушишь в `main` → workflow «Deploy frontend to server» подтягивает код на сервер, пересобирает образ фронта и перезапускает контейнер. Открываешь http://82.148.28.122/ и делаешь **Ctrl+F5**.
+
+Ручной запуск того же деплоя: Actions → Deploy frontend to server → Run workflow.
+
+### Вариант B: вручную на сервере
+
+Зайти по SSH на 82.148.28.122, затем:
+
+```bash
+cd /home/2/----2
+git pull
+./deploy-frontend.sh
+```
+
+Или без скрипта: `docker-compose -f docker-compose.prod.yml build frontend --no-cache && docker-compose -f docker-compose.prod.yml up -d frontend`.
+
+Прод отдаёт собранный фронт (статика), а не dev-сервер.
+
 ## .env переменные
 
 См. `.env.example` для полного списка.

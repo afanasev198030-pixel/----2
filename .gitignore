@@ -13,6 +13,7 @@ venv/
 # Node
 node_modules/
 frontend/node_modules/
+frontend/build/
 
 # Docker volumes
 pgdata/

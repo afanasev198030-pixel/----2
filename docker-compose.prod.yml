@@ -191,14 +191,12 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     container_name: customs-frontend
     ports:
       - "3000:3000"
     depends_on:
       - nginx
-    environment:
-      - CHOKIDAR_USEPOLLING=true
     networks:
       - customs-net
 

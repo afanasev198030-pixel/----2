@@ -3,8 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import {
   Box, Button, Container, Typography, Grid, Stack, Divider,
-  TextField, Popover, Alert, CircularProgress, ClickAwayListener,
+  TextField, Popover, Alert, CircularProgress, ClickAwayListener, Dialog, IconButton, useTheme, useMediaQuery, InputAdornment,
 } from '@mui/material';
+import CloseIcon from '@mui/icons-material/Close';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import { styled, keyframes } from '@mui/material/styles';
 import { login } from '../api/auth';
 import client from '../api/client';
@@ -55,6 +58,9 @@ const Page = styled(Box)({
   minHeight: '100vh',
   overflow: 'hidden',
   fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+  '@media (prefers-reduced-motion: reduce)': {
+    '&, & *': { animation: 'none !important' },
+  },
 });
 
 const GlowOrb = styled(Box)<{ color: string; size: number; top: string; left: string; delay?: number }>(
@@ -220,8 +226,7 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 // ── Login/Register forms ─────────────────────────────────────────
 interface LoginForm { email: string; password: string; }
 interface RegisterForm {
-  email: string; password: string; password_confirm: string;
-  full_name: string; phone: string; company_name: string;
+  full_name: string; email: string; password: string;
 }
 
 // ── Page Component ──────────────────────────────────────────────────
@@ -230,9 +235,13 @@ export default function LandingPage() {
   const { reload } = useAuth();
 
   // Popover anchors
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [loginAnchor, setLoginAnchor] = useState<HTMLElement | null>(null);
   const [regAnchor, setRegAnchor] = useState<HTMLElement | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showLoginPwd, setShowLoginPwd] = useState(false);
+  const [showRegPwd, setShowRegPwd] = useState(false);
 
   // Login form
   const loginForm = useForm<LoginForm>();
@@ -249,14 +258,11 @@ export default function LandingPage() {
 
   // Register form
   const regForm = useForm<RegisterForm>();
-  const regPwd = regForm.watch('password');
   const onRegister = async (data: RegisterForm) => {
     try {
       setAuthError(null);
       const resp = await client.post('/auth/register-public', {
-        email: data.email, password: data.password,
-        full_name: data.full_name, phone: data.phone || null,
-        company_name: data.company_name || null,
+        full_name: data.full_name, email: data.email, password: data.password,
       });
       if (resp.data.access_token) {
         localStorage.setItem('token', resp.data.access_token);
@@ -279,11 +285,11 @@ export default function LandingPage() {
     mb: 1.5,
     '& .MuiOutlinedInput-root': {
       color: C.textWhite, background: 'rgba(255,255,255,0.04)', borderRadius: 2,
-      '& fieldset': { borderColor: 'rgba(255,255,255,0.12)' },
+      '& fieldset': { borderColor: 'rgba(255,255,255,0.25)' },
       '&:hover fieldset': { borderColor: C.accent },
       '&.Mui-focused fieldset': { borderColor: C.accent },
     },
-    '& .MuiInputLabel-root': { color: C.textGray },
+    '& .MuiInputLabel-root': { color: '#B0BEC5' },
     '& .MuiInputLabel-root.Mui-focused': { color: C.accent },
   };
 
@@ -315,7 +321,25 @@ export default function LandingPage() {
           >
             DIGITAL BROKER
           </Typography>
-          <Stack direction="row" spacing={1.5}>
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minHeight: 44 }}>
+            <Button
+              onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
+              sx={{ color: C.textGray, textTransform: 'none', fontWeight: 600, fontSize: 15, py: 1.25, '&:hover': { color: C.accent } }}
+            >
+              Возможности
+            </Button>
+            <Button
+              onClick={() => document.getElementById('how')?.scrollIntoView({ behavior: 'smooth' })}
+              sx={{ color: C.textGray, textTransform: 'none', fontWeight: 600, fontSize: 15, py: 1.25, '&:hover': { color: C.accent } }}
+            >
+              Как работает
+            </Button>
+            <Button
+              onClick={() => document.getElementById('contacts')?.scrollIntoView({ behavior: 'smooth' })}
+              sx={{ color: C.textGray, textTransform: 'none', fontWeight: 600, fontSize: 15, py: 1.25, '&:hover': { color: C.accent } }}
+            >
+              Контакты
+            </Button>
             <Button
               data-login-btn
               onClick={(e) => { setLoginAnchor(e.currentTarget); setRegAnchor(null); setAuthError(null); }}
@@ -339,104 +363,171 @@ export default function LandingPage() {
         </Container>
       </Box>
 
-      {/* ── Login Popover ── */}
-      <Popover
-        open={!!loginAnchor}
-        anchorEl={loginAnchor}
-        onClose={() => setLoginAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        sx={popoverSx}
-      >
-        <Typography sx={{ fontWeight: 700, fontSize: 18, color: C.textWhite, mb: 2 }}>
-          Вход в систему
-        </Typography>
-        {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
-        <form onSubmit={loginForm.handleSubmit(onLogin)}>
-          <TextField
-            {...loginForm.register('email', { required: 'Email обязателен' })}
-            label="Email" type="email" fullWidth size="small" sx={fieldSx}
-            error={!!loginForm.formState.errors.email}
-            helperText={loginForm.formState.errors.email?.message}
-            autoComplete="email"
-          />
-          <TextField
-            {...loginForm.register('password', { required: 'Пароль обязателен' })}
-            label="Пароль" type="password" fullWidth size="small" sx={fieldSx}
-            error={!!loginForm.formState.errors.password}
-            helperText={loginForm.formState.errors.password?.message}
-            autoComplete="current-password"
-          />
-          <Button
-            type="submit" variant="contained" fullWidth disabled={loginForm.formState.isSubmitting}
-            sx={{
-              mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15,
-              background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`,
-              borderRadius: 2,
-              '&:hover': { boxShadow: `0 4px 20px ${C.accent}55` },
-            }}
-          >
-            {loginForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Войти'}
-          </Button>
-          <Typography
-            sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
-            onClick={() => { setLoginAnchor(null); setTimeout(() => setRegAnchor(document.querySelector('[data-reg-btn]') as HTMLElement), 100); }}
-          >
-            Нет аккаунта? Зарегистрируйтесь
-          </Typography>
-        </form>
-      </Popover>
+      {/* ── Login (Dialog on mobile, Popover on desktop) ── */}
+      {isMobile ? (
+        <Dialog fullScreen open={!!loginAnchor} onClose={() => setLoginAnchor(null)} PaperProps={{ sx: { background: C.bgCard, color: C.textWhite } }}>
+          <Box sx={{ p: 2, ...popoverSx, maxWidth: 400, mx: 'auto', mt: 4 }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+              <Typography sx={{ fontWeight: 700, fontSize: 18 }}>Вход в систему</Typography>
+              <IconButton onClick={() => setLoginAnchor(null)} sx={{ color: C.textGray }}><CloseIcon /></IconButton>
+            </Stack>
+            {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
+            <form onSubmit={loginForm.handleSubmit(onLogin)}>
+              <TextField
+                {...loginForm.register('email', { required: 'Email обязателен' })}
+                label="Email" type="email" fullWidth size="small" sx={fieldSx}
+                error={!!loginForm.formState.errors.email}
+                helperText={loginForm.formState.errors.email?.message}
+                autoComplete="email"
+              />
+              <TextField
+                {...loginForm.register('password', { required: 'Пароль обязателен' })}
+                label="Пароль" type={showLoginPwd ? 'text' : 'password'} fullWidth size="small" sx={fieldSx}
+                error={!!loginForm.formState.errors.password}
+                helperText={loginForm.formState.errors.password?.message}
+                autoComplete="current-password"
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton size="small" onClick={() => setShowLoginPwd((v) => !v)} sx={{ color: C.textGray }} aria-label={showLoginPwd ? 'Скрыть пароль' : 'Показать пароль'}>
+                        {showLoginPwd ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Typography component="a" href="/forgot-password" sx={{ fontSize: 12, color: C.accent, display: 'block', mb: 0.5, '&:hover': { textDecoration: 'underline' } }}>Забыли пароль?</Typography>
+              <Button type="submit" variant="contained" fullWidth disabled={loginForm.formState.isSubmitting}
+                sx={{ mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15, background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, borderRadius: 2, '&:hover': { boxShadow: `0 4px 20px ${C.accent}55` } }}
+              >
+                {loginForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Войти'}
+              </Button>
+              <Typography sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
+                onClick={() => { setLoginAnchor(null); setTimeout(() => setRegAnchor(document.querySelector('[data-reg-btn]') as HTMLElement), 100); }}
+              >
+                Нет аккаунта? Зарегистрируйтесь
+              </Typography>
+            </form>
+          </Box>
+        </Dialog>
+      ) : (
+        <Popover open={!!loginAnchor} anchorEl={loginAnchor} onClose={() => setLoginAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }} sx={popoverSx}
+        >
+          <Typography sx={{ fontWeight: 700, fontSize: 18, color: C.textWhite, mb: 2 }}>Вход в систему</Typography>
+          {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
+          <form onSubmit={loginForm.handleSubmit(onLogin)}>
+            <TextField
+              {...loginForm.register('email', { required: 'Email обязателен' })}
+              label="Email" type="email" fullWidth size="small" sx={fieldSx}
+              error={!!loginForm.formState.errors.email}
+              helperText={loginForm.formState.errors.email?.message}
+              autoComplete="email"
+            />
+            <TextField
+              {...loginForm.register('password', { required: 'Пароль обязателен' })}
+              label="Пароль" type={showLoginPwd ? 'text' : 'password'} fullWidth size="small" sx={fieldSx}
+              error={!!loginForm.formState.errors.password}
+              helperText={loginForm.formState.errors.password?.message}
+              autoComplete="current-password"
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setShowLoginPwd((v) => !v)} sx={{ color: C.textGray }} aria-label={showLoginPwd ? 'Скрыть пароль' : 'Показать пароль'}>
+                      {showLoginPwd ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Typography component="a" href="/forgot-password" sx={{ fontSize: 12, color: C.accent, display: 'block', mb: 0.5, '&:hover': { textDecoration: 'underline' } }}>Забыли пароль?</Typography>
+            <Button type="submit" variant="contained" fullWidth disabled={loginForm.formState.isSubmitting}
+              sx={{ mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15, background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, borderRadius: 2, '&:hover': { boxShadow: `0 4px 20px ${C.accent}55` } }}
+            >
+              {loginForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Войти'}
+            </Button>
+            <Typography sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
+              onClick={() => { setLoginAnchor(null); setTimeout(() => setRegAnchor(document.querySelector('[data-reg-btn]') as HTMLElement), 100); }}
+            >
+              Нет аккаунта? Зарегистрируйтесь
+            </Typography>
+          </form>
+        </Popover>
+      )}
 
-      {/* ── Register Popover ── */}
-      <Popover
-        open={!!regAnchor}
-        anchorEl={regAnchor}
-        onClose={() => setRegAnchor(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-        sx={popoverSx}
-      >
-        <Typography sx={{ fontWeight: 700, fontSize: 18, color: C.textWhite, mb: 2 }}>
-          Регистрация
-        </Typography>
-        {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
-        <form onSubmit={regForm.handleSubmit(onRegister)}>
-          <TextField {...regForm.register('full_name', { required: 'ФИО обязательно' })}
-            label="ФИО" fullWidth size="small" sx={fieldSx}
-            error={!!regForm.formState.errors.full_name} helperText={regForm.formState.errors.full_name?.message}
-          />
-          <TextField {...regForm.register('email', { required: 'Email обязателен', pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Неверный формат' }})}
-            label="Email" type="email" fullWidth size="small" sx={fieldSx}
-            error={!!regForm.formState.errors.email} helperText={regForm.formState.errors.email?.message}
-          />
-          <TextField {...regForm.register('phone')} label="Телефон" fullWidth size="small" sx={fieldSx} placeholder="+7 (999) 123-45-67" />
-          <TextField {...regForm.register('company_name')} label="Компания (необязательно)" fullWidth size="small" sx={fieldSx} />
-          <TextField {...regForm.register('password', { required: 'Пароль обязателен', minLength: { value: 6, message: 'Минимум 6 символов' }})}
-            label="Пароль" type="password" fullWidth size="small" sx={fieldSx}
-            error={!!regForm.formState.errors.password} helperText={regForm.formState.errors.password?.message}
-          />
-          <TextField {...regForm.register('password_confirm', { required: 'Подтвердите', validate: v => v === regPwd || 'Пароли не совпадают' })}
-            label="Подтверждение" type="password" fullWidth size="small" sx={fieldSx}
-            error={!!regForm.formState.errors.password_confirm} helperText={regForm.formState.errors.password_confirm?.message}
-          />
-          <Button
-            type="submit" variant="contained" fullWidth disabled={regForm.formState.isSubmitting}
-            sx={{
-              mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15,
-              background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`,
-              borderRadius: 2,
-            }}
-          >
-            {regForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Создать аккаунт'}
-          </Button>
-          <Typography
-            sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
-            onClick={() => { setRegAnchor(null); }}
-          >
-            Уже есть аккаунт? Войти
-          </Typography>
-        </form>
-      </Popover>
+      {/* ── Register (Dialog on mobile, Popover on desktop) ── */}
+      {isMobile ? (
+        <Dialog fullScreen open={!!regAnchor} onClose={() => setRegAnchor(null)} PaperProps={{ sx: { background: C.bgCard, color: C.textWhite } }}>
+          <Box sx={{ p: 2, ...popoverSx, maxWidth: 400, mx: 'auto', mt: 4 }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+              <Typography sx={{ fontWeight: 700, fontSize: 18 }}>Регистрация</Typography>
+              <IconButton onClick={() => setRegAnchor(null)} sx={{ color: C.textGray }}><CloseIcon /></IconButton>
+            </Stack>
+            {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
+            <form onSubmit={regForm.handleSubmit(onRegister)}>
+              <TextField {...regForm.register('full_name', { required: 'Имя обязательно' })} label="Имя" fullWidth size="small" sx={fieldSx}
+                error={!!regForm.formState.errors.full_name} helperText={regForm.formState.errors.full_name?.message} />
+              <TextField {...regForm.register('email', { required: 'Email обязателен', pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Неверный формат' }})}
+                label="Email" type="email" fullWidth size="small" sx={fieldSx}
+                error={!!regForm.formState.errors.email} helperText={regForm.formState.errors.email?.message} />
+              <TextField {...regForm.register('password', { required: 'Пароль обязателен', minLength: { value: 6, message: 'Минимум 6 символов' }})}
+                label="Пароль" type={showRegPwd ? 'text' : 'password'} fullWidth size="small" sx={fieldSx}
+                error={!!regForm.formState.errors.password} helperText={regForm.formState.errors.password?.message}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton size="small" onClick={() => setShowRegPwd((v) => !v)} sx={{ color: C.textGray }} aria-label={showRegPwd ? 'Скрыть пароль' : 'Показать пароль'}>
+                        {showRegPwd ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Button type="submit" variant="contained" fullWidth disabled={regForm.formState.isSubmitting}
+                sx={{ mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15, background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, borderRadius: 2 }}
+              >
+                {regForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Создать аккаунт'}
+              </Button>
+              <Typography sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
+                onClick={() => { setRegAnchor(null); }}>Уже есть аккаунт? Войти</Typography>
+            </form>
+          </Box>
+        </Dialog>
+      ) : (
+        <Popover open={!!regAnchor} anchorEl={regAnchor} onClose={() => setRegAnchor(null)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }} transformOrigin={{ vertical: 'top', horizontal: 'right' }} sx={popoverSx}
+        >
+          <Typography sx={{ fontWeight: 700, fontSize: 18, color: C.textWhite, mb: 2 }}>Регистрация</Typography>
+          {authError && <Alert severity="error" sx={{ mb: 1.5, fontSize: 13 }}>{authError}</Alert>}
+          <form onSubmit={regForm.handleSubmit(onRegister)}>
+            <TextField {...regForm.register('full_name', { required: 'Имя обязательно' })} label="Имя" fullWidth size="small" sx={fieldSx}
+              error={!!regForm.formState.errors.full_name} helperText={regForm.formState.errors.full_name?.message} />
+            <TextField {...regForm.register('email', { required: 'Email обязателен', pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Неверный формат' }})}
+              label="Email" type="email" fullWidth size="small" sx={fieldSx}
+              error={!!regForm.formState.errors.email} helperText={regForm.formState.errors.email?.message} />
+            <TextField {...regForm.register('password', { required: 'Пароль обязателен', minLength: { value: 6, message: 'Минимум 6 символов' }})}
+              label="Пароль" type={showRegPwd ? 'text' : 'password'} fullWidth size="small" sx={fieldSx}
+              error={!!regForm.formState.errors.password} helperText={regForm.formState.errors.password?.message}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => setShowRegPwd((v) => !v)} sx={{ color: C.textGray }} aria-label={showRegPwd ? 'Скрыть пароль' : 'Показать пароль'}>
+                      {showRegPwd ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Button type="submit" variant="contained" fullWidth disabled={regForm.formState.isSubmitting}
+              sx={{ mt: 0.5, py: 1.2, fontWeight: 700, textTransform: 'none', fontSize: 15, background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, borderRadius: 2 }}
+            >
+              {regForm.formState.isSubmitting ? <CircularProgress size={22} sx={{ color: '#fff' }} /> : 'Создать аккаунт'}
+            </Button>
+            <Typography sx={{ textAlign: 'center', mt: 1.5, fontSize: 13, color: C.textGray, cursor: 'pointer', '&:hover': { color: C.accent } }}
+              onClick={() => { setRegAnchor(null); }}>Уже есть аккаунт? Войти</Typography>
+          </form>
+        </Popover>
+      )}
 
       {/* ═══ HERO ═══ */}
       <Section sx={{ pt: '180px', pb: '120px', textAlign: 'center', minHeight: '100vh', display: 'flex', alignItems: 'center' }}>
@@ -444,23 +535,20 @@ export default function LandingPage() {
         <GlowOrb color={C.accent2} size={400} top="20%" left="60%" delay={2} />
         <GlowOrb color={C.accent3} size={300} top="60%" left="10%" delay={4} />
         <Container maxWidth="md" sx={{ position: 'relative', zIndex: 1 }}>
-          <Box sx={{ animation: `${fadeInUp} 1s ease` }}>
+          {/* Hero headline: visible immediately, no delay */}
+          <Box>
             <AccentBadge>AI-платформа</AccentBadge>
             <Typography
               variant="h1"
               sx={{
                 fontWeight: 900,
-                fontSize: { xs: 40, md: 64 },
+                fontSize: { xs: 32, md: 64 },
                 lineHeight: 1.1,
                 mb: 3,
-                background: `linear-gradient(135deg, ${C.textWhite} 0%, ${C.accent} 50%, ${C.accent2} 100%)`,
-                backgroundSize: '200% auto',
-                animation: `${shimmer} 4s linear infinite`,
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
+                color: C.textWhite,
               }}
             >
-              ЦИФРОВОЙ БРОКЕР
+              DIGITAL BROKER
             </Typography>
             <Typography sx={{ fontSize: { xs: 18, md: 22 }, color: C.textGray, mb: 2, maxWidth: 600, mx: 'auto' }}>
               AI-платформа для автоматизации таможенных деклараций
@@ -476,7 +564,7 @@ export default function LandingPage() {
             </Stack>
           </Box>
 
-          {/* Flow mini: PDF → AI → ДТ */}
+          {/* Flow mini: PDF → AI → ДТ — secondary, can animate */}
           <Box sx={{ mt: 8, animation: `${fadeIn} 1.5s ease 0.5s both` }}>
             <Stack direction="row" alignItems="center" justifyContent="center" spacing={2}>
               {[
@@ -551,12 +639,12 @@ export default function LandingPage() {
         </Container>
       </Section>
 
-      {/* ═══ SOLUTION ═══ */}
-      <Section>
+      {/* ═══ SOLUTION / HOW IT WORKS (5 шагов) ═══ */}
+      <Section id="how">
         <Container maxWidth="lg">
           <Reveal>
             <Box sx={{ textAlign: 'center', mb: 8 }}>
-              <AccentBadge bg={C.accent3}>Решение</AccentBadge>
+              <AccentBadge bg={C.accent3}>Процесс</AccentBadge>
               <Typography sx={{ fontWeight: 800, fontSize: { xs: 28, md: 36 } }}>
                 AI, который берёт рутину на себя
               </Typography>
@@ -595,7 +683,7 @@ export default function LandingPage() {
       </Section>
 
       {/* ═══ FEATURES ═══ */}
-      <Section>
+      <Section id="features">
         <Container maxWidth="lg">
           <Box sx={{ textAlign: 'center', mb: 8 }}>
             <Reveal>
@@ -740,68 +828,6 @@ export default function LandingPage() {
         </Container>
       </Section>
 
-      {/* ═══ HOW IT WORKS ═══ */}
-      <Section id="how">
-        <Container maxWidth="lg">
-          <Reveal>
-            <Box sx={{ textAlign: 'center', mb: 8 }}>
-              <AccentBadge bg={C.accent2}>Процесс</AccentBadge>
-              <Typography sx={{ fontWeight: 800, fontSize: { xs: 28, md: 36 } }}>Процесс в 4 шага</Typography>
-            </Box>
-          </Reveal>
-          <Grid container spacing={3}>
-            {[
-              { n: '1', t: 'Загрузка', d: 'PDF-документов в систему', c: C.accent },
-              { n: '2', t: 'Анализ', d: 'Автоматический анализ и заполнение данных', c: C.accent2 },
-              { n: '3', t: 'Проверка', d: 'Финальная правка специалистом', c: C.accent3 },
-              { n: '4', t: 'Экспорт', d: 'Выгрузка в нужный формат', c: C.orange },
-            ].map((s, i) => (
-              <Grid item xs={12} sm={6} md={3} key={i}>
-                <Reveal delay={i * 0.15}>
-                  <FlowStep accentColor={s.c}>
-                    <GlassCard>
-                      <div className="step-num">{s.n}</div>
-                      <Typography sx={{ fontWeight: 700, fontSize: 18, color: s.c, mb: 1 }}>{s.t}</Typography>
-                      <Typography sx={{ fontSize: 14, color: C.textGray }}>{s.d}</Typography>
-                    </GlassCard>
-                  </FlowStep>
-                </Reveal>
-              </Grid>
-            ))}
-          </Grid>
-        </Container>
-      </Section>
-
-      {/* ═══ FORMATS ═══ */}
-      <Section>
-        <Container maxWidth="lg">
-          <Reveal>
-            <Box sx={{ textAlign: 'center', mb: 8 }}>
-              <Typography sx={{ fontWeight: 800, fontSize: { xs: 28, md: 36 } }}>
-                Как можно внедрить Цифрового брокера
-              </Typography>
-            </Box>
-          </Reveal>
-          <Grid container spacing={4}>
-            {[
-              { icon: '☁️', title: 'Облачный сервис', desc: 'Доступ через браузер, без сложной установки', color: C.accent },
-              { icon: '🖥️', title: 'On-Premise', desc: 'Установка в инфраструктуре компании, полный контроль', color: C.accent2 },
-              { icon: '⭐', title: 'White Label', desc: 'Под вашим брендом и в ваших продуктах', color: C.accent3 },
-            ].map((f, i) => (
-              <Grid item xs={12} md={4} key={i}>
-                <Reveal delay={i * 0.1}>
-                  <GlassCard sx={{ textAlign: 'center', height: '100%' }}>
-                    <Typography sx={{ fontSize: 48, mb: 2 }}>{f.icon}</Typography>
-                    <Typography sx={{ fontWeight: 700, fontSize: 20, color: f.color, mb: 2 }}>{f.title}</Typography>
-                    <Typography sx={{ fontSize: 15, color: C.textGray }}>{f.desc}</Typography>
-                  </GlassCard>
-                </Reveal>
-              </Grid>
-            ))}
-          </Grid>
-        </Container>
-      </Section>
-
       {/* ═══ CTA FINAL ═══ */}
       <Section sx={{ py: 12 }}>
         <Container maxWidth="md" sx={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
@@ -840,7 +866,7 @@ export default function LandingPage() {
       </Section>
 
       {/* ═══ CONTACTS ═══ */}
-      <Section sx={{ py: 8, borderTop: `1px solid ${C.border}` }}>
+      <Section id="contacts" sx={{ py: 8, borderTop: `1px solid ${C.border}` }}>
         <Container maxWidth="md">
           <Reveal>
             <Box sx={{ textAlign: 'center', mb: 5 }}>
@@ -851,7 +877,7 @@ export default function LandingPage() {
                 { label: 'Сайт', value: 'digitalbroker.ru' },
                 { label: 'Email', value: 'info@digitalbroker.ru' },
                 { label: 'Telegram', value: '@digital_broker' },
-                { label: 'Телефон', value: '+7 (___) ___-__-__' },
+                { label: 'Обратная связь', value: 'Запросить обратный звонок' },
               ].map((c, i) => (
                 <Grid item xs={12} sm={6} key={i}>
                   <GlassCard sx={{ py: 2, px: 3 }}>
@@ -881,7 +907,7 @@ export default function LandingPage() {
             WebkitTextFillColor: 'transparent',
           }}
         >
-          ЦИФРОВОЙ БРОКЕР © {new Date().getFullYear()}
+          DIGITAL BROKER © {new Date().getFullYear()}
         </Typography>
       </Box>
     </Page>
