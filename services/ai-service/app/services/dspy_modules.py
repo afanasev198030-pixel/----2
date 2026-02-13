@@ -268,12 +268,16 @@ class HSCodeClassifier:
             self._dspy_module = dspy.Predict(HSCodeSignature)
 
     def classify(self, description: str, rag_results: list[dict]) -> dict:
-        if self._dspy_module and rag_results:
+        rag_text = ""
+        if rag_results:
+            rag_text = "\n".join([
+                f"- {r.get('code', '')}: {r.get('name_ru', '')} (score: {r.get('score', 0):.2f})"
+                for r in rag_results[:10]
+            ])
+
+        # DSPy path (needs rag candidates)
+        if self._dspy_module and rag_text:
             try:
-                rag_text = "\n".join([
-                    f"- {r.get('code', '')}: {r.get('name_ru', '')} (score: {r.get('score', 0):.2f})"
-                    for r in rag_results
-                ])
                 result = self._dspy_module(
                     description=description,
                     rag_results=rag_text,
@@ -288,22 +292,22 @@ class HSCodeClassifier:
             except Exception as e:
                 logger.warning("dspy_hs_classify_fallback", error=str(e))
 
-        # LLM direct call (when DSPy unavailable but LLM configured)
+        # LLM direct call (works even without RAG candidates)
         try:
             from app.config import get_settings
             settings = get_settings()
-            if settings.has_llm and rag_results:
+            if settings.has_llm:
                 from app.services.llm_client import get_llm_client, get_model
-                client = get_llm_client()
-                rag_text = "\n".join([
-                    f"- {r.get('code', '')}: {r.get('name_ru', '')} (score: {r.get('score', 0):.2f})"
-                    for r in rag_results[:10]
-                ])
-                resp = client.chat.completions.create(
+                llm = get_llm_client()
+                if rag_text:
+                    user_msg = f"Товар: {description}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."
+                else:
+                    user_msg = f"Товар: {description}\n\nОпредели 10-значный код ТН ВЭД ЕАЭС для этого товара. Учитывай материал, назначение и страну происхождения."
+                resp = llm.chat.completions.create(
                     model=get_model(),
                     messages=[
-                        {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Выбери точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название\",\"reasoning\":\"обоснование\",\"confidence\":0.95}"},
-                        {"role": "user", "content": f"Товар: {description}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."},
+                        {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Определи точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название по-русски\",\"reasoning\":\"обоснование\",\"confidence\":0.95}"},
+                        {"role": "user", "content": user_msg},
                     ],
                     temperature=0,
                     max_tokens=300,
@@ -317,13 +321,14 @@ class HSCodeClassifier:
                 code = data.get("hs_code", "").replace(".", "").replace(" ", "")
                 if len(code) < 10:
                     code = code.ljust(10, "0")
-                logger.info("hs_classified_by_llm", code=code, description=description[:50], model=get_model())
+                source = "llm_rag" if rag_text else "llm_direct"
+                logger.info("hs_classified_by_llm", code=code, description=description[:50], model=get_model(), source=source)
                 return {
                     "hs_code": code[:10],
                     "name_ru": data.get("name_ru", ""),
                     "reasoning": data.get("reasoning", f"LLM classification ({get_model()})"),
                     "confidence": float(data.get("confidence", 0.85)),
-                    "source": "llm_rag",
+                    "source": source,
                 }
         except Exception as e:
             logger.warning("llm_hs_classify_failed", error=str(e))

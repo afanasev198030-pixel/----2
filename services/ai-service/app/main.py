@@ -61,7 +61,15 @@ async def configure_ai(data: dict):
     api_key = data.get("api_key") or data.get("openai_api_key", "")
     model = data.get("model") or data.get("openai_model", "")
     base_url = data.get("base_url", "")
-    provider = data.get("provider", "")
+    provider = (data.get("provider") or os.environ.get("LLM_PROVIDER", "deepseek")).lower()
+
+    # Не отправлять gpt-4o в DeepSeek — подставить deepseek-chat
+    if provider == "deepseek" and (not model or model.startswith("gpt-")):
+        model = "deepseek-chat"
+    if not model:
+        model = "deepseek-chat" if provider == "deepseek" else "gpt-4o"
+    if not base_url:
+        base_url = "https://api.deepseek.com" if provider == "deepseek" else "https://api.openai.com/v1"
 
     if api_key:
         os.environ["LLM_API_KEY"] = api_key

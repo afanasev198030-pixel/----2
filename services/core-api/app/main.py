@@ -43,29 +43,44 @@ async def startup_event():
         version="0.1.0",
     )
 
-    # Load OpenAI key from DB and send to ai-service
+    # Load LLM key and provider from DB and send to ai-service (DeepSeek/OpenAI)
     try:
         from app.database import async_sessionmaker
         from sqlalchemy import text
         import httpx
+        import os
 
         async with async_sessionmaker() as session:
-            result = await session.execute(text("SELECT value FROM core.system_settings WHERE key = 'openai_api_key'"))
-            row = result.fetchone()
-            if row and row[0] and row[0] != "sk-your-key-here":
-                api_key = row[0]
-                logger.info("openai_key_loaded_from_db", key_prefix=api_key[:8] + "...")
-                # Send to ai-service
-                import os
+            rows = await session.execute(text(
+                "SELECT key, value FROM core.system_settings WHERE key IN ('openai_api_key', 'llm_api_key', 'llm_provider', 'llm_model', 'openai_model', 'llm_base_url')"
+            ))
+            settings_map = {r[0]: r[1] for r in rows.fetchall() if r[1]}
+            api_key = (settings_map.get("openai_api_key") or settings_map.get("llm_api_key") or "").strip()
+            if not api_key or api_key == "sk-your-key-here":
+                logger.info("no_openai_key_in_db")
+            else:
+                provider = settings_map.get("llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
+                model = settings_map.get("llm_model") or settings_map.get("openai_model") or (None if provider == "deepseek" else "gpt-4o")
+                base_url = settings_map.get("llm_base_url") or ""
+                if not model:
+                    model = "deepseek-chat" if provider == "deepseek" else "gpt-4o"
+                if not base_url:
+                    base_url = "https://api.deepseek.com" if provider == "deepseek" else "https://api.openai.com/v1"
+                logger.info("openai_key_loaded_from_db", key_prefix=api_key[:8] + "...", provider=provider, model=model)
                 ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
-                async with httpx.AsyncClient(timeout=10) as client:
+                async with httpx.AsyncClient(timeout=15) as client:
                     await client.post(
                         f"{ai_url}/api/v1/ai/configure",
-                        json={"openai_api_key": api_key, "openai_model": "gpt-4o"},
+                        json={
+                            "openai_api_key": api_key,
+                            "openai_model": model,
+                            "api_key": api_key,
+                            "model": model,
+                            "provider": provider,
+                            "base_url": base_url,
+                        },
                     )
-                    logger.info("openai_key_sent_to_ai_service")
-            else:
-                logger.info("no_openai_key_in_db")
+                    logger.info("openai_key_sent_to_ai_service", provider=provider, model=model)
     except Exception as e:
         logger.warning("startup_key_load_failed", error=str(e))
 
