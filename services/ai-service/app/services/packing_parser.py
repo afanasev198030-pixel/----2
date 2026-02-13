@@ -41,12 +41,12 @@ def _llm_parse_pl(raw_text: str) -> dict:
 - items: array of {{description, quantity, gross_weight, net_weight, country_origin}}
 
 Text:
-{raw_text[:6000]}
+{raw_text[:4000]}
 
 Return ONLY valid JSON."""},
             ],
             temperature=0,
-            max_tokens=2000,
+            max_tokens=4000,
         )
         text = resp.choices[0].message.content.strip()
         if text.startswith("```"):
