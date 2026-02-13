@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import BrokerDashboard from './pages/BrokerDashboard';
@@ -17,6 +18,7 @@ import AdminAuditPage from './pages/AdminAuditPage';
 function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route element={<ProtectedRoute />}>
@@ -31,7 +33,6 @@ function App() {
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/users/:id" element={<AdminUserEditPage />} />
         <Route path="/admin/audit" element={<AdminAuditPage />} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </Routes>
   );
