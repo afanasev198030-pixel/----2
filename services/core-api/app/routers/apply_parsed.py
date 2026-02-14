@@ -185,31 +185,31 @@ async def apply_parsed_data(
         if receiver_id:
             declaration.receiver_counterparty_id = receiver_id
 
-        # Конвертация валюты через calc-service
+        # Конвертация валюты через calc-service (курсы ЦБ)
         exchange_rate = Decimal("1")
         currency = data.currency or declaration.currency_code
         if data.currency:
             declaration.currency_code = data.currency
         if data.total_amount is not None:
             declaration.total_invoice_value = Decimal(str(data.total_amount))
-            # Рассчитать таможенную стоимость в рублях через calc-service
-            if currency and currency != "RUB":
+            # Рассчитать таможенную стоимость в рублях
+            if currency and currency.upper() != "RUB":
                 try:
                     async with httpx.AsyncClient(timeout=10) as http:
-                        resp = await http.get(
-                            "http://calc-service:8005/api/v1/rates/convert",
-                            params={"amount": str(data.total_amount), "currency": currency},
-                        )
+                        resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest")
                         resp.raise_for_status()
-                        conv = resp.json()
-                        total_rub = Decimal(str(conv["amount_rub"]))
-                        exchange_rate = Decimal(str(conv["rate"]))
+                        rates = resp.json().get("rates", {})
+                        rate_value = rates.get(currency.upper())
+                        if rate_value and float(rate_value) > 0:
+                            exchange_rate = Decimal(str(rate_value))
+                            total_rub = Decimal(str(data.total_amount)) * exchange_rate
+                        else:
+                            logger.warning("currency_rate_not_found", currency=currency, available=list(rates.keys())[:10])
+                            total_rub = Decimal(str(data.total_amount))
                 except Exception as conv_err:
                     logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
-                    # Fallback: store amount as-is, rate = 1
                     total_rub = Decimal(str(data.total_amount))
-                    exchange_rate = Decimal("1")
-                declaration.total_customs_value = total_rub
+                declaration.total_customs_value = total_rub.quantize(Decimal("0.01"))
                 declaration.exchange_rate = exchange_rate
                 logger.info("currency_converted",
                     currency=currency, amount=data.total_amount,
