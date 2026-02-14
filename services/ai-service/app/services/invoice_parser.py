@@ -841,6 +841,11 @@ Return JSON with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"
         return _json.loads(text)
     except Exception as e:
         logger.warning("llm_enrich_failed", error=str(e))
+        try:
+            from app.services.issue_reporter import report_issue
+            report_issue("llm_enrich", "error", f"LLM enrich failed: {str(e)[:200]}", {"error": str(e)[:500], "text_length": len(raw_text)})
+        except Exception:
+            pass
         return {}
 
 

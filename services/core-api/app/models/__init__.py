@@ -12,6 +12,7 @@ from .declaration_status_history import DeclarationStatusHistory
 from .broker_client import BrokerClient, UserCompanyAccess
 from .hs_requirement import HsRequirement
 from .audit_log import AuditLog
+from .parse_issue import ParseIssue
 
 __all__ = [
     "Base",
@@ -35,4 +36,5 @@ __all__ = [
     "UserCompanyAccess",
     "HsRequirement",
     "AuditLog",
+    "ParseIssue",
 ]

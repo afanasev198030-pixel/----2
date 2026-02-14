@@ -63,6 +63,8 @@ const SettingsPage = () => {
   const [optimizing, setOptimizing] = useState(false);
   const [aiDebug, setAiDebug] = useState<any>(null);
   const [debugLoading, setDebugLoading] = useState(false);
+  const [parseIssues, setParseIssues] = useState<any>(null);
+  const [issuesLoading, setIssuesLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
   const loadAiDebug = useCallback(async () => {
@@ -74,7 +76,19 @@ const SettingsPage = () => {
     finally { setDebugLoading(false); }
   }, []);
 
-  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); }, []);
+  const loadParseIssues = useCallback(async () => {
+    setIssuesLoading(true);
+    try {
+      const [summaryResp, listResp] = await Promise.all([
+        client.get('/settings/parse-issues/summary'),
+        client.get('/settings/parse-issues?limit=30'),
+      ]);
+      setParseIssues({ summary: summaryResp.data, items: listResp.data.items });
+    } catch { /* may fail if table not created yet */ }
+    finally { setIssuesLoading(false); }
+  }, []);
+
+  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); loadParseIssues(); }, []);
 
   const loadSettings = async () => {
     try {
@@ -297,6 +311,51 @@ const SettingsPage = () => {
         <Alert severity={settings.ai_status === 'active' ? 'success' : settings.ai_status === 'no_key' ? 'warning' : 'info'} sx={{ mb: 3 }}>
           <Typography variant="body2" fontWeight={600}>{settings.ai_message}</Typography>
         </Alert>
+      )}
+
+      {/* Parse Issues */}
+      {parseIssues && (parseIssues.summary?.total > 0 || parseIssues.items?.length > 0) && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="h6" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ErrorIcon fontSize="small" color="error" /> Проблемы парсинга
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {parseIssues.summary?.totals?.error > 0 && <Chip label={`${parseIssues.summary.totals.error} errors`} color="error" size="small" />}
+              {parseIssues.summary?.totals?.warning > 0 && <Chip label={`${parseIssues.summary.totals.warning} warnings`} color="warning" size="small" />}
+              {parseIssues.summary?.totals?.info > 0 && <Chip label={`${parseIssues.summary.totals.info} info`} color="info" size="small" />}
+              <Button size="small" startIcon={issuesLoading ? <CircularProgress size={14} /> : <RefreshIcon />} onClick={loadParseIssues} disabled={issuesLoading}>
+                Обновить
+              </Button>
+            </Box>
+          </Box>
+          {parseIssues.items?.length > 0 && (
+            <Box sx={{
+              bgcolor: '#1a1a1a', color: '#e0e0e0', borderRadius: 1, p: 1.5,
+              fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5,
+              maxHeight: 300, overflowY: 'auto',
+            }}>
+              {parseIssues.items.map((issue: any, i: number) => {
+                const color = issue.severity === 'error' ? '#ef5350' : issue.severity === 'warning' ? '#ffa726' : '#66bb6a';
+                const ts = issue.created_at ? new Date(issue.created_at).toLocaleTimeString('ru-RU') : '';
+                return (
+                  <Box key={i} sx={{ mb: 0.8, pb: 0.8, borderBottom: '1px solid #333' }}>
+                    <span style={{ color: '#888' }}>[{ts}]</span>{' '}
+                    <span style={{ color, fontWeight: 700 }}>{issue.severity.toUpperCase()}</span>{' '}
+                    <span style={{ color: '#4fc3f7' }}>{issue.stage}</span>{' '}
+                    <span>{issue.message}</span>
+                    {issue.details?.description && (
+                      <Box sx={{ ml: 2, color: '#aaa', fontSize: 10 }}>Товар: {issue.details.description}</Box>
+                    )}
+                    {issue.details?.error && (
+                      <Box sx={{ ml: 2, color: '#ef9a9a', fontSize: 10 }}>{issue.details.error.substring(0, 150)}</Box>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </Paper>
       )}
 
       {/* AI Service Debug Panel */}

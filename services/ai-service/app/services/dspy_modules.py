@@ -425,6 +425,13 @@ class HSCodeClassifier:
                 "confidence": suggestions[0]["confidence"],
                 "source": "keyword",
             }
+        _log_classify({"description": description[:80], "method": "none", "hs_code": "", "name_ru": "", "reasoning": "All methods failed"})
+        try:
+            from app.services.issue_reporter import report_issue
+            report_issue("hs_classify", "error", f"All classify methods failed for: {description[:80]}",
+                {"description": description[:200], "rag_candidates": len(rag_results), "context": context[:100] if context else ""})
+        except Exception:
+            pass
         return {"hs_code": "", "name_ru": "", "reasoning": "No match", "confidence": 0.0, "source": "none"}
 
 

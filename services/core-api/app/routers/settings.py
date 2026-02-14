@@ -492,3 +492,119 @@ async def get_training_stats(
 async def load_settings_on_startup():
     """Загрузить OpenAI ключ из БД при старте core-api и отправить в ai-service."""
     pass  # Будет вызвано из main.py
+
+
+# ══════════════════════════════════════════════════════════════
+# Parse Issues — сбор ошибок для batch-тестирования
+# ══════════════════════════════════════════════════════════════
+
+from app.models.parse_issue import ParseIssue
+from sqlalchemy import select, func as sa_func, desc
+
+
+class ParseIssueCreate(BaseModel):
+    declaration_id: Optional[str] = None
+    stage: str
+    severity: str = "warning"
+    message: str
+    details: Optional[dict] = None
+
+
+@router.post("/parse-issues", status_code=201)
+async def create_parse_issue(data: ParseIssueCreate, db: AsyncSession = Depends(get_db)):
+    """Приём проблемы от ai-service (без auth — внутренний вызов)."""
+    import uuid as _uuid
+    decl_id = None
+    if data.declaration_id:
+        try:
+            decl_id = _uuid.UUID(data.declaration_id)
+        except ValueError:
+            pass
+    issue = ParseIssue(
+        declaration_id=decl_id,
+        stage=data.stage,
+        severity=data.severity,
+        message=data.message,
+        details=data.details,
+    )
+    db.add(issue)
+    await db.commit()
+    return {"status": "created", "id": str(issue.id)}
+
+
+@router.get("/parse-issues")
+async def list_parse_issues(
+    severity: Optional[str] = None,
+    stage: Optional[str] = None,
+    resolved: Optional[bool] = None,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Список проблем парсинга с фильтрами — для агента и UI."""
+    query = select(ParseIssue).order_by(desc(ParseIssue.created_at)).limit(limit)
+    if severity:
+        query = query.where(ParseIssue.severity == severity)
+    if stage:
+        query = query.where(ParseIssue.stage == stage)
+    if resolved is not None:
+        query = query.where(ParseIssue.resolved == resolved)
+    result = await db.execute(query)
+    issues = result.scalars().all()
+    return {
+        "items": [
+            {
+                "id": str(i.id),
+                "declaration_id": str(i.declaration_id) if i.declaration_id else None,
+                "stage": i.stage,
+                "severity": i.severity,
+                "message": i.message,
+                "details": i.details,
+                "resolved": i.resolved,
+                "created_at": i.created_at.isoformat() if i.created_at else None,
+            }
+            for i in issues
+        ],
+        "total": len(issues),
+    }
+
+
+@router.get("/parse-issues/summary")
+async def parse_issues_summary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Агрегация: сколько ошибок по stage/severity."""
+    result = await db.execute(
+        select(
+            ParseIssue.stage,
+            ParseIssue.severity,
+            sa_func.count().label("count"),
+        )
+        .where(ParseIssue.resolved == False)
+        .group_by(ParseIssue.stage, ParseIssue.severity)
+    )
+    rows = result.all()
+    summary = {}
+    totals = {"error": 0, "warning": 0, "info": 0}
+    for stage, severity, count in rows:
+        summary.setdefault(stage, {})[severity] = count
+        totals[severity] = totals.get(severity, 0) + count
+    return {"by_stage": summary, "totals": totals, "total": sum(totals.values())}
+
+
+@router.post("/parse-issues/{issue_id}/resolve")
+async def resolve_parse_issue(
+    issue_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Пометить проблему как исправленную."""
+    import uuid as _uuid
+    result = await db.execute(select(ParseIssue).where(ParseIssue.id == _uuid.UUID(issue_id)))
+    issue = result.scalar_one_or_none()
+    if not issue:
+        raise HTTPException(404, "Issue not found")
+    issue.resolved = True
+    await db.commit()
+    return {"status": "resolved"}

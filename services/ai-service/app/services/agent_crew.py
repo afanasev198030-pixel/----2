@@ -278,12 +278,30 @@ class DeclarationCrew:
         non_zero = [c for c in confidences if c > 0]
         result["confidence"] = sum(non_zero) / len(non_zero) if non_zero else 0.0
 
+        items_count = len(result.get("items", []))
         logger.info(
             "crew_process_complete",
-            items_count=len(result.get("items", [])),
+            items_count=items_count,
             confidence=result["confidence"],
             risk_score=result.get("risk_score", 0),
         )
+
+        # Репорт проблем для batch-тестирования
+        try:
+            from app.services.issue_reporter import report_issue
+            if items_count == 0:
+                report_issue("compile", "warning", "No items after compilation",
+                    {"files": [f for f, _ in files] if hasattr(files[0], '__len__') else [], "confidence": result.get("confidence")})
+            for it in result.get("items", []):
+                desc = it.get("description") or it.get("commercial_name") or ""
+                if desc.lower().startswith("item ") or not desc:
+                    report_issue("compile", "warning", f"Bad item description: '{desc[:60]}'",
+                        {"description": desc, "hs_code": it.get("hs_code", "")})
+                if not it.get("hs_code") or it.get("hs_code", "").startswith("0000"):
+                    report_issue("hs_classify", "warning", f"No/bad HS code for: {desc[:60]}",
+                        {"description": desc, "hs_code": it.get("hs_code", "")})
+        except Exception:
+            pass
 
         return result
 
@@ -394,6 +412,11 @@ class DeclarationCrew:
                         logger.info("auto_hs_classified", description=item["description"][:50], code=item["hs_code"], confidence=item["hs_confidence"])
                 except Exception as e:
                     logger.warning("auto_hs_classify_failed", error=str(e), description=item.get("description", "")[:50])
+                    try:
+                        from app.services.issue_reporter import report_issue
+                        report_issue("hs_classify", "error", f"HS classify failed: {str(e)[:150]}", {"description": item.get("description", "")[:200], "error": str(e)[:300]})
+                    except Exception:
+                        pass
 
         # Transport from AWB — extract AWB number
         import re as _re

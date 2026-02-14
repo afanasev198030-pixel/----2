@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status, Depends
+from app.database import get_db
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import structlog
@@ -138,6 +139,30 @@ async def health_check():
         "status": "ok",
         "service": "core-api",
     }
+
+
+# Internal endpoint for ai-service (no auth)
+@app.post("/api/v1/internal/parse-issue", status_code=201)
+async def internal_create_parse_issue(data: dict, db=Depends(get_db)):
+    """Приём проблемы от ai-service — без авторизации."""
+    from app.models.parse_issue import ParseIssue
+    import uuid as _uuid
+    decl_id = None
+    if data.get("declaration_id"):
+        try:
+            decl_id = _uuid.UUID(data["declaration_id"])
+        except (ValueError, TypeError):
+            pass
+    issue = ParseIssue(
+        declaration_id=decl_id,
+        stage=data.get("stage", "unknown"),
+        severity=data.get("severity", "warning"),
+        message=data.get("message", ""),
+        details=data.get("details"),
+    )
+    db.add(issue)
+    await db.commit()
+    return {"status": "created", "id": str(issue.id)}
 
 
 # Include routers
