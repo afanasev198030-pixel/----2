@@ -23,23 +23,13 @@ try:
 except ImportError:
     logger.warning("openai_not_available", msg="openai not installed")
 
-# Мультиязычная embedding function (E5-small, 384 dim, ~500MB)
-_E5_MODEL = "intfloat/multilingual-e5-small"
-_sentence_transformer_ef = None
+# Embedding function — используем дефолт ChromaDB (ONNX all-MiniLM-L6-v2, ~90MB)
+# sentence-transformers/E5 слишком тяжёлые для 8GB RAM (PyTorch ~800MB)
+# DeepSeek компенсирует качество RAG при классификации ТН ВЭД
 
 def _get_embedding_function():
-    """Ленивая инициализация SentenceTransformer embedding function."""
-    global _sentence_transformer_ef
-    if _sentence_transformer_ef is not None:
-        return _sentence_transformer_ef
-    try:
-        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
-        _sentence_transformer_ef = SentenceTransformerEmbeddingFunction(model_name=_E5_MODEL)
-        logger.info("e5_embedding_loaded", model=_E5_MODEL)
-    except Exception as e:
-        logger.warning("e5_embedding_failed", error=str(e), msg="Falling back to ChromaDB defaults")
-        _sentence_transformer_ef = None
-    return _sentence_transformer_ef
+    """Возвращает None — используем дефолт ChromaDB (ONNX)."""
+    return None
 
 # Training log — in-memory ring buffer
 _training_log: list[dict] = []

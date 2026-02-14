@@ -20,5 +20,5 @@ chromadb-client>=1.0.0,<2.0
 onnxruntime>=1.17.0
 tokenizers>=0.15.0
 
-# Мультиязычные эмбеддинги для RAG (русский + английский)
-sentence-transformers>=2.2.0
+# Эмбеддинги: ChromaDB default ONNX (all-MiniLM-L6-v2, ~90MB)
+# sentence-transformers убран — PyTorch слишком тяжёлый для 8GB RAM
