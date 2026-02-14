@@ -153,6 +153,16 @@ async def apply_parsed_data(
     counters = {"counterparties": 0, "items": 0, "documents": 0}
 
     try:
+        # --- 0. Подтянуть ИНН/КПП и адрес из компании пользователя ---
+        if current_user.company_id and not declaration.declarant_inn_kpp:
+            company = await db.get(Company, current_user.company_id)
+            if company:
+                parts = [p for p in [company.inn, company.kpp] if p]
+                if parts:
+                    declaration.declarant_inn_kpp = "/".join(parts)
+                if company.address and not declaration.goods_location:
+                    declaration.goods_location = company.address
+
         # --- 1. Создать/найти контрагентов ---
         sender_id = None
         receiver_id = None
