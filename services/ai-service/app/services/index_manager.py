@@ -1,5 +1,5 @@
 """
-RAG ядро: ChromaDB + OpenAI embeddings.
+RAG ядро: ChromaDB + multilingual embeddings (intfloat/multilingual-e5-small).
 Индексы ТН ВЭД, правил СУР и прецедентов.
 """
 import time
@@ -22,6 +22,24 @@ try:
     _openai_available = True
 except ImportError:
     logger.warning("openai_not_available", msg="openai not installed")
+
+# Мультиязычная embedding function (E5-small, 384 dim, ~500MB)
+_E5_MODEL = "intfloat/multilingual-e5-small"
+_sentence_transformer_ef = None
+
+def _get_embedding_function():
+    """Ленивая инициализация SentenceTransformer embedding function."""
+    global _sentence_transformer_ef
+    if _sentence_transformer_ef is not None:
+        return _sentence_transformer_ef
+    try:
+        from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+        _sentence_transformer_ef = SentenceTransformerEmbeddingFunction(model_name=_E5_MODEL)
+        logger.info("e5_embedding_loaded", model=_E5_MODEL)
+    except Exception as e:
+        logger.warning("e5_embedding_failed", error=str(e), msg="Falling back to ChromaDB defaults")
+        _sentence_transformer_ef = None
+    return _sentence_transformer_ef
 
 # Training log — in-memory ring buffer
 _training_log: list[dict] = []
@@ -101,22 +119,26 @@ class IndexManager:
             _log_event("chromadb_connect_failed", str(e), "error")
             return
 
-        # Embeddings client (OpenAI only — DeepSeek doesn't provide embeddings API)
+        # Embeddings: multilingual E5 (local) or OpenAI (cloud)
         from app.config import get_settings
         settings = get_settings()
-        if settings.EMBED_PROVIDER == "openai" and _openai_available:
+        ef = _get_embedding_function()
+        if ef:
+            self._openai_client = None  # Не нужен — используем E5 локально
+            _log_event("embed_provider_e5", f"model={_E5_MODEL}, local multilingual embeddings")
+        elif settings.EMBED_PROVIDER == "openai" and _openai_available:
             embed_key = settings.effective_api_key
             if embed_key and embed_key != "sk-your-key-here":
                 self._openai_client = _openai_mod.OpenAI(
                     api_key=embed_key,
-                    base_url="https://api.openai.com/v1",  # Always OpenAI for embeddings
+                    base_url="https://api.openai.com/v1",
                 )
                 _log_event("openai_embed_client_ready", f"model={self.EMBED_MODEL}")
             else:
                 _log_event("openai_embed_no_key", "Set key in Settings page", "warning")
         else:
-            self._openai_client = None  # Use ChromaDB default embeddings
-            _log_event("embed_provider_local", f"provider={settings.EMBED_PROVIDER}, using ChromaDB defaults")
+            self._openai_client = None
+            _log_event("embed_provider_default", "Using ChromaDB default ONNX embeddings")
 
         self._initialized = True
 
@@ -129,28 +151,30 @@ class IndexManager:
             self._index_risk_rules(risk_rules)
 
     # ── HS codes ────────────────────────────────────────────────
+    def _get_collection(self, name: str):
+        """Получить или создать коллекцию с правильной embedding function."""
+        ef = _get_embedding_function()
+        kwargs = {"name": name, "metadata": {"hnsw:space": "cosine"}}
+        if ef:
+            kwargs["embedding_function"] = ef
+        return self._chroma_client.get_or_create_collection(**kwargs)
+
     def index_hs_codes(self, codes: list[dict], force: bool = False) -> dict:
         """Index HS codes into ChromaDB. force=True clears collection first."""
         if not self._chroma_client:
             return {"error": "ChromaDB not connected"}
 
-        col = self._chroma_client.get_or_create_collection(
-            "hs_codes",
-            metadata={"hnsw:space": "cosine"},
-        )
+        col = self._get_collection("hs_codes")
         existing = col.count()
 
         if force and existing > 0:
             self._chroma_client.delete_collection("hs_codes")
-            col = self._chroma_client.get_or_create_collection(
-                "hs_codes",
-                metadata={"hnsw:space": "cosine"},
-            )
+            col = self._get_collection("hs_codes")
             _log_event("hs_index_cleared", f"Deleted {existing} docs")
 
-        if not self._openai_client:
-            # Store without embeddings (chromadb will use default)
-            _log_event("hs_index_no_embeddings", "No OpenAI key, using default embeddings", "warning")
+        ef = _get_embedding_function()
+        embed_info = f"E5 ({_E5_MODEL})" if ef else "ChromaDB default ONNX"
+        _log_event("hs_index_start", f"{len(codes)} codes, embeddings: {embed_info}")
 
         BATCH = 100
         total = 0
@@ -173,30 +197,23 @@ class IndexManager:
 
             if self._openai_client:
                 embeddings = self._embed(documents)
-                col.add(
-                    ids=ids,
-                    documents=documents,
-                    metadatas=metadatas,
-                    embeddings=embeddings,
-                )
+                col.add(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
             else:
+                # E5 или default ONNX — ChromaDB сам считает эмбеддинги через embedding_function
                 col.add(ids=ids, documents=documents, metadatas=metadatas)
 
             total += len(batch)
             if total % 500 == 0 or total == len(codes):
                 _log_event("hs_index_progress", f"{total}/{len(codes)} codes indexed")
 
-        _log_event("hs_index_complete", f"{total} codes indexed in ChromaDB")
+        _log_event("hs_index_complete", f"{total} codes indexed in ChromaDB ({embed_info})")
         return {"status": "indexed", "count": total}
 
     def _index_risk_rules(self, rules: list[dict]):
         """Index risk rules into ChromaDB."""
         if not self._chroma_client:
             return
-        col = self._chroma_client.get_or_create_collection(
-            "risk_rules",
-            metadata={"hnsw:space": "cosine"},
-        )
+        col = self._get_collection("risk_rules")
         if col.count() > 0:
             return
 
@@ -226,7 +243,7 @@ class IndexManager:
         if not self._chroma_client:
             return []
         try:
-            col = self._chroma_client.get_or_create_collection("hs_codes")
+            col = self._get_collection("hs_codes")
             if col.count() == 0:
                 return []
 
@@ -234,8 +251,8 @@ class IndexManager:
                 emb = self._embed_one(f"Товар: {description}")
                 results = col.query(query_embeddings=[emb], n_results=top_k)
             else:
-                # Use ChromaDB default embeddings (ONNX model)
-                results = col.query(query_texts=[f"Товар: {description}"], n_results=top_k)
+                # E5 или ONNX — ChromaDB использует embedding_function коллекции
+                results = col.query(query_texts=[f"query: {description}"], n_results=top_k)
 
             out = []
             for i, doc_id in enumerate(results["ids"][0]):
@@ -258,7 +275,7 @@ class IndexManager:
         if not self._chroma_client:
             return []
         try:
-            col = self._chroma_client.get_or_create_collection("risk_rules")
+            col = self._get_collection("risk_rules")
             if col.count() == 0:
                 return []
 
@@ -266,7 +283,7 @@ class IndexManager:
                 emb = self._embed_one(declaration_text)
                 results = col.query(query_embeddings=[emb], n_results=top_k)
             else:
-                results = col.query(query_texts=[declaration_text], n_results=top_k)
+                results = col.query(query_texts=[f"query: {declaration_text}"], n_results=top_k)
 
             out = []
             for i, _ in enumerate(results["ids"][0]):

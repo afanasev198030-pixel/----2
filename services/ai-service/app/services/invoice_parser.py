@@ -788,13 +788,14 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         import json as _json
         client = get_llm_client()
 
-        # Check if items have placeholder descriptions (regex failed)
+        # Check if items have placeholder descriptions (regex failed) or items list is empty
         items = result.get("items", [])
-        has_bad_items = any(
+        has_no_items = len(items) == 0
+        has_bad_items = has_no_items or any(
             (it.get("description_raw", "") or "").lower().startswith("item ")
             or not it.get("description_raw")
             for it in items
-        ) if items else True
+        )
 
         missing = []
         if not result.get("invoice_number"):
@@ -825,12 +826,12 @@ IMPORTANT: quantity is REQUIRED for each item. Look for columns: Qty, Колич
 {item_prompt}
 
 Text:
-{raw_text[:5000]}
+{raw_text[:12000]}
 
 Return JSON with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"""},
             ],
             temperature=0,
-            max_tokens=3000,
+            max_tokens=4000,
         )
         text = resp.choices[0].message.content.strip()
         if text.startswith("```"):
@@ -915,8 +916,10 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
                             line_no=idx + 1,
                             description_raw=li.get("description", ""),
                             quantity=li.get("quantity"),
+                            unit=li.get("unit", "pcs"),
                             unit_price=li.get("unit_price"),
                             line_total=li.get("line_total"),
+                            country_origin=li.get("country_origin"),
                             confidence=0.85,
                         ))
                     if new_items:

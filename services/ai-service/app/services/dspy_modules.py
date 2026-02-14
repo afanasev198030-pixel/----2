@@ -262,10 +262,53 @@ class PackingExtractor:
 class HSCodeClassifier:
     """Классификация ТН ВЭД через DSPy + LlamaIndex RAG."""
 
+    # Few-shot примеры для DSPy — улучшают точность классификации
+    _HS_DEMOS = None
+
+    @staticmethod
+    def _get_demos():
+        if not _dspy_available:
+            return []
+        if HSCodeClassifier._HS_DEMOS is None:
+            HSCodeClassifier._HS_DEMOS = [
+                dspy.Example(
+                    description="Motor 3115 900KV brushless motor for FPV drone",
+                    rag_results="- 8501100009: Электродвигатели малой мощности (score: 0.85)",
+                    hs_code="8501100009", name_ru="Электродвигатели малой мощности",
+                    reasoning="Бесколлекторный мотор для дрона < 37.5W → группа 8501", confidence="0.95",
+                ).with_inputs("description", "rag_results"),
+                dspy.Example(
+                    description="ESC 55A Electronic Speed Controller MR30 version",
+                    rag_results="- 8504409000: Преобразователи статические прочие (score: 0.80)",
+                    hs_code="8504409000", name_ru="Преобразователи статические прочие",
+                    reasoning="ESC = регулятор оборотов = статический преобразователь → 8504", confidence="0.95",
+                ).with_inputs("description", "rag_results"),
+                dspy.Example(
+                    description="Flight Controller FC F405 AIO stack for quadcopter",
+                    rag_results="- 8537101009: Пульты, панели и щиты управления (score: 0.78)",
+                    hs_code="8537101009", name_ru="Пульты, панели и щиты управления прочие",
+                    reasoning="Полётный контроллер = устройство управления → группа 8537", confidence="0.93",
+                ).with_inputs("description", "rag_results"),
+                dspy.Example(
+                    description="Пропеллер 5 дюймов карбоновый для FPV дрона",
+                    rag_results="- 8803300000: Части летательных аппаратов (score: 0.70)",
+                    hs_code="8803300000", name_ru="Части летательных аппаратов прочие",
+                    reasoning="Пропеллер для дрона = часть летательного аппарата → 8803", confidence="0.90",
+                ).with_inputs("description", "rag_results"),
+                dspy.Example(
+                    description="FPV Camera Caddx Ratel 2 1200TVL CMOS sensor",
+                    rag_results="- 8525809000: Камеры телевизионные прочие (score: 0.82)",
+                    hs_code="8525809000", name_ru="Камеры телевизионные прочие",
+                    reasoning="FPV камера = телевизионная камера → 8525", confidence="0.92",
+                ).with_inputs("description", "rag_results"),
+            ]
+        return HSCodeClassifier._HS_DEMOS
+
     def __init__(self):
         self._dspy_module = None
         if _dspy_available:
-            self._dspy_module = dspy.Predict(HSCodeSignature)
+            demos = self._get_demos()
+            self._dspy_module = dspy.Predict(HSCodeSignature, demos=demos)
 
     def classify(self, description: str, rag_results: list[dict], context: str = "") -> dict:
         rag_text = ""
