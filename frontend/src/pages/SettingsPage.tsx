@@ -167,11 +167,35 @@ const SettingsPage = () => {
     setIndexingRag(true);
     try {
       const resp = await client.post('/settings/init-rag');
-      setMessage({ type: 'success', text: `RAG: ${resp.data.codes_sent || 0} кодов отправлено в ChromaDB` });
-      await loadTrainingStats();
+      if (resp.data.status === 'started') {
+        setMessage({ type: 'info', text: resp.data.message });
+        // Поллинг прогресса каждые 5 сек
+        const poll = setInterval(async () => {
+          try {
+            const st = await client.get('/settings/init-rag/status');
+            const d = st.data;
+            if (!d.running) {
+              clearInterval(poll);
+              setIndexingRag(false);
+              setMessage({ type: d.errors > 0 ? 'warning' : 'success', text: d.message });
+              await loadTrainingStats();
+              await loadAiDebug();
+            } else {
+              setMessage({ type: 'info', text: `RAG: ${d.message} (${d.progress}%)` });
+            }
+          } catch { clearInterval(poll); setIndexingRag(false); }
+        }, 5000);
+      } else if (resp.data.status === 'already_running') {
+        setMessage({ type: 'info', text: resp.data.message });
+        setIndexingRag(false);
+      } else {
+        setMessage({ type: 'warning', text: resp.data.message || 'Неизвестный статус' });
+        setIndexingRag(false);
+      }
     } catch (e: any) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Ошибка индексации' });
-    } finally { setIndexingRag(false); }
+      setIndexingRag(false);
+    }
   };
 
   const handleOptimize = async () => {

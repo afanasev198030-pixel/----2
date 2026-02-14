@@ -396,61 +396,70 @@ async def load_tnved(
         raise HTTPException(500, f"Ошибка загрузки ТН ВЭД: {str(e)}")
 
 
+# Фоновая индексация RAG — не блокирует HTTP, не убивает сервер
+import asyncio
+
+_rag_status = {"running": False, "progress": 0, "total": 0, "indexed": 0, "errors": 0, "message": ""}
+
+
+@router.get("/init-rag/status")
+async def rag_status():
+    """Статус фоновой индексации RAG."""
+    return _rag_status
+
+
 @router.post("/init-rag")
 async def init_rag(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Отправить ВСЕ коды ТН ВЭД из PostgreSQL в ai-service батчами по 500."""
+    """Запустить фоновую индексацию ТН ВЭД в ChromaDB (батчами по 50 с паузами)."""
     import os
+
+    if _rag_status["running"]:
+        return {"status": "already_running", "message": f"Индексация уже идёт: {_rag_status['indexed']}/{_rag_status['total']}"}
+
+    # Fetch codes from DB (быстро)
+    r = await db.execute(text(
+        "SELECT code, name_ru, parent_code FROM core.classifiers "
+        "WHERE classifier_type='hs_code' AND is_active=true "
+        "ORDER BY code"
+    ))
+    rows = r.fetchall()
+    all_codes = [{"code": row[0], "name_ru": row[1] or "", "parent_code": row[2] or ""} for row in rows]
+
+    if not all_codes:
+        return {"status": "no_codes", "message": "Нет кодов ТН ВЭД в БД."}
+
     ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
 
-    try:
-        # Fetch ALL HS codes from DB
-        r = await db.execute(text(
-            "SELECT code, name_ru, parent_code FROM core.classifiers "
-            "WHERE classifier_type='hs_code' AND is_active=true "
-            "ORDER BY code"
-        ))
-        rows = r.fetchall()
-        all_codes = [{"code": row[0], "name_ru": row[1] or "", "parent_code": row[2] or ""} for row in rows]
-
-        if not all_codes:
-            return {"status": "no_codes", "message": "Нет кодов ТН ВЭД в БД. Сначала загрузите."}
-
-        # First batch with force=True to clear old data, rest with force=False (append)
-        BATCH_SIZE = 200
-        total_indexed = 0
+    # Запуск в фоне
+    async def _index_background():
+        BATCH_SIZE = 50  # маленькие батчи — не нагружает сервер
+        PAUSE = 1.0      # пауза между батчами (секунды)
+        _rag_status.update({"running": True, "progress": 0, "total": len(all_codes), "indexed": 0, "errors": 0, "message": "Индексация запущена..."})
         batches = [all_codes[i:i + BATCH_SIZE] for i in range(0, len(all_codes), BATCH_SIZE)]
-        errors = []
-
-        async with httpx.AsyncClient(timeout=120) as client:
-            for idx, batch in enumerate(batches):
-                try:
-                    force = (idx == 0)  # clear only on first batch
+        for idx, batch in enumerate(batches):
+            try:
+                async with httpx.AsyncClient(timeout=300) as client:
                     resp = await client.post(
                         f"{ai_url}/api/v1/ai/index-hs-codes",
-                        json={"codes": batch, "force": force},
+                        json={"codes": batch, "force": (idx == 0)},
                     )
-                    result = resp.json()
-                    total_indexed += result.get("count", len(batch))
-                    logger.info("rag_batch_sent", batch=idx + 1, total_batches=len(batches), count=len(batch))
-                except Exception as e:
-                    errors.append(f"batch {idx + 1}: {str(e)[:100]}")
-                    logger.warning("rag_batch_failed", batch=idx + 1, error=str(e)[:100])
+                    resp.raise_for_status()
+                _rag_status["indexed"] += len(batch)
+                _rag_status["progress"] = round(100 * _rag_status["indexed"] / _rag_status["total"])
+                _rag_status["message"] = f"Батч {idx+1}/{len(batches)}: {_rag_status['indexed']}/{_rag_status['total']}"
+            except Exception as e:
+                _rag_status["errors"] += 1
+                logger.warning("rag_batch_failed", batch=idx+1, error=str(e)[:100])
+            await asyncio.sleep(PAUSE)
+        _rag_status["running"] = False
+        _rag_status["message"] = f"Готово: {_rag_status['indexed']}/{_rag_status['total']} кодов, ошибок: {_rag_status['errors']}"
+        logger.info("rag_background_complete", indexed=_rag_status["indexed"], errors=_rag_status["errors"])
 
-        logger.info("rag_init_complete", total=len(all_codes), indexed=total_indexed, errors=len(errors))
-        return {
-            "status": "indexed",
-            "codes_total": len(all_codes),
-            "codes_indexed": total_indexed,
-            "batches": len(batches),
-            "errors": errors[:5] if errors else [],
-        }
-
-    except Exception as e:
-        logger.error("rag_init_failed", error=str(e), exc_info=True)
-        raise HTTPException(500, f"Ошибка индексации RAG: {str(e)}")
+    asyncio.create_task(_index_background())
+    return {"status": "started", "message": f"Фоновая индексация {len(all_codes)} кодов запущена. Следите через GET /settings/init-rag/status"}
 
 
 @router.get("/training-stats")
