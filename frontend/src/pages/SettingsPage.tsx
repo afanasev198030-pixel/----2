@@ -68,7 +68,7 @@ const SettingsPage = () => {
   const loadAiDebug = useCallback(async () => {
     setDebugLoading(true);
     try {
-      const resp = await client.get('/ai/health/detailed');
+      const resp = await client.get('/ai/health-detailed');
       setAiDebug(resp.data);
     } catch { /* ai-service may be down */ }
     finally { setDebugLoading(false); }
@@ -114,8 +114,8 @@ const SettingsPage = () => {
       });
       if (resp.data.status === 'saved') {
         const check = resp.data.ai_check || {};
-        if (check.status === 'ok') setMessage({ type: 'success', text: 'OpenAI API ключ сохранён, проверен и применён.' });
-        else if (check.status === 'no_balance') setMessage({ type: 'error', text: 'Ключ сохранён, но на счету OpenAI нет средств.' });
+        if (check.status === 'ok') setMessage({ type: 'success', text: 'API ключ сохранён, проверен и применён.' });
+        else if (check.status === 'no_balance') setMessage({ type: 'error', text: 'Ключ сохранён, но на счету нет средств.' });
         else if (check.status === 'invalid') setMessage({ type: 'error', text: 'Неверный API ключ.' });
         else setMessage({ type: 'warning', text: `Ключ сохранён. ${check.message || ''}` });
         setApiKey('');
@@ -253,7 +253,7 @@ const SettingsPage = () => {
           <Card variant="outlined">
             <CardContent sx={{ textAlign: 'center', py: 2 }}>
               <AiIcon sx={{ fontSize: 36, color: settings?.openai_api_key_set ? 'success.main' : 'grey.400' }} />
-              <Typography variant="subtitle2" sx={{ mt: 0.5 }}>OpenAI</Typography>
+              <Typography variant="subtitle2" sx={{ mt: 0.5 }}>LLM</Typography>
               <Chip size="small" icon={settings?.openai_api_key_set ? <CheckIcon /> : <ErrorIcon />}
                 label={settings?.openai_api_key_set ? 'Подключён' : 'Не настроен'}
                 color={settings?.openai_api_key_set ? 'success' : 'error'} sx={{ mt: 0.5 }} />
@@ -387,6 +387,60 @@ const SettingsPage = () => {
             )}
 
             {/* Training Log */}
+            {/* HS Classification Log */}
+            {aiDebug.hs_classify_log?.length > 0 && (
+              <>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Лог классификации ТН ВЭД (промпты)</Typography>
+                <Box sx={{
+                  bgcolor: '#1a1a2e', color: '#e0e0e0', borderRadius: 1, p: 1.5,
+                  fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6,
+                  maxHeight: 300, overflowY: 'auto', mb: 2,
+                }}>
+                  {aiDebug.hs_classify_log.map((entry: any, i: number) => {
+                    const ts = entry.ts ? new Date(entry.ts * 1000).toLocaleTimeString('ru-RU') : '';
+                    const methodColor = entry.method === 'dspy_rag' ? '#4fc3f7' : entry.method === 'llm_rag' ? '#81c784' : '#ffb74d';
+                    return (
+                      <Box key={i} sx={{ mb: 1, pb: 1, borderBottom: '1px solid #333' }}>
+                        <Box>
+                          <span style={{ color: '#888' }}>[{ts}]</span>{' '}
+                          <span style={{ color: methodColor, fontWeight: 700 }}>{entry.method}</span>{' '}
+                          {entry.model && <span style={{ color: '#888' }}>({entry.model})</span>}
+                        </Box>
+                        <Box sx={{ ml: 1 }}>
+                          <span style={{ color: '#aaa' }}>Товар:</span>{' '}
+                          <span style={{ color: '#fff' }}>{entry.description}</span>
+                        </Box>
+                        <Box sx={{ ml: 1 }}>
+                          <span style={{ color: '#aaa' }}>Код:</span>{' '}
+                          <span style={{ color: '#4caf50', fontWeight: 700 }}>{entry.hs_code}</span>{' '}
+                          <span style={{ color: '#ccc' }}>{entry.name_ru}</span>{' '}
+                          <span style={{ color: '#ff9800' }}>({typeof entry.confidence === 'number' ? (entry.confidence * 100).toFixed(0) : entry.confidence}%)</span>
+                        </Box>
+                        {entry.reasoning && (
+                          <Box sx={{ ml: 1 }}>
+                            <span style={{ color: '#aaa' }}>Обоснование:</span>{' '}
+                            <span style={{ color: '#b0bec5' }}>{entry.reasoning}</span>
+                          </Box>
+                        )}
+                        {entry.prompt_user && (
+                          <Box sx={{ ml: 1 }}>
+                            <span style={{ color: '#aaa' }}>Промпт:</span>{' '}
+                            <span style={{ color: '#78909c', fontSize: 10 }}>{entry.prompt_user}</span>
+                          </Box>
+                        )}
+                        {entry.context && (
+                          <Box sx={{ ml: 1 }}>
+                            <span style={{ color: '#aaa' }}>Контекст:</span>{' '}
+                            <span style={{ color: '#78909c' }}>{entry.context}</span>
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </>
+            )}
+
             {aiDebug.training_log?.length > 0 && (
               <>
                 <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Лог ai-service (последние 30)</Typography>

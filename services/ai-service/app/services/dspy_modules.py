@@ -9,6 +9,20 @@ import structlog
 
 logger = structlog.get_logger()
 
+# Лог классификации ТН ВЭД — in-memory ring buffer для дебаг-панели
+_hs_classify_log: list[dict] = []
+_HS_LOG_MAX = 50
+
+def _log_classify(entry: dict):
+    import time
+    entry["ts"] = time.time()
+    _hs_classify_log.append(entry)
+    if len(_hs_classify_log) > _HS_LOG_MAX:
+        _hs_classify_log.pop(0)
+
+def get_hs_classify_log() -> list[dict]:
+    return list(_hs_classify_log)
+
 _dspy_available = False
 try:
     import dspy
@@ -325,6 +339,16 @@ class HSCodeClassifier:
                     description=description,
                     rag_results=rag_text,
                 )
+                _log_classify({
+                    "description": description[:80],
+                    "method": "dspy_rag",
+                    "hs_code": result.hs_code,
+                    "name_ru": result.name_ru,
+                    "reasoning": result.reasoning,
+                    "confidence": str(result.confidence),
+                    "rag_candidates": len(rag_results),
+                    "context": context[:60] if context else "",
+                })
                 return {
                     "hs_code": result.hs_code,
                     "name_ru": result.name_ru,
@@ -367,6 +391,19 @@ class HSCodeClassifier:
                     code = code.ljust(10, "0")
                 source = "llm_rag" if rag_text else "llm_direct"
                 logger.info("hs_classified_by_llm", code=code, description=description[:50], model=get_model(), source=source)
+                _log_classify({
+                    "description": description[:80],
+                    "method": source,
+                    "model": get_model(),
+                    "prompt_system": "Ты эксперт по ТН ВЭД ЕАЭС...",
+                    "prompt_user": user_msg[:200],
+                    "hs_code": code[:10],
+                    "name_ru": data.get("name_ru", ""),
+                    "reasoning": data.get("reasoning", ""),
+                    "confidence": float(data.get("confidence", 0.85)),
+                    "rag_candidates": len(rag_results),
+                    "context": context[:60] if context else "",
+                })
                 return {
                     "hs_code": code[:10],
                     "name_ru": data.get("name_ru", ""),

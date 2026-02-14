@@ -55,7 +55,7 @@ async def health():
 _last_parse: dict = {}
 
 
-@app.get("/health/detailed")
+@app.get("/api/v1/ai/health-detailed")
 async def health_detailed():
     """Расширенный health с DSPy, RAG counts, last parse — для дебаг-панели."""
     from app.services.index_manager import get_index_manager, get_training_log
@@ -88,6 +88,14 @@ async def health_detailed():
     except Exception:
         pass
 
+    # HS classification log
+    hs_log = []
+    try:
+        from app.services.dspy_modules import get_hs_classify_log
+        hs_log = get_hs_classify_log()[-20:]
+    except Exception:
+        pass
+
     return {
         "status": "ok",
         "service": current_settings.SERVICE_NAME,
@@ -98,6 +106,7 @@ async def health_detailed():
         "dspy": dspy_info,
         "rag": rag_counts,
         "last_parse": _last_parse,
+        "hs_classify_log": hs_log,
         "training_log": get_training_log()[-30:],
     }
 
