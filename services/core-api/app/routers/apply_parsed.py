@@ -210,8 +210,8 @@ async def apply_parsed_data(
         if data.incoterms:
             declaration.incoterms_code = data.incoterms
         if data.country_origin:
-            declaration.country_origin_code = data.country_origin
-            declaration.country_dispatch_code = data.country_origin
+            declaration.country_origin_code = (data.country_origin or "")[:2] or None
+            declaration.country_dispatch_code = (data.country_origin or "")[:2] or None
             # Графа 11 — торговая страна = страна происхождения
             if not declaration.trading_country_code:
                 declaration.trading_country_code = data.country_origin
@@ -242,7 +242,7 @@ async def apply_parsed_data(
                 description=item_data.description,
                 commercial_name=item_data.commercial_name or item_data.description,
                 hs_code=item_data.hs_code,
-                country_origin_code=item_data.country_origin_code or data.country_origin,
+                country_origin_code=(item_data.country_origin_code or data.country_origin or "")[:2] or None,
                 gross_weight=Decimal(str(item_data.gross_weight)) if item_data.gross_weight else None,
                 net_weight=Decimal(str(item_data.net_weight)) if item_data.net_weight else None,
                 unit_price=Decimal(str(item_data.unit_price)) if item_data.unit_price else None,
