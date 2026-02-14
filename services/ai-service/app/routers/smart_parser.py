@@ -93,6 +93,27 @@ async def parse_smart(files: list[UploadFile] = File(...)):
         # Include request_id in response for progress tracking
         result["request_id"] = request_id
 
+        # Сохраняем last_parse для дебаг-панели
+        try:
+            from app.main import _last_parse
+            import time as _time
+            _last_parse.clear()
+            _last_parse.update({
+                "request_id": request_id,
+                "timestamp": _time.time(),
+                "files": filenames,
+                "items_count": len(result.get("items", [])),
+                "confidence": result.get("confidence", 0),
+                "risk_score": result.get("risk_score", 0),
+                "status": "complete",
+                "items_preview": [
+                    {"desc": (it.get("description") or it.get("commercial_name") or "")[:60], "hs": it.get("hs_code", "")}
+                    for it in (result.get("items") or [])[:5]
+                ],
+            })
+        except Exception:
+            pass
+
         # Clean up progress after 60s
         asyncio.get_event_loop().call_later(60, lambda: _progress.pop(request_id, None))
 

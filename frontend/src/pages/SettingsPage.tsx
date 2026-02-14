@@ -61,9 +61,20 @@ const SettingsPage = () => {
   const [loadingTnved, setLoadingTnved] = useState(false);
   const [indexingRag, setIndexingRag] = useState(false);
   const [optimizing, setOptimizing] = useState(false);
+  const [aiDebug, setAiDebug] = useState<any>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { loadSettings(); loadTrainingStats(); }, []);
+  const loadAiDebug = useCallback(async () => {
+    setDebugLoading(true);
+    try {
+      const resp = await client.get('/ai/health/detailed');
+      setAiDebug(resp.data);
+    } catch { /* ai-service may be down */ }
+    finally { setDebugLoading(false); }
+  }, []);
+
+  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); }, []);
 
   const loadSettings = async () => {
     try {
@@ -287,6 +298,123 @@ const SettingsPage = () => {
           <Typography variant="body2" fontWeight={600}>{settings.ai_message}</Typography>
         </Alert>
       )}
+
+      {/* AI Service Debug Panel */}
+      <Paper sx={{ p: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="h6" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ConsoleIcon fontSize="small" /> AI Service Debug
+          </Typography>
+          <Button size="small" startIcon={debugLoading ? <CircularProgress size={14} /> : <RefreshIcon />} onClick={loadAiDebug} disabled={debugLoading}>
+            Обновить
+          </Button>
+        </Box>
+
+        {aiDebug ? (
+          <>
+            <Grid container spacing={1.5} sx={{ mb: 2 }}>
+              {/* DSPy */}
+              <Grid item xs={6} md={3}>
+                <Card variant="outlined" sx={{ borderColor: aiDebug.dspy?.available ? 'success.light' : 'error.light' }}>
+                  <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" fontWeight={700}>DSPy</Typography>
+                    <Chip size="small" label={aiDebug.dspy?.available ? 'Installed' : 'Not installed'} color={aiDebug.dspy?.available ? 'success' : 'error'} sx={{ mr: 0.5, mt: 0.5 }} />
+                    {aiDebug.dspy?.available && (
+                      <Chip size="small" label={aiDebug.dspy?.configured ? 'Configured' : 'Not configured'} color={aiDebug.dspy?.configured ? 'success' : 'warning'} sx={{ mt: 0.5 }} />
+                    )}
+                    <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                      Demos: {aiDebug.dspy?.demos_count || 0} few-shot
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* RAG */}
+              <Grid item xs={6} md={3}>
+                <Card variant="outlined" sx={{ borderColor: (aiDebug.rag?.hs_codes || 0) > 0 ? 'success.light' : 'warning.light' }}>
+                  <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" fontWeight={700}>RAG ChromaDB</Typography>
+                    <Typography variant="caption" display="block">ТН ВЭД: {(aiDebug.rag?.hs_codes || 0).toLocaleString()}</Typography>
+                    <Typography variant="caption" display="block">Правила СУР: {aiDebug.rag?.risk_rules || 0}</Typography>
+                    <Typography variant="caption" display="block">Прецеденты: {aiDebug.rag?.precedents || 0}</Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">Embed: {aiDebug.embed_provider || 'onnx'}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* LLM */}
+              <Grid item xs={6} md={3}>
+                <Card variant="outlined" sx={{ borderColor: aiDebug.llm_configured ? 'success.light' : 'error.light' }}>
+                  <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" fontWeight={700}>LLM</Typography>
+                    <Chip size="small" label={aiDebug.llm_configured ? 'Connected' : 'No key'} color={aiDebug.llm_configured ? 'success' : 'error'} sx={{ mt: 0.5 }} />
+                    <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>{aiDebug.llm_provider || '?'} / {aiDebug.llm_model || '?'}</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+
+              {/* Last Parse */}
+              <Grid item xs={6} md={3}>
+                <Card variant="outlined" sx={{ borderColor: aiDebug.last_parse?.status === 'complete' ? 'success.light' : 'grey.300' }}>
+                  <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
+                    <Typography variant="body2" fontWeight={700}>Последний парсинг</Typography>
+                    {aiDebug.last_parse?.request_id ? (
+                      <>
+                        <Typography variant="caption" display="block">ID: {aiDebug.last_parse.request_id}</Typography>
+                        <Typography variant="caption" display="block">Позиций: {aiDebug.last_parse.items_count}, conf: {(aiDebug.last_parse.confidence * 100).toFixed(0)}%</Typography>
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          {aiDebug.last_parse.timestamp ? new Date(aiDebug.last_parse.timestamp * 1000).toLocaleTimeString('ru-RU') : ''}
+                        </Typography>
+                      </>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">Нет данных</Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
+
+            {/* Last parse items preview */}
+            {aiDebug.last_parse?.items_preview?.length > 0 && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" fontWeight={700}>Позиции последнего парсинга:</Typography>
+                {aiDebug.last_parse.items_preview.map((it: any, i: number) => (
+                  <Typography key={i} variant="caption" display="block" sx={{ fontFamily: 'monospace', ml: 1 }}>
+                    {i + 1}. [{it.hs || '???'}] {it.desc || '—'}
+                  </Typography>
+                ))}
+              </Box>
+            )}
+
+            {/* Training Log */}
+            {aiDebug.training_log?.length > 0 && (
+              <>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Лог ai-service (последние 30)</Typography>
+                <Box sx={{
+                  bgcolor: '#1e1e1e', color: '#d4d4d4', borderRadius: 1, p: 1.5,
+                  fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5,
+                  maxHeight: 200, overflowY: 'auto', whiteSpace: 'pre-wrap',
+                }}>
+                  {aiDebug.training_log.map((entry: any, i: number) => {
+                    const color = entry.level === 'error' ? '#f44' : entry.level === 'warning' ? '#fa0' : '#4f4';
+                    const ts = entry.ts ? new Date(entry.ts * 1000).toLocaleTimeString('ru-RU') : '';
+                    return (
+                      <Box key={i}>
+                        <span style={{ color: '#888' }}>[{ts}]</span>{' '}
+                        <span style={{ color }}>{entry.event}</span>{' '}
+                        <span style={{ color: '#aaa' }}>{entry.detail}</span>
+                      </Box>
+                    );
+                  })}
+                  <div ref={logEndRef} />
+                </Box>
+              </>
+            )}
+          </>
+        ) : (
+          <Typography variant="body2" color="text.secondary">AI-service недоступен</Typography>
+        )}
+      </Paper>
 
       {/* === AI CONSOLE === */}
       <Paper sx={{ p: 3, mb: 3 }}>

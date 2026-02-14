@@ -215,16 +215,16 @@ async def apply_parsed_data(
             # Графа 11 — торговая страна = страна происхождения
             if not declaration.trading_country_code:
                 declaration.trading_country_code = data.country_origin
-        if data.country_destination:
-            declaration.country_destination_code = data.country_destination
+        # country_destination: всегда RU если не указан
+        declaration.country_destination_code = (data.country_destination or declaration.country_destination_code or "RU")[:2]
         if data.total_packages is not None:
             declaration.total_packages_count = data.total_packages
         if data.total_gross_weight is not None:
             declaration.total_gross_weight = Decimal(str(data.total_gross_weight))
         if data.total_net_weight is not None:
             declaration.total_net_weight = Decimal(str(data.total_net_weight))
-        if data.deal_nature_code:
-            declaration.deal_nature_code = data.deal_nature_code
+        # deal_nature_code: всегда 01 (купля-продажа) если не указан
+        declaration.deal_nature_code = data.deal_nature_code or declaration.deal_nature_code or "01"
         if data.type_code:
             declaration.type_code = data.type_code
         if data.transport_type:

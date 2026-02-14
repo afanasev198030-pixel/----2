@@ -22,3 +22,6 @@ tokenizers>=0.15.0
 
 # Эмбеддинги: ChromaDB default ONNX (all-MiniLM-L6-v2, ~90MB)
 # sentence-transformers убран — PyTorch слишком тяжёлый для 8GB RAM
+
+# DSPy — авто-оптимизация промптов, few-shot (не тянет PyTorch)
+dspy>=2.5.0

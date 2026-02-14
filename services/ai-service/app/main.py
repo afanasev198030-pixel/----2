@@ -51,6 +51,57 @@ async def health():
     }
 
 
+# Хранилище последнего парсинга (in-memory)
+_last_parse: dict = {}
+
+
+@app.get("/health/detailed")
+async def health_detailed():
+    """Расширенный health с DSPy, RAG counts, last parse — для дебаг-панели."""
+    from app.services.index_manager import get_index_manager, get_training_log
+    from app.config import get_settings
+    current_settings = get_settings()
+    idx = get_index_manager()
+
+    # DSPy status
+    dspy_info = {"available": False, "configured": False, "demos_count": 0}
+    try:
+        from app.services.dspy_modules import _dspy_available, HSCodeClassifier
+        dspy_info["available"] = _dspy_available
+        if _dspy_available:
+            import dspy
+            dspy_info["configured"] = dspy.settings.lm is not None
+        dspy_info["demos_count"] = len(HSCodeClassifier._HS_DEMOS or [])
+    except Exception:
+        pass
+
+    # RAG collection counts
+    rag_counts = {"hs_codes": 0, "risk_rules": 0, "precedents": 0}
+    try:
+        if idx._chroma_client:
+            for name in rag_counts:
+                try:
+                    col = idx._chroma_client.get_or_create_collection(name)
+                    rag_counts[name] = col.count()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "service": current_settings.SERVICE_NAME,
+        "llm_configured": current_settings.has_llm,
+        "llm_provider": current_settings.LLM_PROVIDER,
+        "llm_model": current_settings.effective_model,
+        "embed_provider": current_settings.EMBED_PROVIDER,
+        "dspy": dspy_info,
+        "rag": rag_counts,
+        "last_parse": _last_parse,
+        "training_log": get_training_log()[-30:],
+    }
+
+
 @app.post("/api/v1/ai/configure")
 async def configure_ai(data: dict):
     """Динамическая настройка LLM ключа, модели, провайдера. Обратная совместимость с openai_api_key."""
