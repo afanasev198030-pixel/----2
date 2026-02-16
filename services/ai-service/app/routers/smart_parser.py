@@ -244,9 +244,23 @@ class FeedbackRequest(BaseModel):
 
 @router.post("/feedback")
 async def submit_feedback(data: FeedbackRequest):
-    """Принять feedback для DSPy авто-оптимизации."""
+    """Принять feedback для DSPy авто-оптимизации + сохранить прецедент."""
     _feedback_store.append(data.model_dump())
     logger.info("feedback_received", type=data.feedback_type, predicted=data.predicted_value, actual=data.actual_value, total=len(_feedback_store))
+
+    # Сохранить как прецедент в ChromaDB (self-learning)
+    if data.feedback_type == "hs_confirmed" and data.description and data.actual_value:
+        try:
+            from app.services.index_manager import get_index_manager
+            idx = get_index_manager()
+            idx.add_precedent(data.description, data.actual_value, metadata={
+                "declaration_id": data.declaration_id or "",
+                "item_id": data.item_id or "",
+                "source": "user_confirmed",
+            })
+            logger.info("precedent_saved", description=data.description[:50], hs_code=data.actual_value)
+        except Exception as e:
+            logger.warning("precedent_save_failed", error=str(e))
 
     # Авто-оптимизация при 10+ примеров
     import time

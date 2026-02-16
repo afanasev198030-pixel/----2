@@ -8,14 +8,28 @@ from app.services.ocr_service import extract_text
 logger = structlog.get_logger()
 
 
+class ContractParty(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    country_code: Optional[str] = None
+    inn: Optional[str] = None
+    kpp: Optional[str] = None
+    bank_name: Optional[str] = None
+    account: Optional[str] = None
+
+
 class ContractParsed(BaseModel):
     contract_number: Optional[str] = None
     contract_date: Optional[str] = None
     seller_name: Optional[str] = None
     buyer_name: Optional[str] = None
+    seller: Optional[ContractParty] = None
+    buyer: Optional[ContractParty] = None
     total_amount: Optional[float] = None
     currency: Optional[str] = None
     incoterms: Optional[str] = None
+    payment_terms: Optional[str] = None
+    delivery_terms: Optional[str] = None
     confidence: float = 0.5
     raw_text: str = ""
 
@@ -137,7 +151,7 @@ def parse(file_bytes: bytes, filename: str) -> ContractParsed:
         ])
         confidence = min(0.9, 0.3 + (fields_found * 0.1))
         
-        return ContractParsed(
+        result = ContractParsed(
             contract_number=contract_number,
             contract_date=contract_date,
             seller_name=seller_name,
@@ -148,6 +162,85 @@ def parse(file_bytes: bytes, filename: str) -> ContractParsed:
             confidence=confidence,
             raw_text=raw_text
         )
+
+        # LLM-обогащение: полные реквизиты сторон
+        result = _llm_enrich_contract(raw_text, result)
+        return result
+
     except Exception as e:
         logger.error("contract_parsing_failed", filename=filename, error=str(e))
         return ContractParsed(raw_text="", confidence=0.0)
+
+
+def _llm_enrich_contract(raw_text: str, result: ContractParsed) -> ContractParsed:
+    """Извлечь реквизиты сторон из контракта через LLM."""
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_llm:
+            return result
+
+        import json as _json
+        from app.services.llm_client import get_llm_client, get_model
+        client = get_llm_client()
+
+        resp = client.chat.completions.create(
+            model=get_model(),
+            messages=[
+                {"role": "system", "content": "Извлеки реквизиты сторон из контракта/договора. Ответь ТОЛЬКО валидным JSON."},
+                {"role": "user", "content": f"""Извлеки из контракта:
+- seller: {{name, address, country_code (2 буквы ISO), inn, kpp}}
+- buyer: {{name, address, country_code, inn, kpp}}
+- currency (валюта расчётов: USD, EUR, CNY, RUB)
+- incoterms (условия поставки: EXW, FOB, CIF и т.д.)
+- payment_terms (условия оплаты, кратко)
+
+Текст:
+{raw_text[:8000]}
+
+JSON: {{"seller": {{...}}, "buyer": {{...}}, "currency": "...", "incoterms": "...", "payment_terms": "..."}}"""},
+            ],
+            temperature=0,
+            max_tokens=1500,
+        )
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = _json.loads(text)
+
+        if data.get("seller"):
+            s = data["seller"]
+            result.seller = ContractParty(
+                name=s.get("name"), address=s.get("address"),
+                country_code=(s.get("country_code") or "")[:2] or None,
+                inn=s.get("inn"), kpp=s.get("kpp"),
+            )
+            if not result.seller_name and s.get("name"):
+                result.seller_name = s["name"]
+
+        if data.get("buyer"):
+            b = data["buyer"]
+            result.buyer = ContractParty(
+                name=b.get("name"), address=b.get("address"),
+                country_code=(b.get("country_code") or "")[:2] or None,
+                inn=b.get("inn"), kpp=b.get("kpp"),
+            )
+            if not result.buyer_name and b.get("name"):
+                result.buyer_name = b["name"]
+
+        if data.get("currency") and not result.currency:
+            result.currency = data["currency"]
+        if data.get("incoterms") and not result.incoterms:
+            result.incoterms = data["incoterms"]
+        if data.get("payment_terms"):
+            result.payment_terms = data["payment_terms"]
+
+        result.confidence = min(0.95, result.confidence + 0.15)
+        logger.info("contract_llm_enriched", seller=result.seller_name, buyer=result.buyer_name)
+
+    except Exception as e:
+        logger.warning("contract_llm_enrich_failed", error=str(e))
+
+    return result

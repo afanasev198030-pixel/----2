@@ -325,6 +325,30 @@ class HSCodeClassifier:
             self._dspy_module = dspy.Predict(HSCodeSignature, demos=demos)
 
     def classify(self, description: str, rag_results: list[dict], context: str = "") -> dict:
+        # ── Прецеденты: мгновенный ответ если есть точное совпадение ──
+        try:
+            from app.services.index_manager import get_index_manager
+            idx = get_index_manager()
+            precedents = idx.search_precedents(description, top_k=3)
+            if precedents:
+                best = precedents[0]
+                score = best.get("score", 0)
+                hs_code = best.get("metadata", {}).get("hs_code", "")
+                if score > 0.9 and hs_code and len(hs_code) >= 8:
+                    if len(hs_code) < 10:
+                        hs_code = hs_code.ljust(10, "0")
+                    _log_classify({"description": description[:80], "method": "precedent", "hs_code": hs_code, "confidence": str(round(score, 2)), "reasoning": f"Прецедент (score={score:.2f})"})
+                    logger.info("hs_from_precedent", description=description[:50], hs_code=hs_code, score=score)
+                    return {
+                        "hs_code": hs_code[:10],
+                        "name_ru": best.get("metadata", {}).get("description", "")[:100],
+                        "reasoning": f"Прецедент из предыдущих деклараций (score={score:.2f})",
+                        "confidence": min(0.98, score),
+                        "source": "precedent",
+                    }
+        except Exception as e:
+            logger.debug("precedent_search_skip", error=str(e)[:80])
+
         rag_text = ""
         if rag_results:
             rag_text = "\n".join([

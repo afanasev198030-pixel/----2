@@ -213,6 +213,24 @@ async def update_item(
         item_id=str(item_id),
         user_id=str(current_user.id),
     )
+
+    # Self-learning: при обновлении hs_code — сохранить как прецедент
+    if "hs_code" in update_data and item.description and item.hs_code:
+        try:
+            import httpx as _httpx
+            import os
+            ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+            _httpx.post(f"{ai_url}/api/v1/ai/feedback", json={
+                "declaration_id": str(declaration_id),
+                "item_id": str(item_id),
+                "feedback_type": "hs_confirmed",
+                "predicted_value": "",
+                "actual_value": item.hs_code,
+                "description": item.description[:300],
+            }, timeout=5)
+            logger.info("hs_feedback_sent", description=item.description[:50], hs_code=item.hs_code)
+        except Exception as e:
+            logger.debug("hs_feedback_failed", error=str(e)[:100])
     
     return DeclarationItemResponse.model_validate(item)
 

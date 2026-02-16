@@ -1,0 +1,85 @@
+"""
+Парсер спецификаций (Specification / Приложение к контракту).
+Извлекает: полный список товаров с qty, unit_price, описанием, country_origin.
+Приоритет над инвойсом для items — спецификация обычно содержит более полные данные.
+"""
+import json
+import structlog
+
+from app.services.ocr_service import extract_text
+
+logger = structlog.get_logger()
+
+
+def parse(file_bytes: bytes, filename: str) -> dict:
+    """Извлечь таблицу товаров из спецификации через LLM."""
+    raw_text = extract_text(file_bytes, filename)
+    if not raw_text or len(raw_text.strip()) < 20:
+        return {"raw_text": raw_text or "", "doc_type": "specification", "_filename": filename, "items": []}
+
+    result = {
+        "raw_text": raw_text,
+        "doc_type": "specification",
+        "_filename": filename,
+        "items": [],
+        "total_amount": None,
+        "currency": None,
+    }
+
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_llm:
+            return result
+
+        from app.services.llm_client import get_llm_client, get_model
+        client = get_llm_client()
+
+        resp = client.chat.completions.create(
+            model=get_model(),
+            messages=[
+                {"role": "system", "content": "Ты эксперт по таможенному оформлению. Извлеки таблицу товаров из спецификации к контракту. Ответь ТОЛЬКО валидным JSON. Не включай транспортные расходы, страховку, фрахт — только физические товары."},
+                {"role": "user", "content": f"""Извлеки из спецификации:
+
+items: массив товаров, каждый:
+- description: полное описание товара (на языке документа)
+- quantity: количество (число)
+- unit: единица измерения (pcs, kg, m, шт и т.д.)
+- unit_price: цена за единицу (число)
+- line_total: сумма по позиции (число)
+- country_origin: страна происхождения (2-буквенный ISO, если указана)
+- hs_code: код ТН ВЭД (если указан в документе)
+
+Также извлеки:
+- total_amount: итоговая сумма
+- currency: валюта (USD, EUR, CNY, RUB и т.д.)
+
+Текст спецификации:
+{raw_text[:12000]}
+
+Ответ JSON: {{"items": [...], "total_amount": ..., "currency": "..."}}"""},
+            ],
+            temperature=0,
+            max_tokens=4000,
+        )
+
+        text = resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text)
+        result["items"] = data.get("items", [])
+        result["total_amount"] = data.get("total_amount")
+        result["currency"] = data.get("currency")
+        logger.info("spec_parsed", filename=filename, items=len(result["items"]), total=result["total_amount"])
+
+    except Exception as e:
+        logger.warning("spec_parse_failed", error=str(e), filename=filename)
+        try:
+            from app.services.issue_reporter import report_issue
+            report_issue("spec_parse", "warning", f"Spec parse failed: {str(e)[:150]}", {"filename": filename})
+        except Exception:
+            pass
+
+    return result

@@ -28,41 +28,73 @@ from app.services.ocr_service import extract_text
 def _detect_doc_type(filename: str, text: str) -> str:
     """Определить тип документа по имени файла и содержимому."""
     fn_lower = filename.lower()
+    text_lower = (text[:3000].lower()) if text else ""
 
     if fn_lower.endswith(('.xlsx', '.xls')):
-        # Excel files are typically packing lists or specifications
         return "packing_list"
 
-    # Combined INV+PL document (common in Russian customs docs)
+    # Combined INV+PL
     if ("inv" in fn_lower and "pl" in fn_lower) or ("инвойс" in fn_lower and "упаков" in fn_lower):
-        return "invoice"  # Treat combined docs as invoice (parser extracts packing data too)
+        return "invoice"
 
-    # По имени файла (check longer patterns first to avoid false positives)
+    # --- По имени файла ---
     if any(k in fn_lower for k in ["invoice", "инвойс", "счёт", "счет", "inv-", "inv_"]):
+        # Транспортный инвойс — отличаем от товарного
+        if any(k in fn_lower for k in ["transport", "freight", "shipping", "доставк"]):
+            return "transport_invoice"
+        # Проверяем содержимое — если это инвойс за перевозку
+        if any(k in text_lower for k in ["freight charge", "air freight", "shipping charge", "за перевозку", "транспортные услуги", "air waybill"]):
+            return "transport_invoice"
         return "invoice"
     if any(k in fn_lower for k in ["contract", "договор", "контракт"]):
         return "contract"
     if any(k in fn_lower for k in ["packing", "упаков", "packing_list", "packing-list"]):
         return "packing_list"
-    # "pl" only if it's a standalone word (not part of "simple", "platform" etc.)
     if re.search(r'\bpl\b', fn_lower) and "inv" not in fn_lower:
         return "packing_list"
-    if any(k in fn_lower for k in ["awb", "waybill", "накладная", "транспорт"]):
+    if any(k in fn_lower for k in ["awb", "waybill", "накладная"]):
         return "transport_doc"
     if any(k in fn_lower for k in ["spec", "спец"]):
         return "specification"
     if any(k in fn_lower for k in ["teh", "тех"]):
         return "tech_description"
 
-    # По содержимому
-    text_lower = text[:2000].lower() if text else ""
+    # --- По содержимому (для файлов без очевидного имени) ---
+
+    # Транспортный инвойс
+    if ("invoice" in text_lower or "счёт" in text_lower) and any(k in text_lower for k in [
+        "freight", "shipping charge", "air freight", "за перевозку", "транспортные услуги"
+    ]):
+        return "transport_invoice"
+
+    # Товарный инвойс
     if "invoice" in text_lower and ("total" in text_lower or "amount" in text_lower):
         return "invoice"
-    if "contract" in text_lower or "договор" in text_lower:
+
+    # Контракт
+    if any(k in text_lower for k in ["contract №", "contract no", "договор №", "контракт №", "предмет договора", "subject of"]):
         return "contract"
+
+    # Спецификация — таблица с товарами, количеством, ценой
+    if any(k in text_lower for k in ["specification", "спецификация", "приложение к контракту", "приложение к договору"]):
+        return "specification"
+    if any(k in text_lower for k in ["наименование товара", "кол-во", "цена за ед", "unit price"]) and "total" in text_lower:
+        return "specification"
+
+    # Техописание
+    if any(k in text_lower for k in [
+        "технические характеристики", "техническое описание", "назначение изделия",
+        "область применения", "technical specifications", "operating temperature",
+        "рабочее напряжение", "материал корпуса", "габаритные размеры",
+    ]):
+        return "tech_description"
+
+    # Packing list
     if "packing list" in text_lower or "gross weight" in text_lower:
         return "packing_list"
-    if "air waybill" in text_lower or "awb" in text_lower:
+
+    # AWB
+    if "air waybill" in text_lower or re.search(r'\bawb\b', text_lower):
         return "transport_doc"
 
     return "other"
@@ -190,8 +222,18 @@ class DeclarationCrew:
                 parsed_docs["packing"]["_filename"] = filename
             elif doc_type == "transport_doc":
                 parsed_docs["transport"] = {"raw_text": text, "_filename": filename, "doc_type": "transport_doc"}
+            elif doc_type == "transport_invoice":
+                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из транспортного инвойса...", pct + 8)
+                from app.services.transport_parser import parse as parse_transport
+                parsed_docs["transport_invoice"] = parse_transport(file_bytes, filename)
             elif doc_type == "specification":
-                parsed_docs["specification"] = {"raw_text": text, "_filename": filename, "doc_type": "specification"}
+                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из спецификации...", pct + 8)
+                from app.services.spec_parser import parse as parse_spec
+                parsed_docs["specification"] = parse_spec(file_bytes, filename)
+            elif doc_type == "tech_description":
+                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает техописание...", pct + 8)
+                from app.services.techop_parser import parse as parse_techop
+                parsed_docs.setdefault("tech_descriptions", []).append(parse_techop(file_bytes, filename))
             else:
                 parsed_docs.setdefault("other", []).append({
                     "raw_text": text, "_filename": filename, "doc_type": doc_type,
@@ -310,30 +352,28 @@ class DeclarationCrew:
         inv = parsed_docs.get("invoice", {})
         contract = parsed_docs.get("contract", {})
         packing = parsed_docs.get("packing", {})
+        spec = parsed_docs.get("specification", {})
+        tech_descs = parsed_docs.get("tech_descriptions", [])
+        transport_inv = parsed_docs.get("transport_invoice", {})
 
-        # Seller
+        # ── Seller/Buyer: контракт (приоритет, полные реквизиты) > инвойс ──
         seller = None
-        if inv.get("seller"):
+        if contract.get("seller") and hasattr(contract["seller"], "name") and contract["seller"].name:
+            s = contract["seller"]
+            seller = {"name": s.name, "country_code": getattr(s, "country_code", None), "address": getattr(s, "address", None), "type": "seller"}
+        elif inv.get("seller"):
             s = inv["seller"]
-            seller = {
-                "name": s.get("name"),
-                "country_code": s.get("country_code"),
-                "address": s.get("address"),
-                "type": "seller",
-            }
+            seller = {"name": s.get("name"), "country_code": s.get("country_code"), "address": s.get("address"), "type": "seller"}
 
-        # Buyer
         buyer = None
-        if inv.get("buyer"):
+        if contract.get("buyer") and hasattr(contract["buyer"], "name") and contract["buyer"].name:
+            b = contract["buyer"]
+            buyer = {"name": b.name, "country_code": getattr(b, "country_code", None), "address": getattr(b, "address", None), "type": "buyer"}
+        elif inv.get("buyer"):
             b = inv["buyer"]
-            buyer = {
-                "name": b.get("name"),
-                "country_code": b.get("country_code"),
-                "address": b.get("address") if isinstance(b, dict) else None,
-                "type": "buyer",
-            }
+            buyer = {"name": b.get("name"), "country_code": b.get("country_code"), "address": b.get("address") if isinstance(b, dict) else None, "type": "buyer"}
 
-        # Items из инвойса (только товары, не freight/shipping/insurance)
+        # ── Items: спецификация (приоритет) > инвойс ──
         import re as _re
         _SKIP_ITEM = _re.compile(
             r'\b(freight|shipping|insurance|handling|delivery\s*fee|transport.*fee|'
@@ -341,14 +381,18 @@ class DeclarationCrew:
             _re.IGNORECASE,
         )
         origin_code = inv.get("country_origin") or (packing.get("items", [{}])[0].get("country_origin") if packing.get("items") else None)
+
+        # Источник items: спецификация > инвойс
+        raw_items = spec.get("items", []) if spec.get("items") else inv.get("items", [])
+        items_source = "specification" if spec.get("items") else "invoice"
+        logger.info("items_source", source=items_source, count=len(raw_items))
+
         items = []
-        for item_data in inv.get("items", []):
+        for item_data in raw_items:
             desc = item_data.get("description", item_data.get("description_raw", ""))
-            # Пропускаем транспортные расходы, страховку и прочие сборы
             if _SKIP_ITEM.search(desc or ""):
                 logger.info("skip_non_goods_item", description=desc[:60])
                 continue
-            # Fallback для quantity: line_total / unit_price
             qty = item_data.get("quantity")
             up = item_data.get("unit_price")
             lt = item_data.get("line_total")
@@ -363,10 +407,33 @@ class DeclarationCrew:
                 "unit_price": up,
                 "line_total": lt,
                 "hs_code": item_data.get("hs_code", ""),
-                "country_origin_code": item_data.get("country_origin_code") or origin_code,
+                "country_origin_code": item_data.get("country_origin_code") or item_data.get("country_origin") or origin_code,
                 "gross_weight": item_data.get("gross_weight"),
                 "net_weight": item_data.get("net_weight"),
             })
+
+        # ── Обогащение из техописаний (ТехОп) ──
+        if tech_descs and items:
+            all_tech_products = []
+            for td in tech_descs:
+                all_tech_products.extend(td.get("products", []))
+            if all_tech_products:
+                for item in items:
+                    item_desc_lower = (item.get("description") or "").lower()
+                    for tp in all_tech_products:
+                        tp_name = (tp.get("product_name") or "").lower()
+                        # Fuzzy match: если название техописания содержится в описании товара или наоборот
+                        if tp_name and (tp_name[:20] in item_desc_lower or item_desc_lower[:20] in tp_name):
+                            # Обогащаем описание техническими характеристиками
+                            enrichment = " | ".join(filter(None, [
+                                tp.get("purpose"), tp.get("materials"), tp.get("technical_specs"),
+                                tp.get("suggested_hs_description"),
+                            ]))
+                            if enrichment:
+                                item["tech_description"] = enrichment
+                                item["description"] = f"{item['description']} | {enrichment}"
+                                logger.info("item_enriched_from_techop", desc=item["description"][:80])
+                            break
 
         # Обогащение из packing list
         if packing:
@@ -428,13 +495,26 @@ class DeclarationCrew:
             if awb_match:
                 awb_number = f"{awb_match.group(1)}-{awb_match.group(2)}"
 
+        # Transport type: определяем из AWB или транспортного инвойса
+        transport_type = "40"  # default: воздушный
+        if transport_inv.get("transport_type"):
+            transport_type = str(transport_inv["transport_type"])
+
+        # AWB номер: из транспортного документа или транспортного инвойса
+        if not awb_number and transport_inv.get("awb_number"):
+            awb_number = transport_inv["awb_number"]
+
+        # Валюта: спецификация > инвойс > контракт
+        currency = spec.get("currency") or inv.get("currency") or contract.get("currency")
+        total_amount = spec.get("total_amount") or inv.get("total_amount")
+
         result = {
             "invoice_number": inv.get("invoice_number"),
             "invoice_date": inv.get("invoice_date"),
             "seller": seller,
             "buyer": buyer,
-            "currency": inv.get("currency"),
-            "total_amount": inv.get("total_amount"),
+            "currency": currency,
+            "total_amount": total_amount,
             "incoterms": inv.get("incoterms") or contract.get("incoterms"),
             "country_origin": origin_code or inv.get("country_origin"),
             "country_destination": inv.get("country_destination", "RU"),
@@ -444,12 +524,15 @@ class DeclarationCrew:
             "package_type": packing.get("package_type"),
             "total_gross_weight": packing.get("total_gross_weight") or inv.get("total_gross_weight"),
             "total_net_weight": packing.get("total_net_weight") or inv.get("total_net_weight"),
-            "transport_type": "40",  # Воздушный (по AWB)
+            "transport_type": transport_type,
             "transport_doc_number": awb_number,
             "deal_nature_code": "01",  # Купля-продажа
             "type_code": "IM40",  # Импорт
             "items": items,
             "documents": [],
+            # Транспортные расходы (графа 17)
+            "freight_amount": transport_inv.get("freight_amount"),
+            "freight_currency": transport_inv.get("freight_currency"),
         }
 
         return result
