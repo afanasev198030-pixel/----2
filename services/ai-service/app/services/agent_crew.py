@@ -251,8 +251,8 @@ class DeclarationCrew:
         # --- Шаг 3: Классификация ТН ВЭД для позиций БЕЗ кода ---
         items = result.get("items", [])
         for j, item in enumerate(items):
-            existing_hs = item.get("hs_code", "").strip()
-            desc = item.get("description", "") or item.get("commercial_name", "")
+            existing_hs = (item.get("hs_code") or "").strip()
+            desc = item.get("description") or item.get("commercial_name") or ""
             self._progress("classifying", f"Классификация ТН ВЭД: позиция {j+1}/{len(items)} — {desc[:40]}", 75 + int(10 * j / max(len(items), 1)))
 
             # Skip if already have a good HS code from document parsing
@@ -400,13 +400,13 @@ class DeclarationCrew:
                 qty = round(lt / up, 2)
             items.append({
                 "line_no": item_data.get("line_no", len(items) + 1),
-                "description": desc,
-                "commercial_name": desc,
+                "description": desc or "",
+                "commercial_name": desc or "",
                 "quantity": qty,
                 "unit": item_data.get("unit"),
                 "unit_price": up,
                 "line_total": lt,
-                "hs_code": item_data.get("hs_code", ""),
+                "hs_code": item_data.get("hs_code") or "",
                 "country_origin_code": item_data.get("country_origin_code") or item_data.get("country_origin") or origin_code,
                 "gross_weight": item_data.get("gross_weight"),
                 "net_weight": item_data.get("net_weight"),
@@ -456,16 +456,15 @@ class DeclarationCrew:
         all_descs = [it.get("description", "")[:60] for it in items if it.get("description")]
         decl_context = "; ".join(all_descs) if len(all_descs) > 1 else ""
         for item in items:
-            existing_hs = item.get("hs_code", "").strip()
+            existing_hs = (item.get("hs_code") or "").strip()
             if existing_hs and len(existing_hs) >= 8:
-                # Already has a good HS code from PDF parsing — keep it, pad to 10 if needed
                 if len(existing_hs) < 10:
                     item["hs_code"] = existing_hs.ljust(10, "0")
                 item["hs_code_name"] = ""
                 item["hs_confidence"] = 0.9
-                item["hs_reasoning"] = "Extracted from invoice/packing list"
+                item["hs_reasoning"] = "Extracted from document"
                 item["hs_needs_review"] = False
-                logger.info("hs_from_document", code=item["hs_code"], description=item.get("description", "")[:50])
+                logger.info("hs_from_document", code=item["hs_code"], description=(item.get("description") or "")[:50])
             elif item.get("description"):
                 try:
                     rag_results = idx_mgr.search_hs_codes(item["description"])
