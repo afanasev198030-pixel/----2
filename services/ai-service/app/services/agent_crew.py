@@ -574,11 +574,12 @@ JSON:"""},
                                 logger.info("item_enriched_from_techop", desc=item["description"][:80])
                             break
 
-        # Обогащение весами: packing list (приоритет) > спецификация
+        # Обогащение весами: packing list (приоритет) > спецификация > инвойс
         total_gross = (packing.get("total_gross_weight") or spec.get("total_gross_weight") or
-                       inv.get("total_gross_weight"))
+                       inv.get("total_gross_weight") or inv.get("gross_weight"))
         total_net = (packing.get("total_net_weight") or spec.get("total_net_weight") or
-                     inv.get("total_net_weight"))
+                     inv.get("total_net_weight") or inv.get("net_weight"))
+        logger.info("weights_sources", packing_gross=packing.get("total_gross_weight"), spec_gross=spec.get("total_gross_weight"), inv_gross=inv.get("total_gross_weight"), total_gross=total_gross)
         if items and total_gross:
             try:
                 tg = float(total_gross)

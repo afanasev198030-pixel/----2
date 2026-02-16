@@ -165,21 +165,6 @@ async def apply_parsed_data(
                 if parts:
                     declaration.declarant_inn_kpp = "/".join(parts)
 
-        # Адрес СВХ (графа 30): по коду таможенного поста из справочника
-        if not declaration.goods_location and declaration.customs_office_code:
-            from app.models import Classifier
-            post_result = await db.execute(
-                select(Classifier).where(
-                    Classifier.classifier_type == "customs_post",
-                    Classifier.code == declaration.customs_office_code,
-                    Classifier.is_active == True,
-                )
-            )
-            post = post_result.scalar_one_or_none()
-            if post and post.meta and post.meta.get("address"):
-                declaration.goods_location = post.meta["address"]
-                logger.info("goods_location_from_post", code=declaration.customs_office_code, address=post.meta["address"][:50])
-
         # --- 1. Создать/найти контрагентов ---
         sender_id = None
         receiver_id = None
@@ -264,6 +249,21 @@ async def apply_parsed_data(
             declaration.freight_currency = data.freight_currency
 
         declaration.total_items_count = len(data.items) if data.items else 0
+
+        # Адрес СВХ (графа 30): по коду таможенного поста из справочника
+        if not declaration.goods_location and declaration.customs_office_code:
+            from app.models import Classifier
+            post_result = await db.execute(
+                select(Classifier).where(
+                    Classifier.classifier_type == "customs_post",
+                    Classifier.code == declaration.customs_office_code,
+                    Classifier.is_active == True,
+                )
+            )
+            post = post_result.scalar_one_or_none()
+            if post and post.meta and post.meta.get("address"):
+                declaration.goods_location = post.meta["address"]
+                logger.info("goods_location_from_post", code=declaration.customs_office_code, address=post.meta["address"][:50])
 
         # --- 3. Создать товарные позиции ---
         for item_data in data.items:
