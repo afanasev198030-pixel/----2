@@ -100,6 +100,11 @@ def _detect_doc_type(filename: str, text: str) -> str:
     return "other"
 
 
+# Кэш парсинга по MD5 хэшу файла (in-memory, до перезапуска)
+_parse_cache: dict = {}
+_CACHE_MAX = 200
+
+
 class DeclarationCrew:
     """
     Мультиагентная оркестрация парсинга документов.
@@ -183,6 +188,108 @@ class DeclarationCrew:
 
         return result
 
+    def _batch_parse_secondary(self, docs: list[dict], parsed_docs: dict) -> dict:
+        """Батч-парсинг контракта + спеки + ТехОп + транспорт одним LLM-вызовом."""
+        try:
+            from app.config import get_settings
+            settings = get_settings()
+            if not settings.has_llm:
+                return parsed_docs
+
+            import json as _json
+            from app.services.llm_client import get_llm_client, get_model
+
+            # Собираем тексты для промпта
+            doc_sections = []
+            for d in docs:
+                label = d["doc_type"].upper()
+                text_chunk = (d.get("text") or "")[:4000]
+                doc_sections.append(f"=== {label}: {d['filename']} ===\n{text_chunk}")
+
+            combined_text = "\n\n".join(doc_sections)
+
+            client = get_llm_client()
+            resp = client.chat.completions.create(
+                model=get_model(),
+                messages=[
+                    {"role": "system", "content": "Ты эксперт по таможенному оформлению. Извлеки данные из нескольких документов одного комплекта. Ответь ТОЛЬКО валидным JSON."},
+                    {"role": "user", "content": f"""Из документов ниже извлеки:
+
+contract: {{contract_number, contract_date, seller: {{name, country_code, address, inn}}, buyer: {{name, country_code, address, inn}}, currency, incoterms, payment_terms}}
+specification: {{items: [{{description, quantity, unit, unit_price, line_total, country_origin, hs_code}}], total_amount, currency}}
+tech_description: {{products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
+transport_invoice: {{freight_amount, freight_currency, carrier_name, awb_number, transport_type}}
+
+Заполни только те разделы, для которых есть документы. Если документа нет — не включай раздел.
+
+{combined_text[:16000]}
+
+JSON:"""},
+                ],
+                temperature=0,
+                max_tokens=4000,
+            )
+
+            text = resp.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            data = _json.loads(text)
+
+            # Маппинг результата
+            if data.get("contract"):
+                c = data["contract"]
+                # Создаём объект, совместимый с ContractParsed
+                from app.services.contract_parser import ContractParsed, ContractParty
+                seller_party = None
+                buyer_party = None
+                if c.get("seller"):
+                    s = c["seller"]
+                    seller_party = ContractParty(name=s.get("name"), country_code=(s.get("country_code") or "")[:2] or None, address=s.get("address"), inn=s.get("inn"))
+                if c.get("buyer"):
+                    b = c["buyer"]
+                    buyer_party = ContractParty(name=b.get("name"), country_code=(b.get("country_code") or "")[:2] or None, address=b.get("address"), inn=b.get("inn"))
+                parsed_docs["contract"] = ContractParsed(
+                    contract_number=c.get("contract_number"), contract_date=c.get("contract_date"),
+                    seller_name=c.get("seller", {}).get("name"), buyer_name=c.get("buyer", {}).get("name"),
+                    seller=seller_party, buyer=buyer_party,
+                    currency=c.get("currency"), incoterms=c.get("incoterms"),
+                    payment_terms=c.get("payment_terms"), confidence=0.85,
+                )
+
+            if data.get("specification"):
+                parsed_docs["specification"] = data["specification"]
+
+            if data.get("tech_description"):
+                parsed_docs.setdefault("tech_descriptions", []).append(data["tech_description"])
+
+            if data.get("transport_invoice"):
+                parsed_docs["transport_invoice"] = data["transport_invoice"]
+
+            logger.info("batch_parse_complete", docs=len(docs), sections=list(data.keys()))
+
+        except Exception as e:
+            logger.warning("batch_parse_failed", error=str(e))
+            # Fallback: парсим каждый документ отдельно
+            for d in docs:
+                try:
+                    if d["doc_type"] == "contract":
+                        parsed_docs["contract"] = self.contract_extractor.extract(d["file_bytes"], d["filename"])
+                    elif d["doc_type"] == "specification":
+                        from app.services.spec_parser import parse as parse_spec
+                        parsed_docs["specification"] = parse_spec(d["file_bytes"], d["filename"])
+                    elif d["doc_type"] == "tech_description":
+                        from app.services.techop_parser import parse as parse_techop
+                        parsed_docs.setdefault("tech_descriptions", []).append(parse_techop(d["file_bytes"], d["filename"]))
+                    elif d["doc_type"] == "transport_invoice":
+                        from app.services.transport_parser import parse as parse_transport
+                        parsed_docs["transport_invoice"] = parse_transport(d["file_bytes"], d["filename"])
+                except Exception as inner_e:
+                    logger.warning("fallback_parse_failed", doc_type=d["doc_type"], error=str(inner_e)[:100])
+
+        return parsed_docs
+
     def process_documents(self, files: list[tuple[bytes, str]]) -> dict:
         """
         Обработать набор PDF файлов и вернуть данные для декларации.
@@ -193,51 +300,62 @@ class DeclarationCrew:
         Returns:
             dict с данными для ApplyParsedRequest
         """
+        import hashlib as _hashlib
         logger.info("crew_process_start", files_count=len(files))
         total_files = len(files)
 
-        # --- Шаг 1: Парсинг каждого документа ---
-        parsed_docs = {}
+        # --- Шаг 1: OCR + детекция типов (быстро, без LLM) ---
+        doc_texts = []  # [(file_bytes, filename, text, doc_type)]
         for i, (file_bytes, filename) in enumerate(files):
-            pct = 15 + int(50 * i / total_files)
-            self._progress("parsing", f"[{i+1}/{total_files}] Распознавание: {filename}", pct)
-
+            pct = 10 + int(20 * i / total_files)
+            self._progress("parsing", f"[{i+1}/{total_files}] OCR: {filename}", pct)
             text = extract_text(file_bytes, filename)
             doc_type = _detect_doc_type(filename, text)
-
+            doc_texts.append((file_bytes, filename, text, doc_type))
             logger.info("document_detected", filename=filename, doc_type=doc_type)
-            self._progress("parsing", f"[{i+1}/{total_files}] {filename} → {doc_type}", pct + 5)
+
+        # --- Шаг 2: LLM-парсинг (invoice и packing — критичны, парсим отдельно; остальные — батчом) ---
+        parsed_docs = {}
+        secondary_texts = []  # Тексты для батч-парсинга одним LLM-вызовом
+
+        for i, (file_bytes, filename, text, doc_type) in enumerate(doc_texts):
+            pct = 30 + int(30 * i / total_files)
+
+            # Кэш по хэшу файла
+            file_hash = _hashlib.md5(file_bytes).hexdigest()[:12]
+            cached = _parse_cache.get(file_hash)
+            if cached:
+                logger.info("parse_cache_hit", filename=filename, doc_type=doc_type)
+                if cached.get("_cache_type") == "invoice":
+                    parsed_docs["invoice"] = cached
+                elif cached.get("_cache_type") == "packing":
+                    parsed_docs["packing"] = cached
+                continue
 
             if doc_type == "invoice":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из инвойса...", pct + 8)
+                self._progress("parsing", f"[{i+1}/{total_files}] AI: инвойс...", pct)
                 parsed_docs["invoice"] = self.invoice_extractor.extract(file_bytes, filename)
                 parsed_docs["invoice"]["_filename"] = filename
-            elif doc_type == "contract":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из контракта...", pct + 8)
-                parsed_docs["contract"] = self.contract_extractor.extract(file_bytes, filename)
-                parsed_docs["contract"]["_filename"] = filename
+                parsed_docs["invoice"]["_cache_type"] = "invoice"
+                _parse_cache[file_hash] = parsed_docs["invoice"]
             elif doc_type == "packing_list":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из упаковочного листа...", pct + 8)
+                self._progress("parsing", f"[{i+1}/{total_files}] AI: упаковочный лист...", pct)
                 parsed_docs["packing"] = self.packing_extractor.extract(file_bytes, filename)
                 parsed_docs["packing"]["_filename"] = filename
+                parsed_docs["packing"]["_cache_type"] = "packing"
+                _parse_cache[file_hash] = parsed_docs["packing"]
             elif doc_type == "transport_doc":
                 parsed_docs["transport"] = {"raw_text": text, "_filename": filename, "doc_type": "transport_doc"}
-            elif doc_type == "transport_invoice":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из транспортного инвойса...", pct + 8)
-                from app.services.transport_parser import parse as parse_transport
-                parsed_docs["transport_invoice"] = parse_transport(file_bytes, filename)
-            elif doc_type == "specification":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает данные из спецификации...", pct + 8)
-                from app.services.spec_parser import parse as parse_spec
-                parsed_docs["specification"] = parse_spec(file_bytes, filename)
-            elif doc_type == "tech_description":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI извлекает техописание...", pct + 8)
-                from app.services.techop_parser import parse as parse_techop
-                parsed_docs.setdefault("tech_descriptions", []).append(parse_techop(file_bytes, filename))
+            elif doc_type in ("contract", "specification", "tech_description", "transport_invoice"):
+                # Собираем для батч-парсинга одним LLM-вызовом
+                secondary_texts.append({"doc_type": doc_type, "filename": filename, "text": text, "file_bytes": file_bytes})
             else:
-                parsed_docs.setdefault("other", []).append({
-                    "raw_text": text, "_filename": filename, "doc_type": doc_type,
-                })
+                parsed_docs.setdefault("other", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
+
+        # --- Шаг 3: Батч-парсинг второстепенных документов (один LLM-вызов) ---
+        if secondary_texts:
+            self._progress("parsing", f"AI: батч-парсинг {len(secondary_texts)} документов...", 60)
+            parsed_docs = self._batch_parse_secondary(secondary_texts, parsed_docs)
 
         # --- Шаг 2: Компиляция данных декларации ---
         self._progress("compiling", "Компиляция данных декларации...", 70)
