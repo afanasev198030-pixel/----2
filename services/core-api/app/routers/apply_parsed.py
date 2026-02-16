@@ -89,6 +89,7 @@ class ApplyParsedRequest(BaseModel):
     # Из AWB / транспорта
     transport_doc_number: Optional[str] = None
     transport_type: Optional[str] = None  # 40=воздушный, 10=морской, 30=авто
+    customs_office_code: Optional[str] = None  # Код таможенного поста (8 цифр)
 
     # Товарные позиции
     items: list[ParsedItem] = []
@@ -243,6 +244,8 @@ async def apply_parsed_data(
             declaration.transport_type_border = data.transport_type
         if data.transport_doc_number:
             declaration.transport_at_border = data.transport_doc_number
+        if data.customs_office_code and not declaration.customs_office_code:
+            declaration.customs_office_code = data.customs_office_code[:8]
         if data.freight_amount is not None:
             declaration.freight_amount = Decimal(str(data.freight_amount))
         if data.freight_currency:

@@ -187,7 +187,9 @@ const DeclarationEditPage = () => {
         country_origin: parsed.country_origin, country_destination: parsed.country_destination || 'RU',
         contract_number: parsed.contract_number, total_packages: parsed.total_packages,
         total_gross_weight: parsed.total_gross_weight, total_net_weight: parsed.total_net_weight,
-        transport_type: '40', deal_nature_code: '01', type_code: 'IM40',
+        transport_type: parsed.transport_type || '40', deal_nature_code: '01', type_code: 'IM40',
+        customs_office_code: parsed.customs_office_code,
+        freight_amount: parsed.freight_amount, freight_currency: parsed.freight_currency,
         items: (parsed.items || []).map((item: any, idx: number) => ({
           line_no: item.line_no || idx + 1,
           description: item.description || item.commercial_name || '',
@@ -351,10 +353,10 @@ const DeclarationEditPage = () => {
                       </Box>
                     </Box>
                     <Grid container spacing={1}>
-                      <Grid item xs={4}><Typography variant="caption" color="text.secondary">Описание (31)</Typography><Typography variant="body2" fontWeight={600}>{item.commercial_name || item.description || '—'}</Typography></Grid>
+                      <Grid item xs={3}><Typography variant="caption" color="text.secondary">Описание (31)</Typography><Typography variant="body2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>{item.commercial_name || item.description || '—'}</Typography></Grid>
                       <Grid item xs={1}><Typography variant="caption" color="text.secondary">Страна</Typography><Typography variant="body2">{item.country_origin_code || '—'}</Typography></Grid>
-                      <Grid item xs={1}><Typography variant="caption" color="text.secondary">Кол-во</Typography><Typography variant="body2">{item.additional_unit_qty || '—'} {item.additional_unit || ''}</Typography></Grid>
-                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Цена ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price ? Number(item.unit_price).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
+                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Кол-во</Typography><Typography variant="body2" noWrap>{item.additional_unit_qty ? Number(item.additional_unit_qty).toLocaleString('ru-RU') : '—'}<br /><Typography component="span" variant="caption" color="text.secondary">{item.additional_unit || 'pcs'}</Typography></Typography></Grid>
+                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Цена ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price ? Number(item.unit_price).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
                       <Grid item xs={2}><Typography variant="caption" color="text.secondary">Сумма ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price && item.additional_unit_qty ? (Number(item.unit_price) * Number(item.additional_unit_qty)).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
                       <Grid item xs={2}><Typography variant="caption" color="text.secondary">Тамож. стоимость (руб)</Typography><Typography variant="body2" fontWeight={600} color="primary.main">{item.customs_value_rub ? Number(item.customs_value_rub).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
                     </Grid>

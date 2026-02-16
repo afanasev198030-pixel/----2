@@ -650,6 +650,20 @@ JSON:"""},
         if not awb_number and transport_inv.get("awb_number"):
             awb_number = transport_inv["awb_number"]
 
+        # Код таможенного поста: определяем по AWB prefix (airline code → аэропорт)
+        customs_office_code = None
+        _AWB_TO_POST = {
+            "728": "10005020",  # Внуково
+            "784": "10002020",  # Шереметьево
+            "555": "10009100",  # Домодедово
+            "880": "10005020",  # Внуково (DHL/UPS)
+            "176": "10002020",  # Шереметьево (Emirates)
+            "074": "10002020",  # Шереметьево (KLM)
+        }
+        if awb_number:
+            awb_prefix = awb_number.split("-")[0] if "-" in awb_number else awb_number[:3]
+            customs_office_code = _AWB_TO_POST.get(awb_prefix)
+
         # Валюта: спецификация > инвойс > контракт
         currency = spec.get("currency") or inv.get("currency") or contract.get("currency")
         total_amount = spec.get("total_amount") or inv.get("total_amount")
@@ -668,15 +682,15 @@ JSON:"""},
             "contract_date": contract.get("contract_date"),
             "total_packages": packing.get("total_packages") or inv.get("total_packages"),
             "package_type": packing.get("package_type"),
-            "total_gross_weight": packing.get("total_gross_weight") or inv.get("total_gross_weight"),
-            "total_net_weight": packing.get("total_net_weight") or inv.get("total_net_weight"),
+            "total_gross_weight": total_gross,
+            "total_net_weight": total_net,
             "transport_type": transport_type,
             "transport_doc_number": awb_number,
-            "deal_nature_code": "01",  # Купля-продажа
-            "type_code": "IM40",  # Импорт
+            "customs_office_code": customs_office_code,
+            "deal_nature_code": "01",
+            "type_code": "IM40",
             "items": items,
             "documents": [],
-            # Транспортные расходы (графа 17)
             "freight_amount": transport_inv.get("freight_amount"),
             "freight_currency": transport_inv.get("freight_currency"),
         }
