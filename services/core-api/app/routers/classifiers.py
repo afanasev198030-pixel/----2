@@ -55,6 +55,24 @@ async def list_classifiers(
     return [ClassifierResponse.model_validate(c) for c in classifiers]
 
 
+@router.get("/subcodes")
+async def list_subcodes(
+    prefix: str = Query(..., min_length=4, max_length=8),
+    classifier_type: str = Query("hs_code"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Подкоды по префиксу (internal, без auth) — для двухэтапной классификации ТН ВЭД."""
+    query = select(Classifier).where(
+        Classifier.classifier_type == classifier_type,
+        Classifier.code.like(f"{prefix}%"),
+        Classifier.is_active == True,
+        func.length(Classifier.code) == 10,
+    ).order_by(Classifier.code).limit(30)
+    result = await db.execute(query)
+    codes = result.scalars().all()
+    return [{"code": c.code, "name_ru": c.name_ru or ""} for c in codes]
+
+
 @router.get("/countries", response_model=list[ClassifierResponse])
 async def list_countries(
     q: Optional[str] = None,

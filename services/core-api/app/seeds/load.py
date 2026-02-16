@@ -34,6 +34,7 @@ SEED_FILES = {
     "deal_nature.json": "deal_nature",
     "mos_methods.json": "mos_method",
     "procedures.json": "procedure",
+    "customs_posts.json": "customs_post",
 }
 
 

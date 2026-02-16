@@ -100,6 +100,10 @@ class ApplyParsedRequest(BaseModel):
     deal_nature_code: Optional[str] = "01"  # купля-продажа по умолчанию
     type_code: Optional[str] = "IM40"  # импорт по умолчанию
 
+    # Транспортные расходы (графа 17)
+    freight_amount: Optional[float] = None
+    freight_currency: Optional[str] = None
+
     # Риски
     risk_score: Optional[int] = None
     risk_flags: Optional[dict] = None
@@ -153,15 +157,28 @@ async def apply_parsed_data(
     counters = {"counterparties": 0, "items": 0, "documents": 0}
 
     try:
-        # --- 0. Подтянуть ИНН/КПП и адрес из компании пользователя ---
+        # --- 0. Подтянуть ИНН/КПП из компании + адрес СВХ по коду поста ---
         if current_user.company_id and not declaration.declarant_inn_kpp:
             company = await db.get(Company, current_user.company_id)
             if company:
                 parts = [p for p in [company.inn, company.kpp] if p]
                 if parts:
                     declaration.declarant_inn_kpp = "/".join(parts)
-                if company.address and not declaration.goods_location:
-                    declaration.goods_location = company.address
+
+        # Адрес СВХ (графа 30): по коду таможенного поста из справочника
+        if not declaration.goods_location and declaration.customs_office_code:
+            from app.models import Classifier
+            post_result = await db.execute(
+                select(Classifier).where(
+                    Classifier.classifier_type == "customs_post",
+                    Classifier.code == declaration.customs_office_code,
+                    Classifier.is_active == True,
+                )
+            )
+            post = post_result.scalar_one_or_none()
+            if post and post.meta and post.meta.get("address"):
+                declaration.goods_location = post.meta["address"]
+                logger.info("goods_location_from_post", code=declaration.customs_office_code, address=post.meta["address"][:50])
 
         # --- 1. Создать/найти контрагентов ---
         sender_id = None
@@ -241,6 +258,10 @@ async def apply_parsed_data(
             declaration.transport_type_border = data.transport_type
         if data.transport_doc_number:
             declaration.transport_at_border = data.transport_doc_number
+        if data.freight_amount is not None:
+            declaration.freight_amount = Decimal(str(data.freight_amount))
+        if data.freight_currency:
+            declaration.freight_currency = data.freight_currency
 
         declaration.total_items_count = len(data.items) if data.items else 0
 

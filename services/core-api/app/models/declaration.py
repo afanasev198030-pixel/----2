@@ -108,6 +108,8 @@ class Declaration(Base):
     transport_on_border_id: Mapped[Optional[str]] = mapped_column(String(100))  # Графа 21 рейс
     entry_customs_code: Mapped[Optional[str]] = mapped_column(String(8))    # Графа 29
     goods_location: Mapped[Optional[str]] = mapped_column(Text)             # Графа 30
+    freight_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))   # Транспортные расходы
+    freight_currency: Mapped[Optional[str]] = mapped_column(String(3))          # Валюта фрахта
 
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

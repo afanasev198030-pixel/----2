@@ -574,17 +574,24 @@ JSON:"""},
                                 logger.info("item_enriched_from_techop", desc=item["description"][:80])
                             break
 
-        # Обогащение из packing list
-        if packing:
-            total_gross = packing.get("total_gross_weight")
-            total_net = packing.get("total_net_weight")
-            # Распределить вес поровну по позициям (упрощение)
-            if items and total_gross:
-                per_item_gross = total_gross / len(items)
-                per_item_net = (total_net / len(items)) if total_net else per_item_gross * 0.9
+        # Обогащение весами: packing list (приоритет) > спецификация
+        total_gross = (packing.get("total_gross_weight") or spec.get("total_gross_weight") or
+                       inv.get("total_gross_weight"))
+        total_net = (packing.get("total_net_weight") or spec.get("total_net_weight") or
+                     inv.get("total_net_weight"))
+        if items and total_gross:
+            try:
+                tg = float(total_gross)
+                tn = float(total_net) if total_net else tg * 0.9
+                per_item_gross = tg / len(items)
+                per_item_net = tn / len(items)
                 for item in items:
-                    item["gross_weight"] = round(per_item_gross, 3)
-                    item["net_weight"] = round(per_item_net, 3)
+                    if not item.get("gross_weight"):
+                        item["gross_weight"] = round(per_item_gross, 3)
+                    if not item.get("net_weight"):
+                        item["net_weight"] = round(per_item_net, 3)
+            except (ValueError, TypeError):
+                pass
 
         # Auto-classify HS codes via LLM + RAG (only for items WITHOUT HS code from parser)
         from app.services.dspy_modules import HSCodeClassifier

@@ -414,6 +414,15 @@ class HSCodeClassifier:
                 if len(code) < 10:
                     code = code.ljust(10, "0")
                 source = "llm_rag" if rag_text else "llm_direct"
+
+                # ── Этап 2: уточнение до точного 10-значного кода ──
+                refined = _refine_hs_code(llm, code[:6], description, get_model())
+                if refined:
+                    code = refined["code"]
+                    data["name_ru"] = refined.get("name_ru") or data.get("name_ru", "")
+                    data["reasoning"] = (data.get("reasoning", "") + f" → уточнён до {code}").strip()
+                    source = source + "_refined"
+
                 logger.info("hs_classified_by_llm", code=code, description=description[:50], model=get_model(), source=source)
                 _log_classify({
                     "description": description[:80],
@@ -495,6 +504,51 @@ class RiskAnalyzer:
             "risks": [r.model_dump() for r in result.risks],
             "source": "rule_engine",
         }
+
+
+def _refine_hs_code(llm_client, prefix_6: str, description: str, model: str) -> Optional[dict]:
+    """Этап 2: уточнить 6-значный код до точного 10-значного из справочника."""
+    if not prefix_6 or len(prefix_6) < 4:
+        return None
+    try:
+        import httpx
+        # Запрос подкодов из core-api (без auth — internal)
+        resp = httpx.get(
+            "http://core-api:8001/api/v1/classifiers/subcodes",
+            params={"prefix": prefix_6[:6], "classifier_type": "hs_code"},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return None
+        subcodes = resp.json()
+        if not subcodes or len(subcodes) < 2:
+            return None
+
+        # Формируем список для LLM
+        options = "\n".join([f"- {c['code']}: {c['name_ru']}" for c in subcodes[:20]])
+
+        refine_resp = llm_client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "Выбери ТОЧНЫЙ 10-значный код ТН ВЭД из списка. Ответь ТОЛЬКО JSON: {\"code\":\"XXXXXXXXXX\",\"name_ru\":\"название\"}"},
+                {"role": "user", "content": f"Товар: {description}\n\nВарианты:\n{options}\n\nКакой код точнее всего?"},
+            ],
+            temperature=0,
+            max_tokens=150,
+        )
+        text = refine_resp.choices[0].message.content.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text)
+        code = (data.get("code") or "").replace(".", "").replace(" ", "")
+        if code and len(code) == 10:
+            logger.info("hs_refined", prefix=prefix_6, refined=code, description=description[:40])
+            return {"code": code, "name_ru": data.get("name_ru", "")}
+    except Exception as e:
+        logger.debug("hs_refine_skip", error=str(e)[:80])
+    return None
 
 
 def _safe_float(value) -> Optional[float]:
