@@ -465,31 +465,46 @@ JSON:"""},
 
         return result
 
+    @staticmethod
+    def _to_dict(obj) -> dict:
+        """Pydantic model или dict → dict."""
+        if obj is None:
+            return {}
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()
+        if isinstance(obj, dict):
+            return obj
+        return {}
+
     def _compile_declaration(self, parsed_docs: dict) -> dict:
         """Собрать данные декларации из всех распознанных документов."""
-        inv = parsed_docs.get("invoice", {})
-        contract = parsed_docs.get("contract", {})
-        packing = parsed_docs.get("packing", {})
+        inv = self._to_dict(parsed_docs.get("invoice"))
+        contract = self._to_dict(parsed_docs.get("contract"))
+        packing = self._to_dict(parsed_docs.get("packing"))
         spec = parsed_docs.get("specification", {})
         tech_descs = parsed_docs.get("tech_descriptions", [])
         transport_inv = parsed_docs.get("transport_invoice", {})
 
         # ── Seller/Buyer: контракт (приоритет, полные реквизиты) > инвойс ──
-        seller = None
-        if contract.get("seller") and hasattr(contract["seller"], "name") and contract["seller"].name:
-            s = contract["seller"]
-            seller = {"name": s.name, "country_code": getattr(s, "country_code", None), "address": getattr(s, "address", None), "type": "seller"}
-        elif inv.get("seller"):
-            s = inv["seller"]
-            seller = {"name": s.get("name"), "country_code": s.get("country_code"), "address": s.get("address"), "type": "seller"}
+        def _extract_party(sources, party_type):
+            for src in sources:
+                if not src:
+                    continue
+                p = self._to_dict(src)
+                name = p.get("name") or p.get("seller_name" if party_type == "seller" else "buyer_name")
+                if name:
+                    return {"name": name, "country_code": (p.get("country_code") or "")[:2] or None, "address": p.get("address"), "type": party_type}
+            return None
 
-        buyer = None
-        if contract.get("buyer") and hasattr(contract["buyer"], "name") and contract["buyer"].name:
-            b = contract["buyer"]
-            buyer = {"name": b.name, "country_code": getattr(b, "country_code", None), "address": getattr(b, "address", None), "type": "buyer"}
-        elif inv.get("buyer"):
-            b = inv["buyer"]
-            buyer = {"name": b.get("name"), "country_code": b.get("country_code"), "address": b.get("address") if isinstance(b, dict) else None, "type": "buyer"}
+        seller = _extract_party([contract.get("seller"), inv.get("seller")], "seller")
+        if not seller and contract.get("seller_name"):
+            seller = {"name": contract["seller_name"], "country_code": None, "address": None, "type": "seller"}
+
+        buyer = _extract_party([contract.get("buyer"), inv.get("buyer")], "buyer")
+        if not buyer and contract.get("buyer_name"):
+            buyer = {"name": contract["buyer_name"], "country_code": None, "address": None, "type": "buyer"}
 
         # ── Items: спецификация (приоритет) > инвойс ──
         import re as _re
