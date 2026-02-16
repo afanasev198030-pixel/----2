@@ -42,11 +42,17 @@ def parse_smart(session: requests.Session, pdf_paths: list[Path]) -> dict:
     files = []
     for p in pdf_paths:
         files.append(("files", (p.name, p.read_bytes(), "application/pdf")))
+        print(f"    📄 {p.name}", flush=True)
+    print(f"    ⏳ Отправка {len(files)} файлов на parse-smart...", flush=True)
+    import time as _t
+    t0 = _t.time()
     r = session.post(
         f"{BASE_URL}/api/v1/ai/parse-smart",
         files=files,
         timeout=600,
     )
+    elapsed = _t.time() - t0
+    print(f"    ⏱ Ответ за {elapsed:.1f}с (status={r.status_code})", flush=True)
     r.raise_for_status()
     return r.json()
 

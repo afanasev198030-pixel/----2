@@ -430,10 +430,16 @@ JSON:"""},
                     item["precedents"] = precedents[:3]
 
         # Confidence — среднее по всем источникам
+        def _get_conf(obj):
+            if obj is None:
+                return 0
+            if isinstance(obj, dict):
+                return obj.get("confidence", 0)
+            return getattr(obj, "confidence", 0)
         confidences = [
-            parsed_docs.get("invoice", {}).get("confidence", 0),
-            parsed_docs.get("contract", {}).get("confidence", 0),
-            parsed_docs.get("packing", {}).get("confidence", 0),
+            _get_conf(parsed_docs.get("invoice")),
+            _get_conf(parsed_docs.get("contract")),
+            _get_conf(parsed_docs.get("packing")),
         ]
         non_zero = [c for c in confidences if c > 0]
         result["confidence"] = sum(non_zero) / len(non_zero) if non_zero else 0.0
