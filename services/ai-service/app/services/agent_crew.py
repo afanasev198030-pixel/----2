@@ -52,6 +52,9 @@ def _detect_doc_type(filename: str, text: str) -> str:
         return "packing_list"
     if re.search(r'\bpl\b', fn_lower) and "inv" not in fn_lower:
         return "packing_list"
+    # AWB по паттерну NNN-NNNNNNNN или NNNNNNNNNNN (авианакладная)
+    if re.search(r'^\d{3}[-_ ]?\d{8}', fn_lower.replace('.pdf', '').replace('.jpg', '').strip()):
+        return "transport_doc"
     if any(k in fn_lower for k in ["awb", "waybill", "накладная"]):
         return "transport_doc"
     if any(k in fn_lower for k in ["spec", "спец"]):

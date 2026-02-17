@@ -73,6 +73,7 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
 
         # Try LLM first
         llm = _llm_parse_pl(raw_text)
+        logger.info("pl_llm_result", has_data=bool(llm), gross=llm.get("total_gross_weight") if llm else None, filename=filename)
         if llm and (llm.get("total_gross_weight") or llm.get("total_net_weight")):
             logger.info("pl_parsed_by_llm", gross=llm.get("total_gross_weight"), net=llm.get("total_net_weight"))
             items = []
