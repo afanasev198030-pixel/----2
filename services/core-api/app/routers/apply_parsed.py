@@ -241,7 +241,10 @@ async def apply_parsed_data(
         if data.type_code:
             declaration.type_code = data.type_code
         if data.transport_type:
-            declaration.transport_type_border = data.transport_type
+            # Маппинг текстовых значений → коды (String(2))
+            _TRANSPORT_MAP = {"air": "40", "sea": "10", "auto": "30", "rail": "20", "40": "40", "10": "10", "30": "30", "20": "20"}
+            tt = _TRANSPORT_MAP.get(str(data.transport_type).lower().strip(), str(data.transport_type)[:2])
+            declaration.transport_type_border = tt
         if data.transport_doc_number:
             declaration.transport_at_border = data.transport_doc_number
         if data.customs_office_code and not declaration.customs_office_code:
