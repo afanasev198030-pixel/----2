@@ -448,6 +448,25 @@ JSON:"""},
                 item.setdefault("hs_confidence", 0.9)
                 item.setdefault("hs_reasoning", "Extracted from document")
                 item["hs_needs_review"] = False
+                if desc:
+                    try:
+                        rag_for_choice = self.index_manager.search_hs_codes(desc)
+                        hs_candidates = []
+                        for r in rag_for_choice[:8]:
+                            code_raw = re.sub(r"\D", "", str(r.get("code", "")))
+                            if len(code_raw) < 8:
+                                continue
+                            code = (code_raw[:10] if len(code_raw) >= 10 else code_raw.ljust(10, "0"))
+                            hs_candidates.append({
+                                "hs_code": code,
+                                "name_ru": r.get("name_ru", "") or "",
+                                "confidence": float(r.get("score", 0.0) or 0.0),
+                                "source": "rag",
+                            })
+                        if hs_candidates:
+                            item["hs_candidates"] = hs_candidates
+                    except Exception as e:
+                        logger.debug("hs_candidates_for_doc_code_skip", error=str(e)[:80])
                 logger.info("hs_from_doc_kept", item_no=j+1, hs_code=item["hs_code"])
                 continue
 
@@ -466,6 +485,7 @@ JSON:"""},
                 item["hs_code_name"] = hs_result.get("name_ru", "")
                 item["hs_confidence"] = hs_result.get("confidence", 0.0)
                 item["hs_reasoning"] = hs_result.get("reasoning", "")
+                item["hs_candidates"] = hs_result.get("candidates", [])
 
                 if hs_result.get("confidence", 0) < 0.5 or not hs_code:
                     item["hs_needs_review"] = True
@@ -735,6 +755,25 @@ JSON:"""},
                 item["hs_confidence"] = 0.9
                 item["hs_reasoning"] = "Extracted from document"
                 item["hs_needs_review"] = False
+                if desc:
+                    try:
+                        rag_for_choice = idx_mgr.search_hs_codes(desc)
+                        hs_candidates = []
+                        for r in rag_for_choice[:8]:
+                            code_raw = _re.sub(r"\D", "", str(r.get("code", "")))
+                            if len(code_raw) < 8:
+                                continue
+                            code = (code_raw[:10] if len(code_raw) >= 10 else code_raw.ljust(10, "0"))
+                            hs_candidates.append({
+                                "hs_code": code,
+                                "name_ru": r.get("name_ru", "") or "",
+                                "confidence": float(r.get("score", 0.0) or 0.0),
+                                "source": "rag",
+                            })
+                        if hs_candidates:
+                            item["hs_candidates"] = hs_candidates
+                    except Exception as e:
+                        logger.debug("hs_candidates_build_failed", error=str(e)[:80], description=desc[:40])
                 logger.info("hs_from_document", code=item["hs_code"], description=(item.get("description") or "")[:50])
             elif item.get("description"):
                 try:
@@ -745,6 +784,7 @@ JSON:"""},
                         item["hs_code_name"] = hs_result.get("name_ru", "")
                         item["hs_confidence"] = hs_result.get("confidence", 0)
                         item["hs_reasoning"] = hs_result.get("reasoning", "")
+                        item["hs_candidates"] = hs_result.get("candidates", [])
                         item["hs_needs_review"] = hs_result.get("confidence", 0) < 0.8
                         logger.info("auto_hs_classified", description=item["description"][:50], code=item["hs_code"], confidence=item["hs_confidence"])
                 except Exception as e:

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -36,13 +36,13 @@ import {
   Delete as DeleteIcon,
   Add as AddIcon,
 } from '@mui/icons-material';
-import { parseSmartDocument, ParseSmartResult } from '../api/ai';
+import { parseSmartDocument, ParseSmartResult, classifyHS, HSSuggestion } from '../api/ai';
 import client from '../api/client';
 
 interface DocumentUploadPanelProps {
   declarationId?: string;
-  onParsedData?: (data: ParseSmartResult) => void;
-  onCreateDeclaration?: (data: ParseSmartResult) => void;
+  onParsedData?: (data: ParseSmartResult) => void | Promise<void>;
+  onCreateDeclaration?: (data: ParseSmartResult) => void | Promise<void>;
 }
 
 const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration }: DocumentUploadPanelProps) => {
@@ -53,10 +53,16 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
   const [progressDetail, setProgressDetail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ParseSmartResult | null>(null);
+  const [editableResult, setEditableResult] = useState<ParseSmartResult | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [hsOptions, setHsOptions] = useState<Record<number, HSSuggestion[]>>({});
+  const [hsOptionsLoading, setHsOptionsLoading] = useState<Record<number, boolean>>({});
+  const [expandedHsRows, setExpandedHsRows] = useState<Record<number, boolean>>({});
 
   const handleFilesSelected = useCallback((newFiles: FileList | File[]) => {
     const fileArray = Array.from(newFiles).filter(
@@ -87,6 +93,11 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
     setIsProcessing(true);
     setError(null);
     setResult(null);
+    setEditableResult(null);
+    setApplyError(null);
+    setHsOptions({});
+    setHsOptionsLoading({});
+    setExpandedHsRows({});
     setProgress(5);
     setProgressStep('upload');
     setProgressDetail('Загрузка файлов на сервер...');
@@ -136,6 +147,10 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
       setProgressStep('complete');
       setProgressDetail('Готово! Данные распознаны.');
       setResult(parsed);
+      setEditableResult({
+        ...parsed,
+        items: (parsed.items || []).map((it) => ({ ...it })),
+      });
 
       // Show preview after short delay
       setTimeout(() => setShowPreview(true), 500);
@@ -154,19 +169,100 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
     }
   }, [selectedFiles]);
 
-  const handleApply = () => {
-    if (result && onParsedData) {
-      onParsedData(result);
+  const handleApply = useCallback(async () => {
+    const payload = editableResult || result;
+    if (!payload || !onParsedData) return;
+    setApplyError(null);
+    setIsApplying(true);
+    try {
+      await Promise.resolve(onParsedData(payload));
+      setShowPreview(false);
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Ошибка применения данных';
+      setApplyError(msg);
+    } finally {
+      setIsApplying(false);
     }
-    setShowPreview(false);
-  };
+  }, [editableResult, result, onParsedData]);
 
-  const handleCreateDeclaration = () => {
-    if (result && onCreateDeclaration) {
-      onCreateDeclaration(result);
+  const handleCreateDeclaration = useCallback(async () => {
+    const payload = editableResult || result;
+    if (!payload || !onCreateDeclaration) return;
+    setApplyError(null);
+    setIsApplying(true);
+    try {
+      await Promise.resolve(onCreateDeclaration(payload));
+      setShowPreview(false);
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || 'Ошибка создания декларации';
+      setApplyError(msg);
+    } finally {
+      setIsApplying(false);
     }
-    setShowPreview(false);
-  };
+  }, [editableResult, result, onCreateDeclaration]);
+
+  const loadSimilarCodes = useCallback(
+    async (index: number, item: ParseSmartResult['items'][number]) => {
+      const description = item.description || item.commercial_name || '';
+      if (!description || description.length < 3) return;
+      setHsOptionsLoading((prev) => ({ ...prev, [index]: true }));
+      try {
+        const suggestions = await classifyHS(description, editableResult?.country_origin);
+        setHsOptions((prev) => ({ ...prev, [index]: suggestions.slice(0, 8) }));
+        setExpandedHsRows((prev) => ({ ...prev, [index]: true }));
+      } catch (e: any) {
+        const msg = e?.response?.data?.detail || e?.message || 'Ошибка подбора кода';
+        setApplyError(msg);
+      } finally {
+        setHsOptionsLoading((prev) => ({ ...prev, [index]: false }));
+      }
+    },
+    [editableResult?.country_origin]
+  );
+
+  const selectHsCode = useCallback((index: number, option: HSSuggestion) => {
+    setEditableResult((prev) => {
+      if (!prev) return prev;
+      const items = [...(prev.items || [])];
+      if (!items[index]) return prev;
+      items[index] = {
+        ...items[index],
+        hs_code: option.hs_code,
+        hs_code_name: option.name_ru,
+        hs_confidence: option.confidence,
+      };
+      return { ...prev, items };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!showPreview || !editableResult?.items?.length) return;
+
+    // 1) seed options from backend candidates (already computed during parse-smart)
+    setHsOptions((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      editableResult.items.forEach((item, i) => {
+        if (next[i]?.length) return;
+        const seeded = (item.hs_candidates || []).filter((x) => !!x?.hs_code);
+        if (seeded.length) {
+          next[i] = seeded.slice(0, 8);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    // 2) auto-load similar codes for first rows so the user sees it immediately
+    const maxAutoRows = Math.min(editableResult.items.length, 6);
+    for (let i = 0; i < maxAutoRows; i += 1) {
+      const item = editableResult.items[i];
+      const description = item?.description || item?.commercial_name || '';
+      if (!description || description.length < 3) continue;
+      if (hsOptions[i]?.length || hsOptionsLoading[i]) continue;
+      void loadSimilarCodes(i, item);
+    }
+  }, [showPreview, editableResult, hsOptions, hsOptionsLoading, loadSimilarCodes]);
 
   const confidenceColor = (c: number) => {
     if (c >= 0.8) return 'success';
@@ -394,8 +490,8 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
 
       {/* Preview Dialog */}
       <Dialog
-        open={showPreview && !!result}
-        onClose={() => setShowPreview(false)}
+        open={showPreview && !!(editableResult || result)}
+        onClose={() => { if (!isApplying) setShowPreview(false); }}
         maxWidth="lg"
         fullWidth
         PaperProps={{ sx: { borderRadius: 3 } }}
@@ -403,129 +499,138 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <AiIcon color="primary" />
           Результат распознавания
-          {result?.confidence != null && (
+          {(editableResult || result)?.confidence != null && (
             <Chip
-              label={`Точность: ${Math.round((result.confidence || 0) * 100)}%`}
+              label={`Точность: ${Math.round((((editableResult || result)?.confidence || 0) * 100))}%`}
               size="small"
-              color={confidenceColor(result.confidence || 0)}
+              color={confidenceColor((editableResult || result)?.confidence || 0)}
             />
           )}
-          {result?.risk_score != null && result.risk_score > 0 && (
+          {(editableResult || result)?.risk_score != null && ((editableResult || result)?.risk_score || 0) > 0 && (
             <Chip
               icon={<WarningIcon />}
-              label={`Риск: ${result.risk_score}`}
+              label={`Риск: ${(editableResult || result)?.risk_score}`}
               size="small"
-              color={result.risk_score > 50 ? 'error' : result.risk_score > 25 ? 'warning' : 'default'}
+              color={((editableResult || result)?.risk_score || 0) > 50 ? 'error' : ((editableResult || result)?.risk_score || 0) > 25 ? 'warning' : 'default'}
             />
           )}
         </DialogTitle>
 
         <DialogContent dividers>
-          {result && (
+          {(editableResult || result) && (
             <>
+              {applyError && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setApplyError(null)}>
+                  {applyError}
+                </Alert>
+              )}
               {/* General info */}
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
                 Общие данные
               </Typography>
               <Table size="small" sx={{ mb: 3 }}>
                 <TableBody>
-                  {result.invoice_number && (
+                  {(editableResult || result)?.invoice_number && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600, width: 220 }}>Номер инвойса</TableCell>
-                      <TableCell>{result.invoice_number}</TableCell>
+                      <TableCell>{(editableResult || result)?.invoice_number}</TableCell>
                     </TableRow>
                   )}
-                  {result.invoice_date && (
+                  {(editableResult || result)?.invoice_date && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Дата</TableCell>
-                      <TableCell>{result.invoice_date}</TableCell>
+                      <TableCell>{(editableResult || result)?.invoice_date}</TableCell>
                     </TableRow>
                   )}
-                  {result.seller?.name && (
+                  {(editableResult || result)?.seller?.name && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Продавец (графа 2)</TableCell>
                       <TableCell>
-                        {result.seller.name}
-                        {result.seller.country_code && ` [${result.seller.country_code}]`}
+                        {(editableResult || result)?.seller?.name}
+                        {(editableResult || result)?.seller?.country_code && ` [${(editableResult || result)?.seller?.country_code}]`}
                       </TableCell>
                     </TableRow>
                   )}
-                  {result.buyer?.name && (
+                  {(editableResult || result)?.buyer?.name && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Покупатель (графа 8)</TableCell>
                       <TableCell>
-                        {result.buyer.name}
-                        {result.buyer.country_code && ` [${result.buyer.country_code}]`}
+                        {(editableResult || result)?.buyer?.name}
+                        {(editableResult || result)?.buyer?.country_code && ` [${(editableResult || result)?.buyer?.country_code}]`}
                       </TableCell>
                     </TableRow>
                   )}
-                  {result.currency && (
+                  {(editableResult || result)?.currency && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Валюта (графа 22)</TableCell>
-                      <TableCell>{result.currency}</TableCell>
+                      <TableCell>{(editableResult || result)?.currency}</TableCell>
                     </TableRow>
                   )}
-                  {result.total_amount != null && (
+                  {(editableResult || result)?.total_amount != null && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Сумма (графа 22)</TableCell>
                       <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>
-                        {result.currency || ''} {Number(result.total_amount).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
+                        {(editableResult || result)?.currency || ''} {Number((editableResult || result)?.total_amount).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}
                       </TableCell>
                     </TableRow>
                   )}
-                  {result.incoterms && (
+                  {(editableResult || result)?.incoterms && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Incoterms (графа 20)</TableCell>
-                      <TableCell>{result.incoterms}</TableCell>
+                      <TableCell>{(editableResult || result)?.incoterms}</TableCell>
                     </TableRow>
                   )}
-                  {result.contract_number && (
+                  {(editableResult || result)?.contract_number && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Контракт</TableCell>
-                      <TableCell>{result.contract_number}</TableCell>
+                      <TableCell>{(editableResult || result)?.contract_number}</TableCell>
                     </TableRow>
                   )}
-                  {result.total_gross_weight != null && (
+                  {(editableResult || result)?.total_gross_weight != null && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Вес брутто (графа 35)</TableCell>
-                      <TableCell>{result.total_gross_weight} кг</TableCell>
+                      <TableCell>{(editableResult || result)?.total_gross_weight} кг</TableCell>
                     </TableRow>
                   )}
-                  {result.total_net_weight != null && (
+                  {(editableResult || result)?.total_net_weight != null && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Вес нетто (графа 38)</TableCell>
-                      <TableCell>{result.total_net_weight} кг</TableCell>
+                      <TableCell>{(editableResult || result)?.total_net_weight} кг</TableCell>
                     </TableRow>
                   )}
-                  {result.total_packages != null && (
+                  {(editableResult || result)?.total_packages != null && (
                     <TableRow>
                       <TableCell sx={{ fontWeight: 600 }}>Кол-во мест (графа 6)</TableCell>
-                      <TableCell>{result.total_packages}</TableCell>
+                      <TableCell>{(editableResult || result)?.total_packages}</TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
 
               {/* Items */}
-              {result.items && result.items.length > 0 && (
+              {(editableResult || result)?.items && ((editableResult || result)?.items?.length || 0) > 0 && (
                 <>
                   <Divider sx={{ my: 2 }} />
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                    Товарные позиции ({result.items.length})
+                    Товарные позиции ({(editableResult || result)?.items?.length})
                   </Typography>
+                  <Alert severity="info" sx={{ mb: 1 }}>
+                    Для выбора альтернативного кода нажмите "Похожие коды" в колонке "Выбор кода", затем кликните по нужному варианту.
+                  </Alert>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
                         <TableCell sx={{ fontWeight: 600 }}>№</TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>Описание (графа 31)</TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>ТН ВЭД (графа 33)</TableCell>
+                        <TableCell sx={{ fontWeight: 600, minWidth: 260 }}>Выбор кода</TableCell>
                         <TableCell sx={{ fontWeight: 600 }} align="right">Кол-во</TableCell>
                         <TableCell sx={{ fontWeight: 600 }} align="right">Цена</TableCell>
                         <TableCell sx={{ fontWeight: 600 }} align="right">Сумма</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {result.items.map((item, i) => (
+                      {(editableResult || result)!.items.map((item, i) => (
                         <TableRow key={i}>
                           <TableCell>{item.line_no}</TableCell>
                           <TableCell>
@@ -555,6 +660,65 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
                               <Typography variant="caption" color="text.secondary">—</Typography>
                             )}
                           </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => loadSimilarCodes(i, item)}
+                                disabled={!!hsOptionsLoading[i] || !(item.description || item.commercial_name)}
+                              >
+                                {hsOptionsLoading[i] ? 'Поиск...' : 'Похожие коды'}
+                              </Button>
+                              {!!hsOptions[i]?.length && (
+                                <Chip size="small" color="info" label={`Вариантов: ${hsOptions[i].length}`} />
+                              )}
+                            </Box>
+                            {!!hsOptions[i]?.length && (
+                              <Box sx={{ mt: 0.5 }}>
+                                <Button
+                                  size="small"
+                                  color="inherit"
+                                  onClick={() => setExpandedHsRows((prev) => ({ ...prev, [i]: !prev[i] }))}
+                                >
+                                  {expandedHsRows[i] ? 'Скрыть список' : 'Показать список'}
+                                </Button>
+                                <Collapse in={!!expandedHsRows[i]}>
+                                  <Paper variant="outlined" sx={{ p: 0.75, mt: 0.5, maxHeight: 180, overflow: 'auto' }}>
+                                    {hsOptions[i].map((opt, k) => (
+                                      <Box
+                                        key={`${opt.hs_code}-${k}`}
+                                        onClick={() => selectHsCode(i, opt)}
+                                        sx={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: 0.75,
+                                          px: 0.75,
+                                          py: 0.5,
+                                          borderRadius: 1,
+                                          cursor: 'pointer',
+                                          bgcolor: item.hs_code === opt.hs_code ? '#e8f5e9' : 'transparent',
+                                          '&:hover': { bgcolor: '#f5f5f5' },
+                                        }}
+                                      >
+                                        <Typography variant="caption" fontFamily="monospace" fontWeight={700}>
+                                          {opt.hs_code}
+                                        </Typography>
+                                        <Typography variant="caption" sx={{ flex: 1 }}>
+                                          {opt.name_ru}
+                                        </Typography>
+                                        <Chip
+                                          label={`${Math.round((opt.confidence || 0) * 100)}%`}
+                                          size="small"
+                                          color={confidenceColor(opt.confidence || 0)}
+                                        />
+                                      </Box>
+                                    ))}
+                                  </Paper>
+                                </Collapse>
+                              </Box>
+                            )}
+                          </TableCell>
                           <TableCell align="right">
                             {item.quantity}
                             {item.unit && ` ${item.unit}`}
@@ -572,17 +736,17 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
-          <Button onClick={() => setShowPreview(false)} color="inherit">
+          <Button onClick={() => setShowPreview(false)} color="inherit" disabled={isApplying}>
             Закрыть
           </Button>
           {declarationId && onParsedData && (
-            <Button onClick={handleApply} variant="contained" startIcon={<CheckIcon />}>
-              Применить к декларации
+            <Button onClick={handleApply} variant="contained" startIcon={isApplying ? <CircularProgress size={16} color="inherit" /> : <CheckIcon />} disabled={isApplying}>
+              {isApplying ? 'Применение...' : 'Применить к декларации'}
             </Button>
           )}
           {!declarationId && onCreateDeclaration && (
-            <Button onClick={handleCreateDeclaration} variant="contained" color="success" startIcon={<AddIcon />}>
-              Создать декларацию из документов
+            <Button onClick={handleCreateDeclaration} variant="contained" color="success" startIcon={isApplying ? <CircularProgress size={16} color="inherit" /> : <AddIcon />} disabled={isApplying}>
+              {isApplying ? 'Создание...' : 'Создать декларацию из документов'}
             </Button>
           )}
         </DialogActions>

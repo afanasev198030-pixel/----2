@@ -12,6 +12,7 @@ export interface HSSuggestion {
   hs_code: string;
   name_ru: string;
   confidence: number;
+  source?: string;
 }
 
 export interface RiskItem {
@@ -30,13 +31,27 @@ export interface RiskAssessment {
 export const classifyHS = async (description: string, countryOrigin?: string, unitPrice?: number): Promise<HSSuggestion[]> => {
   // Use RAG+GPT-4o endpoint (falls back to keyword if AI unavailable)
   try {
-    const response = await aiClient.post<{ suggestions: HSSuggestion[]; rag_candidates?: any[] }>('/classify-hs-rag', {
+    const response = await aiClient.post<{ suggestions: any[]; rag_candidates?: any[] }>('/classify-hs-rag', {
       description,
       country_origin: countryOrigin || null,
       unit_price: unitPrice || null,
     });
-    // Merge suggestions + rag_candidates
-    const suggestions = response.data.suggestions || [];
+    // Merge suggestions + model candidates + rag_candidates
+    const suggestions = (response.data.suggestions || []).map((s: any) => ({
+      hs_code: s.hs_code,
+      name_ru: s.name_ru || '',
+      confidence: s.confidence || 0,
+      source: s.source || 'model',
+    }));
+    const modelCandidates = (response.data.suggestions || [])
+      .flatMap((s: any) => (s?.candidates || []))
+      .filter((c: any) => c?.hs_code)
+      .map((c: any) => ({
+        hs_code: c.hs_code,
+        name_ru: c.name_ru || '',
+        confidence: c.confidence || 0,
+        source: c.source || 'candidate',
+      }));
     const rag = (response.data.rag_candidates || [])
       .filter((c: any) => c.code && c.code.length >= 4)
       .slice(0, 3)
@@ -44,10 +59,16 @@ export const classifyHS = async (description: string, countryOrigin?: string, un
         hs_code: c.code.length < 10 ? c.code.padEnd(10, '0') : c.code,
         name_ru: c.name_ru || '',
         confidence: c.score || 0.5,
+        source: 'rag',
       }));
     // Deduplicate
-    const seen = new Set(suggestions.map((s: HSSuggestion) => s.hs_code));
-    const merged = [...suggestions, ...rag.filter((r: HSSuggestion) => !seen.has(r.hs_code))];
+    const seen = new Set<string>();
+    const merged: HSSuggestion[] = [];
+    [...suggestions, ...modelCandidates, ...rag].forEach((item: HSSuggestion) => {
+      if (!item.hs_code || seen.has(item.hs_code)) return;
+      seen.add(item.hs_code);
+      merged.push(item);
+    });
     return merged.filter((s: HSSuggestion) => s.hs_code && s.hs_code !== '0000000000');
   } catch {
     // Fallback to keyword classifier
@@ -114,6 +135,7 @@ export interface ParseSmartResult {
     hs_code_name?: string;
     hs_confidence?: number;
     hs_reasoning?: string;
+    hs_candidates?: HSSuggestion[];
     gross_weight?: number;
     net_weight?: number;
   }>;

@@ -511,6 +511,24 @@ const SettingsPage = () => {
                             <span style={{ color: '#78909c', fontSize: 10 }}>{entry.prompt_user}</span>
                           </Box>
                         )}
+                        {entry.prompt_system && (
+                          <Box sx={{ ml: 1 }}>
+                            <span style={{ color: '#aaa' }}>System:</span>{' '}
+                            <span style={{ color: '#90caf9', fontSize: 10 }}>{entry.prompt_system}</span>
+                          </Box>
+                        )}
+                        {entry.decision_path && (
+                          <Box sx={{ ml: 1 }}>
+                            <span style={{ color: '#aaa' }}>Путь решения:</span>{' '}
+                            <span style={{ color: '#ffd54f' }}>{entry.decision_path}</span>
+                          </Box>
+                        )}
+                        {entry.rag_candidates != null && (
+                          <Box sx={{ ml: 1 }}>
+                            <span style={{ color: '#aaa' }}>RAG кандидатов:</span>{' '}
+                            <span style={{ color: '#b39ddb' }}>{entry.rag_candidates}</span>
+                          </Box>
+                        )}
                         {entry.context && (
                           <Box sx={{ ml: 1 }}>
                             <span style={{ color: '#aaa' }}>Контекст:</span>{' '}
