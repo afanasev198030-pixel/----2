@@ -1,4 +1,5 @@
 import uuid
+import re
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
@@ -30,6 +31,60 @@ from app.middleware.company_filter import get_accessible_company_ids
 logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/declarations", tags=["declarations"])
+
+
+def _normalize_digits(value: Optional[str]) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def _parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return None, None
+    if "/" in raw:
+        left, right = raw.split("/", 1)
+        inn = _normalize_digits(left)
+        kpp = _normalize_digits(right)
+        return (inn or None), (kpp or None)
+    digits = _normalize_digits(raw)
+    if len(digits) == 19:
+        return digits[:10], digits[10:]
+    if len(digits) == 21:
+        return digits[:12], digits[12:]
+    if len(digits) in (10, 12):
+        return digits, None
+    return (digits or None), None
+
+
+def _merge_company_inn_kpp(company: Optional[Company], current_value: Optional[str]) -> Optional[str]:
+    cur_inn, cur_kpp = _parse_inn_kpp(current_value)
+    comp_inn = _normalize_digits(company.inn) if company and company.inn else ""
+    comp_kpp = _normalize_digits(company.kpp) if company and company.kpp else ""
+    inn = comp_inn or (cur_inn or "")
+    kpp = comp_kpp or (cur_kpp or "")
+    if inn and kpp:
+        return f"{inn}/{kpp}"
+    if inn:
+        return inn
+    return None
+
+
+def _post_address_fallback(code: Optional[str]) -> Optional[str]:
+    if not code:
+        return None
+    fallback = {
+        "10005020": "г. Москва, аэропорт Внуково, Внуковское шоссе, д. 1",
+        "10005030": "г. Москва, ул. Яузская, д. 8",
+        "10002010": "Московская обл., г.о. Химки, аэропорт Шереметьево",
+        "10002020": "Московская обл., г.о. Химки, аэропорт Шереметьево, Карго",
+        "10009100": "Московская обл., г. Домодедово, аэропорт Домодедово",
+        "10129060": "г. Санкт-Петербург, аэропорт Пулково",
+        "10216120": "г. Санкт-Петербург, Гладкий остров",
+        "10130090": "Приморский край, г. Находка, бухта Восточная",
+        "10012020": "Новосибирская обл., аэропорт Толмачёво",
+        "10009000": "Московская обл., г. Реутов, ул. Железнодорожная, д. 9",
+    }
+    return fallback.get(code[:8])
 
 
 @router.get("/", response_model=PaginatedResponse)
@@ -299,27 +354,25 @@ async def update_declaration(
             changed_fields[field] = {"old": str(old_val) if old_val is not None else None, "new": str(value) if value is not None else None}
         setattr(declaration, field, value)
 
-    # Auto-fill declarant INN/KPP from company if still empty
-    if not declaration.declarant_inn_kpp and current_user.company_id:
+    # Auto-fill/normalize declarant INN/KPP from company.
+    if current_user.company_id:
         company = await db.get(Company, current_user.company_id)
-        if company:
-            parts = [p for p in [company.inn, company.kpp] if p]
-            if parts:
-                new_inn_kpp = "/".join(parts)
-                old_val = declaration.declarant_inn_kpp
-                declaration.declarant_inn_kpp = new_inn_kpp
-                if str(old_val) != str(new_inn_kpp):
-                    changed_fields["declarant_inn_kpp"] = {
-                        "old": str(old_val) if old_val is not None else None,
-                        "new": new_inn_kpp,
-                    }
+        new_inn_kpp = _merge_company_inn_kpp(company, declaration.declarant_inn_kpp)
+        if new_inn_kpp and str(declaration.declarant_inn_kpp or "") != str(new_inn_kpp):
+            old_val = declaration.declarant_inn_kpp
+            declaration.declarant_inn_kpp = new_inn_kpp
+            changed_fields["declarant_inn_kpp"] = {
+                "old": str(old_val) if old_val is not None else None,
+                "new": new_inn_kpp,
+            }
 
     # Auto-fill goods location by customs post code if empty
-    if declaration.customs_office_code and (not declaration.goods_location or not declaration.goods_location.strip()):
+    office_code = (declaration.customs_office_code or declaration.entry_customs_code or "")[:8] or None
+    if office_code and (not declaration.goods_location or not declaration.goods_location.strip()):
         post_result = await db.execute(
             select(Classifier).where(
                 Classifier.classifier_type == "customs_post",
-                Classifier.code == declaration.customs_office_code,
+                Classifier.code == office_code,
                 Classifier.is_active == True,
             )
         )
@@ -332,9 +385,20 @@ async def update_declaration(
                     "old": str(old_val) if old_val is not None else None,
                     "new": str(declaration.goods_location),
                 }
-            logger.info("goods_location_autofilled", declaration_id=str(id), code=declaration.customs_office_code)
+            logger.info("goods_location_autofilled", declaration_id=str(id), code=office_code)
         else:
-            logger.warning("goods_location_post_not_found", declaration_id=str(id), code=declaration.customs_office_code)
+            fallback_addr = _post_address_fallback(office_code)
+            if fallback_addr:
+                old_val = declaration.goods_location
+                declaration.goods_location = fallback_addr
+                if str(old_val) != str(declaration.goods_location):
+                    changed_fields["goods_location"] = {
+                        "old": str(old_val) if old_val is not None else None,
+                        "new": str(declaration.goods_location),
+                    }
+                logger.info("goods_location_fallback_autofilled", declaration_id=str(id), code=office_code)
+            else:
+                logger.warning("goods_location_post_not_found", declaration_id=str(id), code=office_code)
     
     declaration.updated_at = datetime.utcnow()
     

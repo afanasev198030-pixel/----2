@@ -3,6 +3,7 @@ Endpoint для применения распознанных данных из 
 Маппинг OCR/LLM данных на графы ДТ.
 """
 import uuid
+import re
 from typing import Optional
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -49,6 +50,62 @@ def _to_decimal(value) -> Optional[Decimal]:
     except Exception:
         logger.warning("decimal_parse_failed", raw=value)
         return None
+
+
+def _normalize_digits(value: Optional[str]) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def _parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return None, None
+    if "/" in raw:
+        left, right = raw.split("/", 1)
+        inn = _normalize_digits(left)
+        kpp = _normalize_digits(right)
+        return (inn or None), (kpp or None)
+    digits = _normalize_digits(raw)
+    # Collapsed INN+KPP formats without slash.
+    if len(digits) == 19:  # 10 + 9
+        return digits[:10], digits[10:]
+    if len(digits) == 21:  # 12 + 9
+        return digits[:12], digits[12:]
+    if len(digits) in (10, 12):
+        return digits, None
+    return (digits or None), None
+
+
+def _build_declarant_inn_kpp(company: Optional[Company], parsed_value: Optional[str]) -> Optional[str]:
+    p_inn, p_kpp = _parse_inn_kpp(parsed_value)
+    c_inn = _normalize_digits(company.inn) if company and company.inn else ""
+    c_kpp = _normalize_digits(company.kpp) if company and company.kpp else ""
+    # Declarant belongs to company: prefer company identifiers when available.
+    inn = c_inn or (p_inn or "")
+    kpp = c_kpp or (p_kpp or "")
+    if inn and kpp:
+        return f"{inn}/{kpp}"
+    if inn:
+        return inn
+    return None
+
+
+def _post_address_fallback(code: Optional[str]) -> Optional[str]:
+    if not code:
+        return None
+    fallback = {
+        "10005020": "г. Москва, аэропорт Внуково, Внуковское шоссе, д. 1",
+        "10005030": "г. Москва, ул. Яузская, д. 8",
+        "10002010": "Московская обл., г.о. Химки, аэропорт Шереметьево",
+        "10002020": "Московская обл., г.о. Химки, аэропорт Шереметьево, Карго",
+        "10009100": "Московская обл., г. Домодедово, аэропорт Домодедово",
+        "10129060": "г. Санкт-Петербург, аэропорт Пулково",
+        "10216120": "г. Санкт-Петербург, Гладкий остров",
+        "10130090": "Приморский край, г. Находка, бухта Восточная",
+        "10012020": "Новосибирская обл., аэропорт Толмачёво",
+        "10009000": "Московская обл., г. Реутов, ул. Железнодорожная, д. 9",
+    }
+    return fallback.get(code[:8])
 
 
 # --- Pydantic schemas for parsed data ---
@@ -186,14 +243,10 @@ async def apply_parsed_data(
 
     try:
         # --- 0. Подтянуть ИНН/КПП из компании + адрес СВХ по коду поста ---
-        if data.declarant_inn_kpp:
-            declaration.declarant_inn_kpp = data.declarant_inn_kpp.strip()
-        if current_user.company_id and not declaration.declarant_inn_kpp:
-            company = await db.get(Company, current_user.company_id)
-            if company:
-                parts = [p for p in [company.inn, company.kpp] if p]
-                if parts:
-                    declaration.declarant_inn_kpp = "/".join(parts)
+        company = await db.get(Company, current_user.company_id) if current_user.company_id else None
+        merged_inn_kpp = _build_declarant_inn_kpp(company, data.declarant_inn_kpp or declaration.declarant_inn_kpp)
+        if merged_inn_kpp:
+            declaration.declarant_inn_kpp = merged_inn_kpp
 
         # --- 1. Создать/найти контрагентов ---
         sender_id = None
@@ -290,22 +343,50 @@ async def apply_parsed_data(
 
         declaration.total_items_count = len(data.items) if data.items else 0
 
+        # Fallback totals from item rows if header totals are missing.
+        if data.items:
+            gross_sum = Decimal("0")
+            net_sum = Decimal("0")
+            has_gross = False
+            has_net = False
+            for item_data in data.items:
+                g = _to_decimal(item_data.gross_weight)
+                n = _to_decimal(item_data.net_weight)
+                if g is not None:
+                    gross_sum += g
+                    has_gross = True
+                if n is not None:
+                    net_sum += n
+                    has_net = True
+            if declaration.total_gross_weight is None and has_gross:
+                declaration.total_gross_weight = gross_sum
+                logger.info("total_gross_from_items", value=float(gross_sum))
+            if declaration.total_net_weight is None and has_net:
+                declaration.total_net_weight = net_sum
+                logger.info("total_net_from_items", value=float(net_sum))
+
         # Адрес СВХ (графа 30): по коду таможенного поста из справочника
-        if not declaration.goods_location and declaration.customs_office_code:
+        office_code = (declaration.customs_office_code or declaration.entry_customs_code or "")[:8] or None
+        if not declaration.goods_location and office_code:
             from app.models import Classifier
             post_result = await db.execute(
                 select(Classifier).where(
                     Classifier.classifier_type == "customs_post",
-                    Classifier.code == declaration.customs_office_code,
+                    Classifier.code == office_code,
                     Classifier.is_active == True,
                 )
             )
             post = post_result.scalar_one_or_none()
             if post and post.meta and post.meta.get("address"):
                 declaration.goods_location = post.meta["address"]
-                logger.info("goods_location_from_post", code=declaration.customs_office_code, address=post.meta["address"][:50])
+                logger.info("goods_location_from_post", code=office_code, address=post.meta["address"][:50])
             else:
-                logger.warning("goods_location_post_not_found", code=declaration.customs_office_code)
+                fallback_addr = _post_address_fallback(office_code)
+                if fallback_addr:
+                    declaration.goods_location = fallback_addr
+                    logger.info("goods_location_from_fallback", code=office_code, address=fallback_addr[:50])
+                else:
+                    logger.warning("goods_location_post_not_found", code=office_code)
 
         # --- 3. Создать товарные позиции ---
         for item_data in data.items:
