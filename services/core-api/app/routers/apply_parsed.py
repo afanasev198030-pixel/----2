@@ -300,6 +300,23 @@ async def apply_parsed_data(
             db.add(item)
             counters["items"] += 1
 
+            # Автосохранение прецедента при высокой confidence
+            if item_data.hs_code and item_data.description and data.confidence and data.confidence > 0.85:
+                try:
+                    import httpx as _httpx
+                    import os
+                    ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+                    _httpx.post(f"{ai_url}/api/v1/ai/feedback", json={
+                        "declaration_id": str(declaration.id),
+                        "item_id": "",
+                        "feedback_type": "hs_auto_confirmed",
+                        "predicted_value": item_data.hs_code,
+                        "actual_value": item_data.hs_code,
+                        "description": (item_data.description or "")[:300],
+                    }, timeout=3)
+                except Exception:
+                    pass
+
         # --- 4. Привязать документы ---
         for doc_data in data.documents:
             doc = Document(

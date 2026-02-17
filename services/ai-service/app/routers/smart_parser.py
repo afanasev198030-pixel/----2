@@ -249,7 +249,7 @@ async def submit_feedback(data: FeedbackRequest):
     logger.info("feedback_received", type=data.feedback_type, predicted=data.predicted_value, actual=data.actual_value, total=len(_feedback_store))
 
     # Сохранить как прецедент в ChromaDB (self-learning)
-    if data.feedback_type == "hs_confirmed" and data.description and data.actual_value:
+    if data.feedback_type in ("hs_confirmed", "hs_auto_confirmed") and data.description and data.actual_value:
         try:
             from app.services.index_manager import get_index_manager
             idx = get_index_manager()
