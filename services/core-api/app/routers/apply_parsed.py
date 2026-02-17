@@ -26,6 +26,31 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/declarations", tags=["apply-parsed"])
 
 
+def _to_decimal(value) -> Optional[Decimal]:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+    s = str(value).strip()
+    if not s:
+        return None
+    s = s.replace("\xa0", " ").replace(" ", "")
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", ".")
+    try:
+        return Decimal(s)
+    except Exception:
+        logger.warning("decimal_parse_failed", raw=value)
+        return None
+
+
 # --- Pydantic schemas for parsed data ---
 
 class ParsedCounterparty(BaseModel):
@@ -79,6 +104,7 @@ class ApplyParsedRequest(BaseModel):
     # Из контракта
     contract_number: Optional[str] = None
     contract_date: Optional[str] = None
+    declarant_inn_kpp: Optional[str] = None
 
     # Из упаковочного листа
     total_packages: Optional[int] = None
@@ -90,6 +116,7 @@ class ApplyParsedRequest(BaseModel):
     transport_doc_number: Optional[str] = None
     transport_type: Optional[str] = None  # 40=воздушный, 10=морской, 30=авто
     customs_office_code: Optional[str] = None  # Код таможенного поста (8 цифр)
+    goods_location: Optional[str] = None
 
     # Товарные позиции
     items: list[ParsedItem] = []
@@ -159,6 +186,8 @@ async def apply_parsed_data(
 
     try:
         # --- 0. Подтянуть ИНН/КПП из компании + адрес СВХ по коду поста ---
+        if data.declarant_inn_kpp:
+            declaration.declarant_inn_kpp = data.declarant_inn_kpp.strip()
         if current_user.company_id and not declaration.declarant_inn_kpp:
             company = await db.get(Company, current_user.company_id)
             if company:
@@ -232,10 +261,12 @@ async def apply_parsed_data(
         declaration.country_destination_code = (data.country_destination or declaration.country_destination_code or "RU")[:2]
         if data.total_packages is not None:
             declaration.total_packages_count = data.total_packages
-        if data.total_gross_weight is not None:
-            declaration.total_gross_weight = Decimal(str(data.total_gross_weight))
-        if data.total_net_weight is not None:
-            declaration.total_net_weight = Decimal(str(data.total_net_weight))
+        gross_dec = _to_decimal(data.total_gross_weight)
+        net_dec = _to_decimal(data.total_net_weight)
+        if gross_dec is not None:
+            declaration.total_gross_weight = gross_dec
+        if net_dec is not None:
+            declaration.total_net_weight = net_dec
         # deal_nature_code: всегда 01 (купля-продажа) если не указан
         declaration.deal_nature_code = data.deal_nature_code or declaration.deal_nature_code or "01"
         if data.type_code:
@@ -247,10 +278,13 @@ async def apply_parsed_data(
             declaration.transport_type_border = tt
         if data.transport_doc_number:
             declaration.transport_at_border = data.transport_doc_number
-        if data.customs_office_code and not declaration.customs_office_code:
+        if data.customs_office_code:
             declaration.customs_office_code = data.customs_office_code[:8]
-        if data.freight_amount is not None:
-            declaration.freight_amount = Decimal(str(data.freight_amount))
+        if data.goods_location and not declaration.goods_location:
+            declaration.goods_location = data.goods_location.strip()
+        freight_dec = _to_decimal(data.freight_amount)
+        if freight_dec is not None:
+            declaration.freight_amount = freight_dec
         if data.freight_currency:
             declaration.freight_currency = data.freight_currency
 
@@ -270,6 +304,8 @@ async def apply_parsed_data(
             if post and post.meta and post.meta.get("address"):
                 declaration.goods_location = post.meta["address"]
                 logger.info("goods_location_from_post", code=declaration.customs_office_code, address=post.meta["address"][:50])
+            else:
+                logger.warning("goods_location_post_not_found", code=declaration.customs_office_code)
 
         # --- 3. Создать товарные позиции ---
         for item_data in data.items:
@@ -280,13 +316,13 @@ async def apply_parsed_data(
                 commercial_name=item_data.commercial_name or item_data.description,
                 hs_code=item_data.hs_code,
                 country_origin_code=(item_data.country_origin_code or data.country_origin or "")[:2] or None,
-                gross_weight=Decimal(str(item_data.gross_weight)) if item_data.gross_weight else None,
-                net_weight=Decimal(str(item_data.net_weight)) if item_data.net_weight else None,
-                unit_price=Decimal(str(item_data.unit_price)) if item_data.unit_price else None,
+                gross_weight=_to_decimal(item_data.gross_weight),
+                net_weight=_to_decimal(item_data.net_weight),
+                unit_price=_to_decimal(item_data.unit_price),
                 package_count=item_data.package_count,
                 package_type=item_data.package_type,
                 additional_unit=item_data.unit,
-                additional_unit_qty=Decimal(str(item_data.quantity)) if item_data.quantity else None,
+                additional_unit_qty=_to_decimal(item_data.quantity),
                 mos_method_code="01",  # Метод 1 по умолчанию (по стоимости сделки)
                 risk_score=data.risk_score or 0,
                 risk_flags=data.risk_flags,

@@ -14,6 +14,8 @@ from app.models import (
     DeclarationStatus,
     DeclarationItem,
     DeclarationLog,
+    Company,
+    Classifier,
     User,
 )
 from app.schemas import (
@@ -296,6 +298,43 @@ async def update_declaration(
         if str(old_val) != str(value) and not (old_val is None and value is None):
             changed_fields[field] = {"old": str(old_val) if old_val is not None else None, "new": str(value) if value is not None else None}
         setattr(declaration, field, value)
+
+    # Auto-fill declarant INN/KPP from company if still empty
+    if not declaration.declarant_inn_kpp and current_user.company_id:
+        company = await db.get(Company, current_user.company_id)
+        if company:
+            parts = [p for p in [company.inn, company.kpp] if p]
+            if parts:
+                new_inn_kpp = "/".join(parts)
+                old_val = declaration.declarant_inn_kpp
+                declaration.declarant_inn_kpp = new_inn_kpp
+                if str(old_val) != str(new_inn_kpp):
+                    changed_fields["declarant_inn_kpp"] = {
+                        "old": str(old_val) if old_val is not None else None,
+                        "new": new_inn_kpp,
+                    }
+
+    # Auto-fill goods location by customs post code if empty
+    if declaration.customs_office_code and (not declaration.goods_location or not declaration.goods_location.strip()):
+        post_result = await db.execute(
+            select(Classifier).where(
+                Classifier.classifier_type == "customs_post",
+                Classifier.code == declaration.customs_office_code,
+                Classifier.is_active == True,
+            )
+        )
+        post = post_result.scalar_one_or_none()
+        if post and post.meta and post.meta.get("address"):
+            old_val = declaration.goods_location
+            declaration.goods_location = post.meta["address"]
+            if str(old_val) != str(declaration.goods_location):
+                changed_fields["goods_location"] = {
+                    "old": str(old_val) if old_val is not None else None,
+                    "new": str(declaration.goods_location),
+                }
+            logger.info("goods_location_autofilled", declaration_id=str(id), code=declaration.customs_office_code)
+        else:
+            logger.warning("goods_location_post_not_found", declaration_id=str(id), code=declaration.customs_office_code)
     
     declaration.updated_at = datetime.utcnow()
     

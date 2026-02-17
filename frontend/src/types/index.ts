@@ -82,6 +82,14 @@ export interface Declaration {
   specifications_count?: number;
   customs_office_code?: string;
   warehouse_name?: string;
+  trading_country_code?: string;
+  declarant_inn_kpp?: string;
+  declarant_ogrn?: string;
+  declarant_phone?: string;
+  delivery_place?: string;
+  transport_on_border_id?: string;
+  entry_customs_code?: string;
+  goods_location?: string;
   spot_required?: boolean;
   spot_status?: 'none' | 'required' | 'created' | 'paid' | 'qr_received';
   spot_qr_file_key?: string;

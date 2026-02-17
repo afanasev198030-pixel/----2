@@ -108,6 +108,27 @@ _parse_cache: dict = {}
 _CACHE_MAX = 200
 
 
+def _safe_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip().replace("\xa0", " ").replace(" ", "")
+    if not s:
+        return None
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
 class DeclarationCrew:
     """
     Мультиагентная оркестрация парсинга документов.
@@ -218,8 +239,8 @@ class DeclarationCrew:
                     {"role": "system", "content": "Ты эксперт по таможенному оформлению. Извлеки данные из нескольких документов одного комплекта. Ответь ТОЛЬКО валидным JSON."},
                     {"role": "user", "content": f"""Из документов ниже извлеки:
 
-contract: {{contract_number, contract_date, seller: {{name, country_code, address, inn}}, buyer: {{name, country_code, address, inn}}, currency, incoterms, payment_terms}}
-specification: {{items: [{{description, quantity, unit, unit_price, line_total, country_origin, hs_code}}], total_amount, currency}}
+contract: {{contract_number, contract_date, seller: {{name, country_code, address, inn, kpp}}, buyer: {{name, country_code, address, inn, kpp}}, currency, incoterms, payment_terms}}
+specification: {{items: [{{description, quantity, unit, unit_price, line_total, gross_weight, net_weight, country_origin, hs_code}}], total_amount, currency, total_gross_weight, total_net_weight}}
 tech_description: {{products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
 transport_invoice: {{freight_amount, freight_currency, carrier_name, awb_number, transport_type}}
 
@@ -249,10 +270,22 @@ JSON:"""},
                 buyer_party = None
                 if c.get("seller"):
                     s = c["seller"]
-                    seller_party = ContractParty(name=s.get("name"), country_code=(s.get("country_code") or "")[:2] or None, address=s.get("address"), inn=s.get("inn"))
+                    seller_party = ContractParty(
+                        name=s.get("name"),
+                        country_code=(s.get("country_code") or "")[:2] or None,
+                        address=s.get("address"),
+                        inn=s.get("inn"),
+                        kpp=s.get("kpp"),
+                    )
                 if c.get("buyer"):
                     b = c["buyer"]
-                    buyer_party = ContractParty(name=b.get("name"), country_code=(b.get("country_code") or "")[:2] or None, address=b.get("address"), inn=b.get("inn"))
+                    buyer_party = ContractParty(
+                        name=b.get("name"),
+                        country_code=(b.get("country_code") or "")[:2] or None,
+                        address=b.get("address"),
+                        inn=b.get("inn"),
+                        kpp=b.get("kpp"),
+                    )
                 parsed_docs["contract"] = ContractParsed(
                     contract_number=c.get("contract_number"), contract_date=c.get("contract_date"),
                     seller_name=c.get("seller", {}).get("name"), buyer_name=c.get("buyer", {}).get("name"),
@@ -262,7 +295,37 @@ JSON:"""},
                 )
 
             if data.get("specification"):
-                parsed_docs["specification"] = data["specification"]
+                spec_raw = data["specification"] if isinstance(data["specification"], dict) else {}
+                spec_items = []
+                for idx, it in enumerate(spec_raw.get("items", []) if isinstance(spec_raw.get("items"), list) else []):
+                    if not isinstance(it, dict):
+                        continue
+                    spec_items.append({
+                        "line_no": it.get("line_no", idx + 1),
+                        "description": it.get("description") or "",
+                        "quantity": _safe_float(it.get("quantity")),
+                        "unit": it.get("unit"),
+                        "unit_price": _safe_float(it.get("unit_price")),
+                        "line_total": _safe_float(it.get("line_total")),
+                        "gross_weight": _safe_float(it.get("gross_weight")),
+                        "net_weight": _safe_float(it.get("net_weight")),
+                        "country_origin": it.get("country_origin"),
+                        "hs_code": it.get("hs_code"),
+                    })
+                parsed_docs["specification"] = {
+                    "items": spec_items,
+                    "total_amount": _safe_float(spec_raw.get("total_amount")),
+                    "currency": spec_raw.get("currency"),
+                    "total_gross_weight": _safe_float(spec_raw.get("total_gross_weight")),
+                    "total_net_weight": _safe_float(spec_raw.get("total_net_weight")),
+                }
+                logger.info(
+                    "spec_batch_parsed",
+                    items=len(spec_items),
+                    total=parsed_docs["specification"]["total_amount"],
+                    gross=parsed_docs["specification"]["total_gross_weight"],
+                    net=parsed_docs["specification"]["total_net_weight"],
+                )
 
             if data.get("tech_description"):
                 parsed_docs.setdefault("tech_descriptions", []).append(data["tech_description"])
@@ -371,13 +434,15 @@ JSON:"""},
 
         # --- Шаг 3: Классификация ТН ВЭД для позиций БЕЗ кода ---
         items = result.get("items", [])
+        all_descs = [it.get("description") or it.get("commercial_name") or "" for it in items if (it.get("description") or it.get("commercial_name"))]
+        decl_context = "; ".join([d[:60] for d in all_descs]) if len(all_descs) > 1 else ""
         for j, item in enumerate(items):
             existing_hs = (item.get("hs_code") or "").strip()
             desc = item.get("description") or item.get("commercial_name") or ""
             self._progress("classifying", f"Классификация ТН ВЭД: позиция {j+1}/{len(items)} — {desc[:40]}", 75 + int(10 * j / max(len(items), 1)))
 
             # Skip if already have a good HS code from document parsing
-            if existing_hs and len(existing_hs) >= 8:
+            if existing_hs and len(existing_hs) >= 8 and not desc.strip().lower().startswith("item "):
                 if len(existing_hs) < 10:
                     item["hs_code"] = existing_hs.ljust(10, "0")
                 item.setdefault("hs_confidence", 0.9)
@@ -390,7 +455,7 @@ JSON:"""},
                 # RAG поиск
                 rag_results = self.index_manager.search_hs_codes(desc)
                 # DSPy/keyword классификация
-                hs_result = self.hs_classifier.classify(desc, rag_results)
+                hs_result = self.hs_classifier.classify(desc, rag_results, context=decl_context)
                 hs_code = hs_result.get("hs_code", "")
 
                 # Гарантируем 10 знаков
@@ -504,7 +569,16 @@ JSON:"""},
                 p = self._to_dict(src)
                 name = p.get("name") or p.get("seller_name" if party_type == "seller" else "buyer_name")
                 if name:
-                    return {"name": name, "country_code": (p.get("country_code") or "")[:2] or None, "address": p.get("address"), "type": party_type}
+                    inn = (p.get("inn") or p.get("tax_number") or "").strip()
+                    kpp = (p.get("kpp") or "").strip()
+                    tax_number = f"{inn}/{kpp}" if inn and kpp else (inn or None)
+                    return {
+                        "name": name,
+                        "country_code": (p.get("country_code") or "")[:2] or None,
+                        "address": p.get("address"),
+                        "tax_number": tax_number,
+                        "type": party_type,
+                    }
             return None
 
         seller = _extract_party([contract.get("seller"), inv.get("seller")], "seller")
@@ -515,6 +589,19 @@ JSON:"""},
         if not buyer and contract.get("buyer_name"):
             buyer = {"name": contract["buyer_name"], "country_code": None, "address": None, "type": "buyer"}
 
+        # ИНН/КПП декларанта: берём из buyer реквизитов контракта/инвойса
+        def _extract_inn_kpp(src_obj: dict) -> Optional[str]:
+            if not src_obj:
+                return None
+            p = self._to_dict(src_obj)
+            inn = (p.get("inn") or p.get("tax_number") or "").strip()
+            kpp = (p.get("kpp") or "").strip()
+            if inn and kpp:
+                return f"{inn}/{kpp}"
+            return inn or None
+
+        declarant_inn_kpp = _extract_inn_kpp(contract.get("buyer")) or _extract_inn_kpp(inv.get("buyer"))
+
         # ── Items: спецификация (приоритет) > инвойс ──
         import re as _re
         _SKIP_ITEM = _re.compile(
@@ -522,6 +609,21 @@ JSON:"""},
             r'фрахт|доставка|страхов|транспортн)',
             _re.IGNORECASE,
         )
+        def _normalize_hs_code(raw) -> str:
+            code = _re.sub(r"\D", "", str(raw or ""))
+            if len(code) < 8:
+                return ""
+            if len(code) < 10:
+                code = code.ljust(10, "0")
+            else:
+                code = code[:10]
+            try:
+                first2 = int(code[:2])
+                if first2 < 1 or first2 > 97:
+                    return ""
+            except ValueError:
+                return ""
+            return code
         origin_code = inv.get("country_origin") or (packing.get("items", [{}])[0].get("country_origin") if packing.get("items") else None)
 
         # Источник items: спецификация > инвойс
@@ -535,9 +637,13 @@ JSON:"""},
             if _SKIP_ITEM.search(desc or ""):
                 logger.info("skip_non_goods_item", description=desc[:60])
                 continue
-            qty = item_data.get("quantity")
-            up = item_data.get("unit_price")
-            lt = item_data.get("line_total")
+            hs_from_doc = _normalize_hs_code(item_data.get("hs_code"))
+            if hs_from_doc and (not desc or str(desc).strip().lower().startswith("item ")):
+                logger.info("drop_untrusted_doc_hs", hs_code=hs_from_doc, description=(desc or "")[:40])
+                hs_from_doc = ""
+            qty = _safe_float(item_data.get("quantity"))
+            up = _safe_float(item_data.get("unit_price"))
+            lt = _safe_float(item_data.get("line_total"))
             if not qty and lt and up and up > 0:
                 qty = round(lt / up, 2)
             items.append({
@@ -548,10 +654,10 @@ JSON:"""},
                 "unit": item_data.get("unit"),
                 "unit_price": up,
                 "line_total": lt,
-                "hs_code": item_data.get("hs_code") or "",
+                "hs_code": hs_from_doc,
                 "country_origin_code": ((item_data.get("country_origin_code") or item_data.get("country_origin") or origin_code) or "")[:2] or None,
-                "gross_weight": item_data.get("gross_weight"),
-                "net_weight": item_data.get("net_weight"),
+                "gross_weight": _safe_float(item_data.get("gross_weight")),
+                "net_weight": _safe_float(item_data.get("net_weight")),
             })
 
         # ── Обогащение из техописаний (ТехОп) ──
@@ -578,10 +684,14 @@ JSON:"""},
                             break
 
         # Обогащение весами: packing list (приоритет) > спецификация > инвойс
-        total_gross = (packing.get("total_gross_weight") or spec.get("total_gross_weight") or
-                       inv.get("total_gross_weight") or inv.get("gross_weight"))
-        total_net = (packing.get("total_net_weight") or spec.get("total_net_weight") or
-                     inv.get("total_net_weight") or inv.get("net_weight"))
+        total_gross = _safe_float(
+            packing.get("total_gross_weight") or spec.get("total_gross_weight") or
+            inv.get("total_gross_weight") or inv.get("gross_weight")
+        )
+        total_net = _safe_float(
+            packing.get("total_net_weight") or spec.get("total_net_weight") or
+            inv.get("total_net_weight") or inv.get("net_weight")
+        )
         logger.info("weights_sources", packing_gross=packing.get("total_gross_weight"), spec_gross=spec.get("total_gross_weight"), inv_gross=inv.get("total_gross_weight"), total_gross=total_gross)
         if items and total_gross:
             try:
@@ -597,6 +707,16 @@ JSON:"""},
             except (ValueError, TypeError):
                 pass
 
+        # Если общие веса не найдены, суммируем из позиций
+        if items and (total_gross is None or total_net is None):
+            gross_sum = sum((_safe_float(it.get("gross_weight")) or 0.0) for it in items)
+            net_sum = sum((_safe_float(it.get("net_weight")) or 0.0) for it in items)
+            if total_gross is None and gross_sum > 0:
+                total_gross = round(gross_sum, 3)
+            if total_net is None and net_sum > 0:
+                total_net = round(net_sum, 3)
+            logger.info("weights_from_items", total_gross=total_gross, total_net=total_net)
+
         # Auto-classify HS codes via LLM + RAG (only for items WITHOUT HS code from parser)
         from app.services.dspy_modules import HSCodeClassifier
         from app.services.index_manager import get_index_manager
@@ -607,7 +727,8 @@ JSON:"""},
         decl_context = "; ".join(all_descs) if len(all_descs) > 1 else ""
         for item in items:
             existing_hs = (item.get("hs_code") or "").strip()
-            if existing_hs and len(existing_hs) >= 8:
+            desc = (item.get("description") or "")
+            if existing_hs and len(existing_hs) >= 8 and not desc.strip().lower().startswith("item "):
                 if len(existing_hs) < 10:
                     item["hs_code"] = existing_hs.ljust(10, "0")
                 item["hs_code_name"] = ""
@@ -666,6 +787,12 @@ JSON:"""},
         if awb_number:
             awb_prefix = awb_number.split("-")[0] if "-" in awb_number else awb_number[:3]
             customs_office_code = _AWB_TO_POST.get(awb_prefix)
+        _POST_ADDR = {
+            "10005020": "г. Москва, аэропорт Внуково, Внуковское шоссе, д. 1",
+            "10002020": "Московская обл., г.о. Химки, аэропорт Шереметьево, Карго",
+            "10009100": "Московская обл., г. Домодедово, аэропорт Домодедово",
+        }
+        goods_location = _POST_ADDR.get(customs_office_code or "")
 
         # Валюта: спецификация > инвойс > контракт
         currency = spec.get("currency") or inv.get("currency") or contract.get("currency")
@@ -690,8 +817,10 @@ JSON:"""},
             "transport_type": transport_type,
             "transport_doc_number": awb_number,
             "customs_office_code": customs_office_code,
+            "goods_location": goods_location,
             "deal_nature_code": "01",
             "type_code": "IM40",
+            "declarant_inn_kpp": declarant_inn_kpp,
             "items": items,
             "documents": [],
             "freight_amount": transport_inv.get("freight_amount"),

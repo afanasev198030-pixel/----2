@@ -138,12 +138,19 @@ const DeclarationEditPage = () => {
     if (!id) return;
     try {
       const data = getValues();
-      await updateDeclaration(id, data);
+      const saved = await updateDeclaration(id, data);
+      queryClient.setQueryData(['declaration', id], saved);
+      if (!getValues().goods_location && saved.goods_location) {
+        setValue('goods_location', saved.goods_location, { shouldDirty: false });
+      }
+      if (!getValues().declarant_inn_kpp && saved.declarant_inn_kpp) {
+        setValue('declarant_inn_kpp', saved.declarant_inn_kpp, { shouldDirty: false });
+      }
       setSnackMsg('Сохранено');
     } catch (e: any) {
       setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
     }
-  }, [id, getValues]);
+  }, [id, getValues, queryClient, setValue]);
 
   // Auto-save drafts
   const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -160,7 +167,14 @@ const DeclarationEditPage = () => {
       try {
         setAutoSaveStatus('saving');
         const data = getValues();
-        await updateDeclaration(id, data);
+        const saved = await updateDeclaration(id, data);
+        queryClient.setQueryData(['declaration', id], saved);
+        if (!getValues().goods_location && saved.goods_location) {
+          setValue('goods_location', saved.goods_location, { shouldDirty: false });
+        }
+        if (!getValues().declarant_inn_kpp && saved.declarant_inn_kpp) {
+          setValue('declarant_inn_kpp', saved.declarant_inn_kpp, { shouldDirty: false });
+        }
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 2000);
       } catch {
@@ -189,6 +203,8 @@ const DeclarationEditPage = () => {
         total_gross_weight: parsed.total_gross_weight, total_net_weight: parsed.total_net_weight,
         transport_type: parsed.transport_type || '40', deal_nature_code: '01', type_code: 'IM40',
         customs_office_code: parsed.customs_office_code,
+        goods_location: parsed.goods_location,
+        declarant_inn_kpp: parsed.declarant_inn_kpp,
         freight_amount: parsed.freight_amount, freight_currency: parsed.freight_currency,
         items: (parsed.items || []).map((item: any, idx: number) => ({
           line_no: item.line_no || idx + 1,

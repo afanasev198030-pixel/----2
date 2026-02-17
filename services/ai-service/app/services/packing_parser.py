@@ -18,6 +18,126 @@ class PackingListParsed(BaseModel):
     raw_text: str = ""
 
 
+def _to_float(value) -> Optional[float]:
+    """Parse float from noisy OCR/LLM values like '4 131,2 kg'."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if not s:
+        return None
+    s = s.replace("\xa0", " ").replace(" ", "")
+    if "," in s and "." in s:
+        # 4.131,2 -> 4131.2 ; 4,131.2 -> 4131.2
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", ".")
+    m = re.search(r"-?\d+(?:\.\d+)?", s)
+    if not m:
+        return None
+    try:
+        return float(m.group(0))
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_int(value) -> Optional[int]:
+    v = _to_float(value)
+    if v is None:
+        return None
+    try:
+        i = int(round(v))
+        return i if i > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_table_weights(raw_text: str) -> tuple[Optional[float], Optional[float], Optional[int]]:
+    """
+    Parse PL table rows like:
+    QTY CTN GW(KG) NW(KG) [CBM]
+    """
+    text_lower = raw_text.lower()
+    has_weight_headers = (
+        ("gw" in text_lower and "nw" in text_lower)
+        or ("net weight" in text_lower and "gross weight" in text_lower)
+        or ("нетто" in text_lower and "брутто" in text_lower)
+    )
+    if not has_weight_headers:
+        return None, None, None
+
+    def _valid_candidate(qty: Optional[float], ctn: Optional[int], gross: Optional[float], net: Optional[float]) -> bool:
+        if qty is None or ctn is None or gross is None or net is None:
+            return False
+        if ctn <= 0 or ctn > 50000:
+            return False
+        if qty <= 0 or gross <= 0 or net <= 0:
+            return False
+        if gross < net:
+            return False
+        ratio = gross / max(net, 1e-9)
+        if ratio > 5:
+            return False
+        if qty < ctn:
+            return False
+        if gross > 1_000_000 or net > 1_000_000:
+            return False
+        return True
+
+    candidates: list[tuple[float, float, int]] = []
+    table_started = False
+    for line in raw_text.splitlines():
+        line_lower = line.lower()
+        if not table_started:
+            has_row_header = (
+                ("gw" in line_lower and "nw" in line_lower)
+                or ("net weight" in line_lower and "gross weight" in line_lower)
+                or ("нетто" in line_lower and "брутто" in line_lower)
+            )
+            has_qty_header = any(k in line_lower for k in ["qty", "q-ty", "ctn", "pack", "коли"])
+            if has_row_header and has_qty_header:
+                table_started = True
+                continue
+        if not table_started:
+            continue
+        # End of table block
+        if any(k in line_lower for k in ["поставщик", "supplier", "директор", "signature", "подпись"]):
+            break
+
+        numbers = re.findall(r"\d+(?:[.,]\d+)?", line)
+        if len(numbers) < 4:
+            continue
+
+        # Sliding windows allow skipping model numbers (e.g. 3115, F4, 55A).
+        for i in range(0, len(numbers) - 3):
+            qty = _to_float(numbers[i])
+            ctn = _to_int(numbers[i + 1])
+
+            # Layout A: qty, ctn, gross, net
+            gross_a = _to_float(numbers[i + 2])
+            net_a = _to_float(numbers[i + 3])
+            if _valid_candidate(qty, ctn, gross_a, net_a):
+                candidates.append((gross_a, net_a, ctn))
+
+            # Layout B: qty, ctn, cbm, net, gross
+            if i + 4 < len(numbers):
+                net_b = _to_float(numbers[i + 3])
+                gross_b = _to_float(numbers[i + 4])
+                if _valid_candidate(qty, ctn, gross_b, net_b):
+                    candidates.append((gross_b, net_b, ctn))
+
+    if not candidates:
+        return None, None, None
+
+    # Total row is usually the one with maximal gross/net.
+    gross, net, ctn = max(candidates, key=lambda x: (x[0], x[1]))
+    return gross, net, ctn
+
+
 def _llm_parse_pl(raw_text: str) -> dict:
     """Parse packing list using LLM (DeepSeek/OpenAI)."""
     try:
@@ -74,22 +194,25 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
         # Try LLM first
         llm = _llm_parse_pl(raw_text)
         logger.info("pl_llm_result", has_data=bool(llm), gross=llm.get("total_gross_weight") if llm else None, filename=filename)
-        if llm and (llm.get("total_gross_weight") or llm.get("total_net_weight")):
-            logger.info("pl_parsed_by_llm", gross=llm.get("total_gross_weight"), net=llm.get("total_net_weight"))
+        llm_gross = _to_float(llm.get("total_gross_weight")) if llm else None
+        llm_net = _to_float(llm.get("total_net_weight")) if llm else None
+        llm_packages = _to_int(llm.get("total_packages")) if llm else None
+        if llm and (llm_gross is not None or llm_net is not None):
+            logger.info("pl_parsed_by_llm", gross=llm_gross, net=llm_net, packages=llm_packages)
             items = []
             for it in llm.get("items", []):
                 items.append({
                     "description": it.get("description", ""),
-                    "quantity": it.get("quantity"),
-                    "gross_weight": it.get("gross_weight"),
-                    "net_weight": it.get("net_weight"),
+                    "quantity": _to_float(it.get("quantity")),
+                    "gross_weight": _to_float(it.get("gross_weight")),
+                    "net_weight": _to_float(it.get("net_weight")),
                     "country_origin": it.get("country_origin"),
                 })
             return PackingListParsed(
-                total_packages=llm.get("total_packages"),
+                total_packages=llm_packages,
                 package_type=llm.get("package_type"),
-                total_gross_weight=llm.get("total_gross_weight"),
-                total_net_weight=llm.get("total_net_weight"),
+                total_gross_weight=llm_gross,
+                total_net_weight=llm_net,
                 items=items,
                 confidence=0.92,
                 raw_text=raw_text,
@@ -157,6 +280,24 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
                     break
                 except ValueError:
                     pass
+
+        # Table fallback: QTY / CTN / GW / NW rows
+        if total_gross_weight is None or total_net_weight is None or total_packages is None:
+            t_gross, t_net, t_packages = _extract_table_weights(raw_text)
+            if total_gross_weight is None and t_gross is not None:
+                total_gross_weight = t_gross
+            if total_net_weight is None and t_net is not None:
+                total_net_weight = t_net
+            if total_packages is None and t_packages is not None:
+                total_packages = t_packages
+            if t_gross is not None or t_net is not None:
+                logger.info(
+                    "pl_table_weights_extracted",
+                    filename=filename,
+                    gross=total_gross_weight,
+                    net=total_net_weight,
+                    packages=total_packages,
+                )
         
         # Parse items (simplified - just extract lines that look like items)
         items = []

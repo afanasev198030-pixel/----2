@@ -23,6 +23,51 @@ def _log_classify(entry: dict):
 def get_hs_classify_log() -> list[dict]:
     return list(_hs_classify_log)
 
+
+def _contains_any(text: str, words: list[str]) -> bool:
+    t = f" {text.lower()} "
+    for w in words:
+        if f" {w.lower()} " in t or w.lower() in t:
+            return True
+    return False
+
+
+def _detect_drone_product_kind(description: str) -> str:
+    """
+    Determine if description is:
+    - complete_drone: ready UAV/quadcopter
+    - component: electronics/mechanical part for drone
+    - fpv_ambiguous: contains FPV but unclear
+    - generic
+    """
+    text = (description or "").lower()
+    if not text:
+        return "generic"
+
+    complete_drone_words = [
+        "quadcopter", "квадрокоптер", "drone", "дрон", "uav", "бпла", "мультикоптер",
+        "multicopter", "whoop", "cinewhoop", "fpv drone", "fpv quad", "racing drone",
+    ]
+    component_words = [
+        "vtx", "video transmitter", "esc", "flight controller", "fc ", "fcf", "f4", "f7", "h7",
+        "motor", "brushless", "antenna", "receiver", "camera", "propeller", "frame", "gimbal",
+        "pdb", "bec", "gps module", "stack", "регулятор", "контроллер", "мотор", "антенн",
+        "камера", "пропеллер", "рама", "передатчик", "приемник", "приёмник",
+    ]
+
+    has_complete = _contains_any(text, complete_drone_words)
+    has_component = _contains_any(text, component_words)
+    has_fpv = "fpv" in text
+
+    if has_complete and not has_component:
+        return "complete_drone"
+    if has_component:
+        return "component"
+    if has_fpv:
+        return "fpv_ambiguous"
+    return "generic"
+
+
 _dspy_available = False
 try:
     import dspy
@@ -349,6 +394,25 @@ class HSCodeClassifier:
         except Exception as e:
             logger.debug("precedent_search_skip", error=str(e)[:80])
 
+        # ── Жёсткая эвристика: готовый БПЛА/квадрокоптер ──
+        drone_kind = _detect_drone_product_kind(description)
+        if drone_kind == "complete_drone":
+            _log_classify({
+                "description": description[:80],
+                "method": "rule_complete_drone",
+                "hs_code": "8806100000",
+                "name_ru": "Беспилотные летательные аппараты (БПЛА, дроны)",
+                "reasoning": "Ключевые слова указывают на готовый БПЛА/квадрокоптер, не компонент",
+                "confidence": 0.9,
+            })
+            return {
+                "hs_code": "8806100000",
+                "name_ru": "Беспилотные летательные аппараты (БПЛА, дроны)",
+                "reasoning": "Эвристика: готовый FPV/квадрокоптер (без признаков отдельного компонента)",
+                "confidence": 0.9,
+                "source": "rule_complete_drone",
+            }
+
         rag_text = ""
         if rag_results:
             rag_text = "\n".join([
@@ -391,14 +455,34 @@ class HSCodeClassifier:
                 from app.services.llm_client import get_llm_client, get_model
                 llm = get_llm_client()
                 context_block = f"\n\nКонтекст декларации (другие позиции):\n{context}" if context else ""
+                kind_hint = {
+                    "component": "Тип товара: компонент БПЛА/FPV (электронный модуль или часть).",
+                    "fpv_ambiguous": "Тип товара: встречается FPV, но неясно — готовый БПЛА или компонент; выбирай консервативно и снижай confidence.",
+                    "generic": "Тип товара: общий случай, классифицируй по назначению/материалу.",
+                }.get(drone_kind, "Тип товара: общий случай.")
                 if rag_text:
-                    user_msg = f"Товар: {description}{context_block}\n\nКандидаты из справочника:\n{rag_text}\n\nВыбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."
+                    user_msg = (
+                        f"Товар: {description}{context_block}\n\n{kind_hint}\n\n"
+                        f"Кандидаты из справочника:\n{rag_text}\n\n"
+                        "Выбери лучший 10-значный код. Если в кандидатах только 4-6 значные, дополни до 10 знаков нулями."
+                    )
                 else:
-                    user_msg = f"Товар: {description}{context_block}\n\nОпредели 10-значный код ТН ВЭД ЕАЭС для этого товара. Учитывай материал, назначение и страну происхождения."
+                    user_msg = (
+                        f"Товар: {description}{context_block}\n\n{kind_hint}\n\n"
+                        "Определи 10-значный код ТН ВЭД ЕАЭС для этого товара. Учитывай материал, назначение и страну происхождения."
+                    )
+                system_prompt = (
+                    "Ты эксперт по ТН ВЭД ЕАЭС. Ответь ТОЛЬКО JSON: "
+                    "{\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название\",\"reasoning\":\"обоснование\",\"confidence\":0.95}\n\n"
+                    "Правила по товарам FPV/БПЛА:\n"
+                    "1) Готовый летательный аппарат (drone/quadcopter/UAV/БПЛА) -> группа 8806.\n"
+                    "2) Отдельные компоненты (VTX, ESC, FC, камера, мотор, антенна, приемник, PDB, BEC) -> НЕ 8806, а профильные группы 8501-8543/8517/8525.\n"
+                    "3) Если описание неоднозначно (есть только 'FPV' без явного типа) — снижай confidence и указывай, что требуется ручная проверка."
+                )
                 resp = llm.chat.completions.create(
                     model=get_model(),
                     messages=[
-                        {"role": "system", "content": "Ты эксперт по ТН ВЭД ЕАЭС. Определи точный 10-значный код ТН ВЭД для товара. Ответь ТОЛЬКО в формате JSON: {\"hs_code\":\"XXXXXXXXXX\",\"name_ru\":\"название по-русски\",\"reasoning\":\"обоснование\",\"confidence\":0.95}\n\nРаспространённые аббревиатуры электроники (НЕ путать с сельхозпродукцией):\n- ESC = Electronic Speed Controller (регулятор оборотов, группа 8504/8537)\n- FC = Flight Controller (полётный контроллер, группа 8537/8543)\n- VTX = Video Transmitter (видеопередатчик, группа 8525)\n- PDB = Power Distribution Board (плата распределения питания, группа 8536)\n- BEC = Battery Eliminator Circuit (стабилизатор напряжения, группа 8504)\n- FPV = First Person View (видеосистема для дронов, группа 8525/8528)\n\nВАЖНО: электронные компоненты для дронов (VTX, ESC, FC, PDB, камеры, моторы, приёмники) — это НЕ 'части летательных аппаратов' (8806). Это самостоятельные электронные устройства из групп 8501-8543.\nГруппа 8806 — ТОЛЬКО для механических частей БПЛА (рама, шасси, крылья, фюзеляж)."},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_msg},
                     ],
                     temperature=0,
@@ -423,12 +507,22 @@ class HSCodeClassifier:
                     data["reasoning"] = (data.get("reasoning", "") + f" → уточнён до {code}").strip()
                     source = source + "_refined"
 
+                # FPV-товары часто неоднозначны по описанию — не показываем излишнюю уверенность
+                if "fpv" in (description or "").lower() and drone_kind != "complete_drone":
+                    try:
+                        data_conf = float(data.get("confidence", 0.85))
+                    except (ValueError, TypeError):
+                        data_conf = 0.85
+                    if data_conf > 0.8:
+                        data["confidence"] = 0.8
+                    data["reasoning"] = (data.get("reasoning", "") + " | FPV-товар: проверьте код вручную перед выпуском.").strip()
+
                 logger.info("hs_classified_by_llm", code=code, description=description[:50], model=get_model(), source=source)
                 _log_classify({
                     "description": description[:80],
                     "method": source,
                     "model": get_model(),
-                    "prompt_system": "Ты эксперт по ТН ВЭД ЕАЭС...",
+                    "prompt_system": system_prompt[:220],
                     "prompt_user": user_msg[:200],
                     "hs_code": code[:10],
                     "name_ru": data.get("name_ru", ""),

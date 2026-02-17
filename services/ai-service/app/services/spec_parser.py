@@ -11,6 +11,27 @@ from app.services.ocr_service import extract_text
 logger = structlog.get_logger()
 
 
+def _to_float(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip().replace("\xa0", " ").replace(" ", "")
+    if not s:
+        return None
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    else:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
 def parse(file_bytes: bytes, filename: str) -> dict:
     """Извлечь таблицу товаров из спецификации через LLM."""
     raw_text = extract_text(file_bytes, filename)
@@ -24,6 +45,8 @@ def parse(file_bytes: bytes, filename: str) -> dict:
         "items": [],
         "total_amount": None,
         "currency": None,
+        "total_gross_weight": None,
+        "total_net_weight": None,
     }
 
     try:
@@ -74,8 +97,10 @@ items: массив товаров, каждый:
                 text = text[4:]
         data = json.loads(text)
         result["items"] = data.get("items", [])
-        result["total_amount"] = data.get("total_amount")
+        result["total_amount"] = _to_float(data.get("total_amount"))
         result["currency"] = data.get("currency")
+        result["total_gross_weight"] = _to_float(data.get("total_gross_weight"))
+        result["total_net_weight"] = _to_float(data.get("total_net_weight"))
         logger.info("spec_parsed", filename=filename, items=len(result["items"]), total=result["total_amount"])
 
     except Exception as e:
