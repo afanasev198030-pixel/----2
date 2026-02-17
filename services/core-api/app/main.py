@@ -95,6 +95,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(LoggingMiddleware)
+
 
 # Global exception handler
 @app.exception_handler(Exception)

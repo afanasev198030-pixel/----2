@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import BrokerDashboard from './pages/BrokerDashboard';
@@ -17,8 +17,6 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/register" element={<Navigate to="/" replace />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/dashboard" element={<BrokerDashboard />} />
         <Route path="/clients" element={<ClientsListPage />} />
