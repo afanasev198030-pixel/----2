@@ -194,16 +194,50 @@ async def startup_event():
     except Exception as e:
         logger.warning("observability_init_failed", error=str(e))
 
+    # Fetch LLM key from core-api DB (persisted settings survive restarts)
+    try:
+        import httpx, os
+        resp = httpx.get(f"{settings.CORE_API_URL}/api/v1/settings/internal/llm-config", timeout=10)
+        if resp.status_code == 200:
+            db_settings = resp.json()
+            db_key = db_settings.get("llm_api_key", "")
+            db_provider = db_settings.get("llm_provider", "")
+            db_base_url = db_settings.get("llm_base_url", "")
+            db_model = db_settings.get("openai_model", "")
+            if db_key and db_key != "sk-your-key-here":
+                os.environ["LLM_API_KEY"] = db_key
+                os.environ["OPENAI_API_KEY"] = db_key
+                if db_provider:
+                    os.environ["LLM_PROVIDER"] = db_provider
+                if db_base_url:
+                    os.environ["LLM_BASE_URL"] = db_base_url
+                if db_model:
+                    os.environ["LLM_MODEL"] = db_model
+                    os.environ["OPENAI_MODEL"] = db_model
+                get_settings.cache_clear()
+                logger.info("llm_key_loaded_from_db", provider=db_provider, model=db_model,
+                            base_url=db_base_url[:30] if db_base_url else "", key_prefix=db_key[:8] + "...")
+            else:
+                logger.info("no_llm_key_in_db")
+        else:
+            logger.warning("db_settings_fetch_non_200", status=resp.status_code)
+    except Exception as e:
+        logger.warning("db_settings_fetch_failed", error=str(e)[:100])
+
+    # Reload settings after DB fetch
+    from app.config import get_settings as _gs
+    current = _gs()
+
     # Configure DSPy if LLM key available
-    if settings.has_llm:
+    if current.has_llm:
         try:
             from app.services.dspy_modules import configure_dspy
             configure_dspy(
-                api_key=settings.effective_api_key,
-                model=settings.effective_model,
-                base_url=settings.effective_base_url,
+                api_key=current.effective_api_key,
+                model=current.effective_model,
+                base_url=current.effective_base_url,
             )
-            logger.info("dspy_configured_on_startup", provider=settings.LLM_PROVIDER, model=settings.effective_model)
+            logger.info("dspy_configured_on_startup", provider=current.LLM_PROVIDER, model=current.effective_model)
         except Exception as e:
             logger.warning("dspy_startup_config_failed", error=str(e))
 

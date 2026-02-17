@@ -218,25 +218,43 @@ def _extract_invoice_date(text: str) -> Optional[str]:
 
 
 # ── Currency ─────────────────────────────────────────────────
+_VALID_CURRENCIES = {
+    'USD', 'EUR', 'CNY', 'GBP', 'RUB', 'JPY', 'CHF', 'KRW', 'AED', 'SEK',
+    'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'TRY', 'INR', 'BRL', 'CAD', 'AUD',
+    'SGD', 'THB', 'MYR', 'VND', 'IDR', 'HKD', 'TWD', 'NZD', 'ZAR', 'MXN',
+    'PHP', 'KZT', 'BYN', 'UAH', 'GEL', 'AMD', 'AZN', 'UZS', 'KGS', 'TJS',
+    'MDL', 'TMT', 'SAR', 'QAR', 'OMR', 'BHD', 'KWD', 'EGP',
+}
+_CURRENCY_FALSE_POS = {'VAT', 'THE', 'AND', 'FOR', 'PER', 'TAX', 'NET', 'QTY', 'ALL', 'AMO', 'PCS', 'KGS', 'CTN', 'BOX', 'SET', 'LOT', 'UNT', 'PCE'}
+
+
 def _extract_currency(text: str) -> Optional[str]:
-    """Extract currency code."""
+    """Extract currency code with strict validation."""
+    def _validate(code: str) -> Optional[str]:
+        c = code.upper().strip()
+        if c in _VALID_CURRENCIES and c not in _CURRENCY_FALSE_POS:
+            return c
+        return None
+
     # Explicit currency mentions
     m = re.search(r'(?:Currency|Валюта)[\s:]+([A-Z]{3})', text, re.IGNORECASE)
     if m:
-        return m.group(1).upper()
+        v = _validate(m.group(1))
+        if v:
+            return v
 
-    # In context of amounts: "Total, CNY" / "Amount, USD" / "ЦЕНА, CNY"
+    # In context of amounts: "Total, CNY" / "Amount, USD"
     m = re.search(r'(?:Total|Amount|Price|ЦЕНА|СТОИМОСТЬ)[,\s]+([A-Z]{3})\b', text, re.IGNORECASE)
     if m:
-        cur = m.group(1).upper()
-        # Skip false positives
-        if cur not in ('VAT', 'THE', 'AND', 'FOR', 'PER', 'TAX', 'NET', 'QTY', 'ALL'):
-            return cur
+        v = _validate(m.group(1))
+        if v:
+            return v
 
-    # Standalone known currency codes (strict list)
-    m = re.search(r'\b(USD|EUR|CNY|GBP|RUB|JPY|CHF|KRW|AED|SEK|NOK|DKK|PLN|CZK|HUF|TRY|INR|BRL|CAD|AUD|SGD|THB|MYR|VND|IDR)\b', text)
-    if m:
-        return m.group(1)
+    # Standalone known currency codes (strict whitelist)
+    for m in re.finditer(r'\b([A-Z]{3})\b', text):
+        v = _validate(m.group(1))
+        if v:
+            return v
 
     # Symbols
     sym_map = {'$': 'USD', '€': 'EUR', '¥': 'CNY', '£': 'GBP', '₽': 'RUB'}
@@ -783,17 +801,16 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         from app.config import get_settings
         settings = get_settings()
         if not settings.has_llm:
+            logger.debug("llm_enrich_skip_no_llm")
             return {}
         from app.services.llm_client import get_llm_client, get_model
         import json as _json
         client = get_llm_client()
 
-        # Check if items have placeholder descriptions (regex failed) or items list is empty
         items = result.get("items", [])
         has_no_items = len(items) == 0
         has_bad_items = has_no_items or any(
-            (it.get("description_raw", "") or "").lower().startswith("item ")
-            or not it.get("description_raw")
+            _is_placeholder_desc(it.get("description_raw", ""))
             for it in items
         )
 
@@ -804,41 +821,54 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
             missing.append("country_origin (2-letter ISO code)")
         if not result.get("total_amount"):
             missing.append("total_amount (number)")
+        if not result.get("currency"):
+            missing.append("currency (3-letter ISO 4217 code, e.g. USD, EUR, CNY)")
         if not result.get("seller_name"):
             missing.append("seller_name")
         if not result.get("buyer_name"):
             missing.append("buyer_name")
 
         if not missing and not has_bad_items:
+            logger.debug("llm_enrich_skip_nothing_missing")
             return {}
 
-        # Always ask for items when descriptions are bad
-        item_prompt = """Also extract items (ONLY physical goods, NOT freight/shipping/insurance/handling fees): [{description, quantity, unit, unit_price, line_total, country_origin}].
-IMPORTANT: quantity is REQUIRED for each item. Look for columns: Qty, Количество, Кол-во, Amount, pcs, шт. If not stated explicitly, calculate: quantity = line_total / unit_price.""" if has_bad_items else ""
+        logger.info("llm_enrich_start", missing=missing, has_bad_items=has_bad_items, items_count=len(items))
+
+        item_prompt = """Also extract ALL items (ONLY physical goods, NOT freight/shipping/insurance/handling fees).
+Return items as JSON array: [{"description": "full product name in original language", "quantity": 100, "unit": "pcs", "unit_price": 5.50, "line_total": 550.00, "country_origin": "CN"}]
+CRITICAL: "description" must be the REAL product name from the document, NOT generic labels like "Item 1".
+IMPORTANT: quantity is REQUIRED. Look for columns: Qty, Количество, Кол-во, Amount, pcs, шт. Calculate: quantity = line_total / unit_price if needed.""" if has_bad_items else ""
 
         resp = client.chat.completions.create(
             model=get_model(),
             messages=[
-                {"role": "system", "content": "Extract data from a commercial invoice. Return ONLY valid JSON. Include ONLY physical goods as items — do NOT include freight charges, shipping fees, insurance, handling fees, delivery charges, or transport costs."},
-                {"role": "user", "content": f"""Extract from this invoice:
+                {"role": "system", "content": "You are an expert customs document parser. Extract structured data from a commercial invoice. Return ONLY valid JSON, no markdown. Include ONLY physical goods as items — do NOT include freight charges, shipping fees, insurance, handling fees, delivery charges, or transport costs."},
+                {"role": "user", "content": f"""Extract the following from this invoice document:
 {', '.join(missing) if missing else 'Verify existing data.'}
 
 {item_prompt}
 
-Text:
+Document text:
 {raw_text[:12000]}
 
-Return JSON with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"""},
+Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"""},
             ],
             temperature=0,
             max_tokens=4000,
         )
         text = resp.choices[0].message.content.strip()
+        logger.debug("llm_enrich_raw_response", response_length=len(text), first_100=text[:100])
         if text.startswith("```"):
             text = text.split("```")[1]
             if text.startswith("json"):
                 text = text[4:]
-        return _json.loads(text)
+        data = _json.loads(text)
+        logger.info("llm_enrich_parsed", keys=list(data.keys()),
+                     items_count=len(data.get("items", [])),
+                     currency=data.get("currency"),
+                     total_amount=data.get("total_amount"),
+                     country=data.get("country_origin"))
+        return data
     except Exception as e:
         logger.warning("llm_enrich_failed", error=str(e))
         try:
@@ -847,6 +877,18 @@ Return JSON with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"
         except Exception:
             pass
         return {}
+
+
+def _is_placeholder_desc(desc: str) -> bool:
+    """Check if description is a placeholder like 'Item 1', 'Item 2', empty, etc."""
+    if not desc:
+        return True
+    d = desc.strip().lower()
+    if d.startswith("item ") and len(d) < 10:
+        return True
+    if re.match(r'^item\s*\d+$', d, re.IGNORECASE):
+        return True
+    return False
 
 
 # ── Main Parse Function ──────────────────────────────────────
@@ -897,6 +939,7 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
             "invoice_number": invoice_number,
             "country_origin": country_origin,
             "total_amount": total_amount,
+            "currency": currency,
             "seller_name": seller.name if seller else None,
             "buyer_name": buyer.name if buyer else None,
         }
@@ -904,22 +947,37 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
         llm_data = _llm_enrich(raw_text, regex_result)
         if llm_data:
             if not country_origin and llm_data.get("country_origin"):
-                country_origin = llm_data["country_origin"]
+                co = str(llm_data["country_origin"]).strip().upper()[:2]
+                if len(co) == 2:
+                    country_origin = co
             if not invoice_number and llm_data.get("invoice_number"):
-                invoice_number = llm_data["invoice_number"]
+                invoice_number = str(llm_data["invoice_number"]).strip()
+            if not currency and llm_data.get("currency"):
+                llm_cur = str(llm_data["currency"]).strip().upper()
+                if llm_cur in _VALID_CURRENCIES:
+                    currency = llm_cur
+                    logger.info("currency_from_llm", currency=currency)
+            if not total_amount and llm_data.get("total_amount"):
+                llm_amt = _safe_float(llm_data["total_amount"])
+                if llm_amt and llm_amt > 0:
+                    total_amount = llm_amt
+                    logger.info("total_amount_from_llm", amount=total_amount)
+
             # Replace items if LLM returned better ones
             llm_items = llm_data.get("items", [])
             if llm_items and isinstance(llm_items, list):
-                has_bad = any(
-                    (it.description_raw or "").lower().startswith("item ") or not it.description_raw
-                    for it in items
-                )
+                has_bad = any(_is_placeholder_desc(it.description_raw) for it in items) or len(items) == 0
                 if has_bad:
                     new_items = []
                     for idx, li in enumerate(llm_items):
+                        if not isinstance(li, dict):
+                            continue
+                        desc = li.get("description", "") or li.get("description_raw", "") or li.get("name", "")
+                        if _is_placeholder_desc(desc):
+                            continue
                         new_items.append(InvoiceItemParsed(
                             line_no=idx + 1,
-                            description_raw=li.get("description", ""),
+                            description_raw=str(desc)[:200],
                             quantity=li.get("quantity"),
                             unit=li.get("unit", "pcs"),
                             unit_price=li.get("unit_price"),
@@ -929,7 +987,10 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
                         ))
                     if new_items:
                         items = new_items
-                        logger.info("llm_replaced_items", count=len(new_items))
+                        logger.info("llm_replaced_items", count=len(new_items),
+                                    descs=[it.description_raw[:40] for it in new_items])
+                    else:
+                        logger.warning("llm_items_all_bad", raw_items=len(llm_items))
 
         # Confidence
         fields_found = sum([

@@ -737,63 +737,7 @@ JSON:"""},
                 total_net = round(net_sum, 3)
             logger.info("weights_from_items", total_gross=total_gross, total_net=total_net)
 
-        # Auto-classify HS codes via LLM + RAG (only for items WITHOUT HS code from parser)
-        from app.services.dspy_modules import HSCodeClassifier
-        from app.services.index_manager import get_index_manager
-        hs_classifier = HSCodeClassifier()
-        idx_mgr = get_index_manager()
-        # Контекст: описания всех позиций (помогает различать аббревиатуры вроде ESC)
-        all_descs = [it.get("description", "")[:60] for it in items if it.get("description")]
-        decl_context = "; ".join(all_descs) if len(all_descs) > 1 else ""
-        for item in items:
-            existing_hs = (item.get("hs_code") or "").strip()
-            desc = (item.get("description") or "")
-            if existing_hs and len(existing_hs) >= 8 and not desc.strip().lower().startswith("item "):
-                if len(existing_hs) < 10:
-                    item["hs_code"] = existing_hs.ljust(10, "0")
-                item["hs_code_name"] = ""
-                item["hs_confidence"] = 0.9
-                item["hs_reasoning"] = "Extracted from document"
-                item["hs_needs_review"] = False
-                if desc:
-                    try:
-                        rag_for_choice = idx_mgr.search_hs_codes(desc)
-                        hs_candidates = []
-                        for r in rag_for_choice[:8]:
-                            code_raw = _re.sub(r"\D", "", str(r.get("code", "")))
-                            if len(code_raw) < 8:
-                                continue
-                            code = (code_raw[:10] if len(code_raw) >= 10 else code_raw.ljust(10, "0"))
-                            hs_candidates.append({
-                                "hs_code": code,
-                                "name_ru": r.get("name_ru", "") or "",
-                                "confidence": float(r.get("score", 0.0) or 0.0),
-                                "source": "rag",
-                            })
-                        if hs_candidates:
-                            item["hs_candidates"] = hs_candidates
-                    except Exception as e:
-                        logger.debug("hs_candidates_build_failed", error=str(e)[:80], description=desc[:40])
-                logger.info("hs_from_document", code=item["hs_code"], description=(item.get("description") or "")[:50])
-            elif item.get("description"):
-                try:
-                    rag_results = idx_mgr.search_hs_codes(item["description"])
-                    hs_result = hs_classifier.classify(item["description"], rag_results, context=decl_context)
-                    if hs_result.get("hs_code"):
-                        item["hs_code"] = hs_result["hs_code"]
-                        item["hs_code_name"] = hs_result.get("name_ru", "")
-                        item["hs_confidence"] = hs_result.get("confidence", 0)
-                        item["hs_reasoning"] = hs_result.get("reasoning", "")
-                        item["hs_candidates"] = hs_result.get("candidates", [])
-                        item["hs_needs_review"] = hs_result.get("confidence", 0) < 0.8
-                        logger.info("auto_hs_classified", description=item["description"][:50], code=item["hs_code"], confidence=item["hs_confidence"])
-                except Exception as e:
-                    logger.warning("auto_hs_classify_failed", error=str(e), description=item.get("description", "")[:50])
-                    try:
-                        from app.services.issue_reporter import report_issue
-                        report_issue("hs_classify", "error", f"HS classify failed: {str(e)[:150]}", {"description": item.get("description", "")[:200], "error": str(e)[:300]})
-                    except Exception:
-                        pass
+        # HS classification moved to process_documents() to avoid duplication
 
         # Transport from AWB — extract AWB number
         import re as _re

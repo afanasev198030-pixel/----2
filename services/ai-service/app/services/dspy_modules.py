@@ -143,6 +143,7 @@ def _build_candidates(selected: Optional[dict], rag_results: list[dict], keyword
 
 
 _dspy_available = False
+_dspy_auth_failed = False
 try:
     import dspy
     _dspy_available = True
@@ -231,8 +232,8 @@ class InvoiceExtractor:
         if not text:
             return {"error": "no_text_extracted", "confidence": 0.0}
 
-        # Попытка через DSPy/LLM
-        if self._dspy_module:
+        # Попытка через DSPy/LLM (skip if auth failed)
+        if self._dspy_module and not _dspy_auth_failed:
             try:
                 result = self._dspy_module(document_text=text[:8000])
                 items = _safe_json_parse(result.items_json, [])
@@ -319,7 +320,7 @@ class ContractExtractor:
         if not text:
             return {"error": "no_text_extracted", "confidence": 0.0}
 
-        if self._dspy_module:
+        if self._dspy_module and not _dspy_auth_failed:
             try:
                 result = self._dspy_module(document_text=text[:8000])
                 return {
@@ -365,7 +366,7 @@ class PackingExtractor:
         if not text:
             return {"error": "no_text_extracted", "confidence": 0.0}
 
-        if self._dspy_module:
+        if self._dspy_module and not _dspy_auth_failed:
             try:
                 result = self._dspy_module(document_text=text[:8000])
                 return {
@@ -505,8 +506,9 @@ class HSCodeClassifier:
                 for r in rag_results[:10]
             ])
 
-        # DSPy path (needs rag candidates)
-        if self._dspy_module and rag_text:
+        # DSPy path (needs rag candidates; skip if auth previously failed)
+        global _dspy_auth_failed
+        if self._dspy_module and rag_text and not _dspy_auth_failed:
             try:
                 dspy_result = self._dspy_module(
                     description=description,
@@ -537,7 +539,11 @@ class HSCodeClassifier:
                     })
                     return with_candidates(chosen)
             except Exception as e:
-                logger.warning("dspy_hs_classify_fallback", error=str(e))
+                err_str = str(e)
+                logger.warning("dspy_hs_classify_fallback", error=err_str)
+                if "Authentication Fails" in err_str or "api key" in err_str.lower():
+                    _dspy_auth_failed = True
+                    logger.warning("dspy_auth_disabled", msg="DSPy disabled due to auth failure, using LLM direct")
 
         # LLM direct call (works even without RAG candidates)
         try:
@@ -673,7 +679,7 @@ class RiskAnalyzer:
             self._dspy_module = dspy.Predict(RiskSignature)
 
     def analyze(self, declaration_data: dict, relevant_rules: list[dict]) -> dict:
-        if self._dspy_module and relevant_rules:
+        if self._dspy_module and relevant_rules and not _dspy_auth_failed:
             try:
                 result = self._dspy_module(
                     declaration_data=json.dumps(declaration_data, ensure_ascii=False, default=str),

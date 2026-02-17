@@ -19,6 +19,16 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
 
+@router.get("/internal/llm-config")
+async def get_llm_config_internal(db: AsyncSession = Depends(get_db)):
+    """Internal endpoint (no auth) for ai-service to fetch LLM config on startup."""
+    api_key = await _get_setting(db, "llm_api_key") or await _get_setting(db, "openai_api_key") or ""
+    provider = await _get_setting(db, "llm_provider") or "deepseek"
+    base_url = await _get_setting(db, "llm_base_url") or ""
+    model = await _get_setting(db, "openai_model") or "deepseek-chat"
+    return {"llm_api_key": api_key, "llm_provider": provider, "llm_base_url": base_url, "openai_model": model}
+
+
 class SettingUpdate(BaseModel):
     key: str
     value: str
