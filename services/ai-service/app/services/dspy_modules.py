@@ -228,42 +228,13 @@ class InvoiceExtractor:
             self._dspy_module = dspy.Predict(InvoiceSignature)
 
     def extract(self, file_bytes: bytes, filename: str) -> dict:
-        """Извлечь данные из инвойса."""
+        """Извлечь данные из инвойса. DSPy → regex fallback."""
         text = extract_text(file_bytes, filename)
         if not text:
+            logger.warning("invoice_no_text", filename=filename)
             return {"error": "no_text_extracted", "confidence": 0.0}
 
-        # Попытка через DSPy/LLM (skip if auth failed)
-        if self._dspy_module and not _dspy_auth_failed:
-            try:
-                result = self._dspy_module(document_text=text[:8000])
-                items = _safe_json_parse(result.items_json, [])
-                return {
-                    "invoice_number": result.invoice_number,
-                    "invoice_date": result.invoice_date,
-                    "seller": {
-                        "name": result.seller_name,
-                        "country_code": result.seller_country,
-                        "address": result.seller_address,
-                    },
-                    "buyer": {
-                        "name": result.buyer_name,
-                        "country_code": result.buyer_country,
-                    },
-                    "currency": result.currency,
-                    "total_amount": _safe_float(result.total_amount),
-                    "incoterms": result.incoterms,
-                    "items": items,
-                    "contract_number": result.contract_number,
-                    "country_origin": result.country_origin,
-                    "confidence": 0.9,
-                    "source": "dspy_llm",
-                    "raw_text": text,
-                }
-            except Exception as e:
-                logger.warning("dspy_invoice_fallback", error=str(e))
-
-        # Fallback на regex
+        # Regex + LLM enrichment (more reliable than DSPy for invoices)
         parsed = regex_parse_invoice(file_bytes, filename)
         return {
             "invoice_number": parsed.invoice_number,
@@ -321,24 +292,7 @@ class ContractExtractor:
         if not text:
             return {"error": "no_text_extracted", "confidence": 0.0}
 
-        if self._dspy_module and not _dspy_auth_failed:
-            try:
-                result = self._dspy_module(document_text=text[:8000])
-                return {
-                    "contract_number": result.contract_number,
-                    "contract_date": result.contract_date,
-                    "seller_name": result.seller_name,
-                    "buyer_name": result.buyer_name,
-                    "total_amount": _safe_float(result.total_amount),
-                    "currency": result.currency,
-                    "incoterms": result.incoterms,
-                    "confidence": 0.85,
-                    "source": "dspy_llm",
-                    "raw_text": text,
-                }
-            except Exception as e:
-                logger.warning("dspy_contract_fallback", error=str(e))
-
+        # Regex parser (contracts are batch-parsed by LLM in agent_crew, DSPy skipped)
         parsed = regex_parse_contract(file_bytes, filename)
         return {
             "contract_number": parsed.contract_number,
@@ -367,13 +321,16 @@ class PackingExtractor:
         if not text:
             return {"error": "no_text_extracted", "confidence": 0.0}
 
-        if self._dspy_module and not _dspy_auth_failed:
+        if False:  # DSPy disabled for packing — LLM packing parser is more reliable
             try:
                 result = self._dspy_module(document_text=text[:8000])
+                gross = _safe_float(result.total_gross_weight)
+                net = _safe_float(result.total_net_weight)
+                pkgs = _safe_int(result.total_packages)
                 return {
-                    "total_packages": _safe_int(result.total_packages),
+                    "total_packages": pkgs,
                     "package_type": result.package_type,
-                    "total_gross_weight": _safe_float(result.total_gross_weight),
+                    "total_gross_weight": gross,
                     "total_net_weight": _safe_float(result.total_net_weight),
                     "confidence": 0.85,
                     "source": "dspy_llm",
