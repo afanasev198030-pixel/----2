@@ -90,15 +90,22 @@ async def parse_smart(files: list[UploadFile] = File(...)):
             request_id=request_id,
         )
 
-        # Normalize ALL HS codes to exactly 10 digits
+        # Normalize ALL HS codes to exactly 10 digits (min 6 input + group 01-97)
         import re as _re
         def _pad_hs(code: str) -> str:
             c = _re.sub(r"\D", "", str(code or ""))
-            if len(c) < 4:
+            if len(c) < 6:
                 return ""
             if len(c) < 10:
                 c = c.ljust(10, "0")
-            return c[:10]
+            c = c[:10]
+            try:
+                g = int(c[:2])
+                if g < 1 or g > 97:
+                    return ""
+            except ValueError:
+                return ""
+            return c
 
         for item in result.get("items", []):
             raw = item.get("hs_code", "")
@@ -177,12 +184,17 @@ async def classify_hs_rag(request: ClassifyHSRequest):
             source=result.get("source"),
         )
 
-        # Ensure 10-digit HS codes
+        # Ensure 10-digit HS codes (min 6 input, group 01-97)
         import re as _re
         def _pad10(code):
             c = _re.sub(r"\D", "", str(code or ""))
-            if len(c) < 4: return ""
-            return c.ljust(10, "0")[:10]
+            if len(c) < 6: return ""
+            c = c.ljust(10, "0")[:10]
+            try:
+                g = int(c[:2])
+                if g < 1 or g > 97: return ""
+            except ValueError: return ""
+            return c
         if result.get("hs_code"):
             result["hs_code"] = _pad10(result["hs_code"])
         for c in result.get("candidates", []):

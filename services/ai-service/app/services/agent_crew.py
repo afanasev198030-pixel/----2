@@ -631,7 +631,7 @@ JSON:"""},
         )
         def _normalize_hs_code(raw) -> str:
             code = _re.sub(r"\D", "", str(raw or ""))
-            if len(code) < 8:
+            if len(code) < 6:
                 return ""
             if len(code) < 10:
                 code = code.ljust(10, "0")
