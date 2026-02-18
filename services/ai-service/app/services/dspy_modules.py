@@ -480,17 +480,35 @@ class HSCodeClassifier:
         except Exception as e:
             logger.debug("precedent_search_skip", error=str(e)[:80])
 
-        # ── Жёсткая эвристика: готовый БПЛА/квадрокоптер ──
+        # ── Жёсткая эвристика: БПЛА и компоненты с известными кодами ──
         drone_kind = _detect_drone_product_kind(description)
+
+        # Таблица эвристик для компонентов БПЛА/FPV
+        _COMPONENT_HS_RULES = [
+            # VTX — видеопередатчик
+            (["vtx", "video transmitter", "видеопередатчик", "передатчик видео"], "8525601000", "Передатчики телевизионные с встроенной аппаратурой", 0.93),
+            # ESC — регулятор оборотов
+            (["esc ", "esc-", "speed controller", "регулятор оборотов", "регулятор хода"], "8504409000", "Преобразователи статические прочие (ESC)", 0.93),
+            # FC — полётный контроллер
+            (["flight controller", "полетный контролер", "полётный контроллер", "fc f4", "fc f7", "fc h7", "aio stack", " fc "], "8537101009", "Пульты, панели управления прочие (FC)", 0.92),
+            # Мотор бесколлекторный
+            (["brushless motor", "bldc", "motor kv", "мотор kv", "350kv", "900kv", "1400kv", "2400kv", "2800kv"], "8501109900", "Электродвигатели малой мощности прочие", 0.93),
+            # Камера FPV
+            (["fpv camera", "caddx", "runcam", "foxeer", "камера fpv", "tvl"], "8525809000", "Камеры телевизионные прочие", 0.92),
+            # Пропеллер
+            (["propeller", "пропеллер", "prop ", "hq prop", "gemfan", "2cw", "2ccw"], "8803300000", "Части летательных аппаратов прочие", 0.91),
+            # Рама дрона
+            (["frame", "рама ", "frame kit"], "8806909000", "Части БПЛА прочие (рама)", 0.91),
+            # АКБ LiPo
+            (["lipo", "li-po", "аккумулятор", "battery pack", "mah"], "8507600000", "Аккумуляторы литий-ионные", 0.93),
+            # Антенна
+            (["antenna", "антенна", "lhcp", "rhcp", "sma connector"], "8529109000", "Антенны и их части прочие", 0.92),
+            # Приёмник
+            (["receiver", "приемник", "приёмник", "elrs", "crossfire", "rxsr"], "8526920000", "Аппаратура дистанционного управления (приёмник)", 0.92),
+        ]
+
         if drone_kind == "complete_drone":
-            _log_classify({
-                "description": description[:80],
-                "method": "rule_complete_drone",
-                "hs_code": "8806100000",
-                "name_ru": "Беспилотные летательные аппараты (БПЛА, дроны)",
-                "reasoning": "Ключевые слова указывают на готовый БПЛА/квадрокоптер, не компонент",
-                "confidence": 0.9,
-            })
+            _log_classify({"description": description[:80], "method": "rule_complete_drone", "hs_code": "8806100000", "confidence": 0.9})
             return with_candidates({
                 "hs_code": "8806100000",
                 "name_ru": "Беспилотные летательные аппараты (БПЛА, дроны)",
@@ -498,6 +516,20 @@ class HSCodeClassifier:
                 "confidence": 0.9,
                 "source": "rule_complete_drone",
             })
+
+        if drone_kind == "component":
+            desc_lower = description.lower()
+            for keywords, hs_code, name_ru, conf in _COMPONENT_HS_RULES:
+                if any(kw in desc_lower for kw in keywords):
+                    logger.info("hs_component_rule", description=description[:60], hs_code=hs_code, keywords=[k for k in keywords if k in desc_lower])
+                    _log_classify({"description": description[:80], "method": "rule_component", "hs_code": hs_code, "name_ru": name_ru, "confidence": conf})
+                    return with_candidates({
+                        "hs_code": hs_code,
+                        "name_ru": name_ru,
+                        "reasoning": f"Эвристика: компонент БПЛА ({name_ru})",
+                        "confidence": conf,
+                        "source": "rule_component",
+                    })
 
         rag_text = ""
         if rag_results:

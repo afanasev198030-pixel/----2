@@ -63,7 +63,14 @@ def extract_text_from_image(file_bytes: bytes) -> str:
 
 
 def extract_text_from_excel(file_bytes: bytes, filename: str) -> str:
-    """Extract text from Excel (.xlsx/.xls) using openpyxl."""
+    """Extract text from Excel (.xlsx/.xls). Uses openpyxl for .xlsx, xlrd for .xls."""
+    filename_lower = filename.lower()
+
+    # Old .xls format — use xlrd
+    if filename_lower.endswith('.xls') and not filename_lower.endswith('.xlsx'):
+        return _extract_text_xls(file_bytes, filename)
+
+    # .xlsx format — use openpyxl
     try:
         import openpyxl
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
@@ -81,7 +88,36 @@ def extract_text_from_excel(file_bytes: bytes, filename: str) -> str:
         logger.info("excel_extracted", filename=filename, chars=len(text), sheets=len(wb.sheetnames))
         return text
     except Exception as e:
-        logger.error("excel_extraction_failed", filename=filename, error=str(e))
+        logger.error("xlsx_extraction_failed", filename=filename, error=str(e))
+        # Fallback: try xlrd for misnamed files
+        return _extract_text_xls(file_bytes, filename)
+
+
+def _extract_text_xls(file_bytes: bytes, filename: str) -> str:
+    """Extract text from old .xls format using xlrd."""
+    try:
+        import xlrd
+        wb = xlrd.open_workbook(file_contents=file_bytes)
+        text_parts = []
+        for sheet in wb.sheets():
+            text_parts.append(f"--- Sheet: {sheet.name} ---")
+            for row_idx in range(sheet.nrows):
+                cells = []
+                for col_idx in range(sheet.ncols):
+                    cell = sheet.cell(row_idx, col_idx)
+                    val = cell.value
+                    if val is not None and str(val).strip():
+                        cells.append(str(val).strip())
+                if cells:
+                    text_parts.append("\t".join(cells))
+        text = "\n".join(text_parts)
+        logger.info("xls_extracted", filename=filename, chars=len(text), sheets=wb.nsheets)
+        return text
+    except ImportError:
+        logger.error("xlrd_not_installed", filename=filename, msg="pip install xlrd")
+        return ""
+    except Exception as e:
+        logger.error("xls_extraction_failed", filename=filename, error=str(e))
         return ""
 
 

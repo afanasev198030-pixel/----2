@@ -767,16 +767,32 @@ JSON:"""},
             "880": "10005020",  # Внуково (DHL/UPS)
             "176": "10002020",  # Шереметьево (Emirates)
             "074": "10002020",  # Шереметьево (KLM)
+            "172": "10005020",  # Внуково (прочие)
+            "580": "10002020",  # Шереметьево (прочие)
         }
         if awb_number:
             awb_prefix = awb_number.split("-")[0] if "-" in awb_number else awb_number[:3]
             customs_office_code = _AWB_TO_POST.get(awb_prefix)
+
         _POST_ADDR = {
             "10005020": "г. Москва, аэропорт Внуково, Внуковское шоссе, д. 1",
+            "10005030": "г. Москва, Внуковское шоссе, д. 1",
             "10002020": "Московская обл., г.о. Химки, аэропорт Шереметьево, Карго",
             "10009100": "Московская обл., г. Домодедово, аэропорт Домодедово",
         }
-        goods_location = _POST_ADDR.get(customs_office_code or "")
+
+        # Default: если AWB есть но пост не определён — Внуково
+        if awb_number and not customs_office_code:
+            customs_office_code = "10005030"
+            logger.info("customs_office_default", awb=awb_number, code=customs_office_code)
+        # Если вообще нет AWB но transport_type=40 (воздушный) — Внуково
+        if not customs_office_code and transport_type == "40":
+            customs_office_code = "10005030"
+
+        goods_location = _POST_ADDR.get(customs_office_code or "", "")
+        # Fallback: если всё ещё пусто
+        if not goods_location and customs_office_code:
+            goods_location = f"Таможенный пост {customs_office_code}"
 
         # Валюта: спецификация > инвойс > контракт
         currency = spec.get("currency") or inv.get("currency") or contract.get("currency")
