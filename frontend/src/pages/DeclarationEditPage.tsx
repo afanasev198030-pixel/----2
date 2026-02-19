@@ -356,14 +356,12 @@ const DeclarationEditPage = () => {
                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Участники сделки</Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <CounterpartyLookup type="seller" value={watchedValues.sender_counterparty_id} label="Отправитель (графа 2)"
-                      onChange={(cId) => updateField('sender_counterparty_id', cId)}
-                      initialData={declaration?.seller_name ? { name: declaration.seller_name } : undefined} />
+                    <CounterpartyLookup type="seller" value={watchedValues.sender_counterparty_id || ''} label="Отправитель (графа 2)"
+                      onChange={(cId) => updateField('sender_counterparty_id', cId || '')} />
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <CounterpartyLookup type="buyer" value={watchedValues.receiver_counterparty_id} label="Получатель (графа 8)"
-                      onChange={(cId) => updateField('receiver_counterparty_id', cId)}
-                      initialData={declaration?.buyer_name ? { name: declaration.buyer_name } : undefined} />
+                    <CounterpartyLookup type="buyer" value={watchedValues.receiver_counterparty_id || ''} label="Получатель (графа 8)"
+                      onChange={(cId) => updateField('receiver_counterparty_id', cId || '')} />
                   </Grid>
                 </Grid>
                 <Button variant="contained" size="small" onClick={handleSave} startIcon={<Save />} sx={{ mt: 2 }}>Сохранить</Button>
