@@ -26,6 +26,7 @@ import RequirementsPanel from '../components/RequirementsPanel';
 import RiskPanel from '../components/RiskPanel';
 import DeclarationChecklist from '../components/DeclarationChecklist';
 import HistoryPanel from '../components/HistoryPanel';
+import CounterpartyLookup from '../components/CounterpartyLookup';
 import { Declaration, DeclarationItem } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
@@ -350,6 +351,20 @@ const DeclarationEditPage = () => {
                   <Grid item xs={12} md={6}><TextField size="small" fullWidth label="Местонахождение товаров / СВХ (30)" {...register('goods_location')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="ИНН/КПП декларанта (14)" {...register('declarant_inn_kpp')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тамож. пост (29)" {...register('customs_office_code')} InputLabelProps={{ shrink: true }} placeholder="10005030" /></Grid>
+                </Grid>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Участники сделки</Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <CounterpartyLookup type="seller" value={watchedValues.sender_counterparty_id} label="Отправитель (графа 2)"
+                      onChange={(cId) => updateField('sender_counterparty_id', cId)}
+                      initialData={declaration?.seller_name ? { name: declaration.seller_name } : undefined} />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <CounterpartyLookup type="buyer" value={watchedValues.receiver_counterparty_id} label="Получатель (графа 8)"
+                      onChange={(cId) => updateField('receiver_counterparty_id', cId)}
+                      initialData={declaration?.buyer_name ? { name: declaration.buyer_name } : undefined} />
+                  </Grid>
                 </Grid>
                 <Button variant="contained" size="small" onClick={handleSave} startIcon={<Save />} sx={{ mt: 2 }}>Сохранить</Button>
               </Paper>

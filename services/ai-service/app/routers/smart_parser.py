@@ -409,3 +409,89 @@ async def index_hs_codes(data: IndexHSCodesRequest):
     _log_event("hs_index_request", f"{len(data.codes)} codes, force={data.force}")
     result = idx.index_hs_codes(data.codes, force=data.force)
     return result
+
+
+# --- Cortex Memory: Precedents Management ---
+
+@router.get("/precedents")
+async def list_precedents(q: str = "", limit: int = 50):
+    """Список прецедентов из ChromaDB с поиском."""
+    from app.services.index_manager import get_index_manager
+    idx = get_index_manager()
+    if not idx._chroma_client:
+        return {"precedents": [], "total": 0}
+
+    try:
+        col = idx._chroma_client.get_or_create_collection("precedents")
+        if q:
+            results = col.query(query_texts=[q], n_results=min(limit, 100))
+            items = []
+            for i, doc_id in enumerate(results["ids"][0]):
+                meta = (results["metadatas"][0][i] if results["metadatas"] else {}) or {}
+                dist = results["distances"][0][i] if results.get("distances") else 0
+                items.append({
+                    "id": doc_id,
+                    "text": results["documents"][0][i] if results["documents"] else "",
+                    "hs_code": meta.get("hs_code", ""),
+                    "description": meta.get("description", ""),
+                    "source": meta.get("source", ""),
+                    "score": round(1 - dist, 3) if dist else 0,
+                })
+        else:
+            data = col.get(limit=limit, include=["documents", "metadatas"])
+            items = []
+            for i, doc_id in enumerate(data["ids"]):
+                meta = (data["metadatas"][i] if data["metadatas"] else {}) or {}
+                items.append({
+                    "id": doc_id,
+                    "text": data["documents"][i] if data["documents"] else "",
+                    "hs_code": meta.get("hs_code", ""),
+                    "description": meta.get("description", ""),
+                    "source": meta.get("source", ""),
+                })
+        return {"precedents": items, "total": col.count()}
+    except Exception as e:
+        logger.warning("precedents_list_failed", error=str(e)[:100])
+        return {"precedents": [], "total": 0, "error": str(e)[:200]}
+
+
+@router.delete("/precedents/{precedent_id}")
+async def delete_precedent(precedent_id: str):
+    """Удалить неверный прецедент."""
+    from app.services.index_manager import get_index_manager
+    idx = get_index_manager()
+    if not idx._chroma_client:
+        raise HTTPException(500, "ChromaDB not connected")
+    try:
+        col = idx._chroma_client.get_or_create_collection("precedents")
+        col.delete(ids=[precedent_id])
+        logger.info("precedent_deleted", id=precedent_id)
+        return {"status": "deleted", "id": precedent_id}
+    except Exception as e:
+        raise HTTPException(500, f"Delete failed: {str(e)}")
+
+
+class ExtractFactsRequest(BaseModel):
+    items: list[dict]
+
+@router.post("/extract-facts")
+async def extract_facts(data: ExtractFactsRequest):
+    """Извлечь факты (description→hs_code) из подтверждённых позиций и сохранить как прецеденты."""
+    from app.services.index_manager import get_index_manager
+    idx = get_index_manager()
+    saved = 0
+    for item in data.items:
+        desc = item.get("description", "")
+        hs = item.get("hs_code", "")
+        if desc and hs and len(hs) >= 6:
+            try:
+                idx.add_precedent(desc, hs, metadata={
+                    "source": "extract_facts",
+                    "quantity": item.get("quantity"),
+                    "unit_price": item.get("unit_price"),
+                })
+                saved += 1
+            except Exception as e:
+                logger.warning("extract_fact_failed", desc=desc[:40], error=str(e)[:80])
+    logger.info("facts_extracted", total=len(data.items), saved=saved)
+    return {"status": "ok", "saved": saved, "total": len(data.items)}

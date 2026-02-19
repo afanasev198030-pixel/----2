@@ -26,3 +26,7 @@ tokenizers>=0.15.0
 
 # DSPy — авто-оптимизация промптов, few-shot (не тянет PyTorch)
 dspy>=2.5.0
+
+# Phoenix observability — LLM трейсинг (dashboard на :6006)
+arize-phoenix>=8.0.0
+openinference-instrumentation-openai>=0.1.0

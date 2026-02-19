@@ -238,6 +238,19 @@ async def startup_event():
                 base_url=current.effective_base_url,
             )
             logger.info("dspy_configured_on_startup", provider=current.LLM_PROVIDER, model=current.effective_model)
+
+            # Load optimized HS classifier if exists
+            from pathlib import Path
+            opt_path = Path(__file__).parent / "ml_models" / "hs_classifier_optimized.json"
+            if opt_path.exists():
+                try:
+                    from app.services.dspy_modules import HSCodeSignature
+                    import dspy
+                    optimized = dspy.Predict(HSCodeSignature)
+                    optimized.load(str(opt_path))
+                    logger.info("hs_classifier_optimized_loaded", path=str(opt_path))
+                except Exception as oe:
+                    logger.warning("hs_classifier_optimized_load_failed", error=str(oe)[:100])
         except Exception as e:
             logger.warning("dspy_startup_config_failed", error=str(e))
 

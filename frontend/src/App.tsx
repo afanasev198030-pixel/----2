@@ -12,6 +12,9 @@ import ProfilePage from './pages/ProfilePage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminUserEditPage from './pages/AdminUserEditPage';
 import AdminAuditPage from './pages/AdminAuditPage';
+import AdminKnowledgePage from './pages/AdminKnowledgePage';
+import AdminChecklistPage from './pages/AdminChecklistPage';
+import AdminDashboardPage from './pages/AdminDashboardPage';
 
 function App() {
   return (
@@ -26,9 +29,12 @@ function App() {
         <Route path="/declarations/:id/view" element={<DeclarationViewPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
         <Route path="/admin/users" element={<AdminUsersPage />} />
         <Route path="/admin/users/:id" element={<AdminUserEditPage />} />
         <Route path="/admin/audit" element={<AdminAuditPage />} />
+        <Route path="/admin/knowledge" element={<AdminKnowledgePage />} />
+        <Route path="/admin/checklists" element={<AdminChecklistPage />} />
       </Route>
     </Routes>
   );

@@ -27,8 +27,10 @@ except ImportError:
 # sentence-transformers/E5 слишком тяжёлые для 8GB RAM (PyTorch ~800MB)
 # DeepSeek компенсирует качество RAG при классификации ТН ВЭД
 
+_E5_MODEL = "intfloat/multilingual-e5-small"
+
 def _get_embedding_function():
-    """Возвращает None — используем дефолт ChromaDB (ONNX)."""
+    """Возвращает None — используем дефолт ChromaDB (ONNX all-MiniLM-L6-v2)."""
     return None
 
 # Training log — in-memory ring buffer

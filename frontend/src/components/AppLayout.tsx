@@ -40,8 +40,11 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_NAV_ITEMS = [
+  { label: 'Dashboard', path: '/admin/dashboard', icon: <DashboardIcon fontSize="small" /> },
   { label: 'Пользователи', path: '/admin/users', icon: <AdminIcon fontSize="small" /> },
   { label: 'Аудит-лог', path: '/admin/audit', icon: <AuditIcon fontSize="small" /> },
+  { label: 'База знаний', path: '/admin/knowledge', icon: <DeclarationsIcon fontSize="small" /> },
+  { label: 'Чек-листы', path: '/admin/checklists', icon: <SettingsIcon fontSize="small" /> },
 ];
 
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {

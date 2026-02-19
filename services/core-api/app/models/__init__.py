@@ -13,6 +13,7 @@ from .broker_client import BrokerClient, UserCompanyAccess
 from .hs_requirement import HsRequirement
 from .audit_log import AuditLog
 from .parse_issue import ParseIssue
+from .knowledge import KnowledgeArticle, Checklist
 
 __all__ = [
     "Base",
@@ -37,4 +38,6 @@ __all__ = [
     "HsRequirement",
     "AuditLog",
     "ParseIssue",
+    "KnowledgeArticle",
+    "Checklist",
 ]
