@@ -773,7 +773,6 @@ const SettingsPage = () => {
         <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Администрирование</Typography>
         <List disablePadding>
           {[
-            { label: 'Admin Dashboard', desc: 'Метрики системы, LLM, ChromaDB', icon: <DashboardIcon />, path: '/admin/dashboard' },
             { label: 'Пользователи', desc: 'Управление пользователями и ролями', icon: <PeopleIcon />, path: '/admin/users' },
             { label: 'Аудит-лог', desc: 'История действий в системе', icon: <AuditIcon />, path: '/admin/audit' },
             { label: 'База знаний', desc: 'Статьи по классификации товаров', icon: <BookIcon />, path: '/admin/knowledge' },
