@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Paper, Typography, TextField, Button, Box, Alert,
   Chip, Divider, IconButton, InputAdornment, CircularProgress,
-  Card, CardContent, Grid, LinearProgress,
+  Card, CardContent, Grid, LinearProgress, List, ListItem,
+  ListItemButton, ListItemIcon, ListItemText,
 } from '@mui/material';
 import AppLayout from '../components/AppLayout';
 import {
@@ -12,6 +14,9 @@ import {
   Storage as StorageIcon, School as TrainIcon,
   Terminal as ConsoleIcon, Refresh as RefreshIcon,
   CloudUpload as UploadIcon, PlayArrow as PlayIcon,
+  People as PeopleIcon, History as AuditIcon,
+  MenuBook as BookIcon, ChecklistRtl as ChecklistIcon,
+  Dashboard as DashboardIcon, ChevronRight,
 } from '@mui/icons-material';
 import client from '../api/client';
 
@@ -48,8 +53,9 @@ interface TrainingStats {
 }
 
 const SettingsPage = () => {
+  const navigate = useNavigate();
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gpt-4o');
+  const [model, setModel] = useState('deepseek-chat');
   const [showKey, setShowKey] = useState(false);
   const [provider, setProvider] = useState('deepseek');
   const [baseUrl, setBaseUrl] = useState('');
@@ -760,6 +766,28 @@ const SettingsPage = () => {
           </TextField>
           <Button variant="outlined" onClick={handleSaveModel}>Применить</Button>
         </Box>
+      </Paper>
+
+      {/* Administration */}
+      <Paper sx={{ p: 3, mt: 3 }}>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Администрирование</Typography>
+        <List disablePadding>
+          {[
+            { label: 'Admin Dashboard', desc: 'Метрики системы, LLM, ChromaDB', icon: <DashboardIcon />, path: '/admin/dashboard' },
+            { label: 'Пользователи', desc: 'Управление пользователями и ролями', icon: <PeopleIcon />, path: '/admin/users' },
+            { label: 'Аудит-лог', desc: 'История действий в системе', icon: <AuditIcon />, path: '/admin/audit' },
+            { label: 'База знаний', desc: 'Статьи по классификации товаров', icon: <BookIcon />, path: '/admin/knowledge' },
+            { label: 'Чек-листы', desc: 'Шаблоны проверок деклараций', icon: <ChecklistIcon />, path: '/admin/checklists' },
+          ].map(item => (
+            <ListItem key={item.path} disablePadding divider>
+              <ListItemButton onClick={() => navigate(item.path)}>
+                <ListItemIcon>{item.icon}</ListItemIcon>
+                <ListItemText primary={item.label} secondary={item.desc} />
+                <ChevronRight color="action" />
+              </ListItemButton>
+            </ListItem>
+          ))}
+        </List>
       </Paper>
     </AppLayout>
   );

@@ -39,13 +39,7 @@ const NAV_ITEMS = [
   { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" />, adminOnly: true },
 ];
 
-const ADMIN_NAV_ITEMS = [
-  { label: 'Dashboard', path: '/admin/dashboard', icon: <DashboardIcon fontSize="small" /> },
-  { label: 'Пользователи', path: '/admin/users', icon: <AdminIcon fontSize="small" /> },
-  { label: 'Аудит-лог', path: '/admin/audit', icon: <AuditIcon fontSize="small" /> },
-  { label: 'База знаний', path: '/admin/knowledge', icon: <DeclarationsIcon fontSize="small" /> },
-  { label: 'Чек-листы', path: '/admin/checklists', icon: <SettingsIcon fontSize="small" /> },
-];
+const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [];
 
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   const navigate = useNavigate();
