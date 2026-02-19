@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from app.database import Base
+from .base import Base
 
 
 class KnowledgeArticle(Base):
