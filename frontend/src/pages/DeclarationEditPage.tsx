@@ -49,6 +49,17 @@ const DeclarationEditPage = () => {
   // Watch classifier fields so ClassifierSelect stays in sync
   const watchedValues = watch();
 
+  // Explicitly register custom fields so watch() tracks them properly
+  useEffect(() => {
+    const customFields = [
+      'currency_code', 'country_dispatch_code', 'country_origin_code',
+      'country_destination_code', 'incoterms_code', 'deal_nature_code',
+      'transport_type_border', 'trading_country_code',
+      'sender_counterparty_id', 'receiver_counterparty_id'
+    ];
+    customFields.forEach(f => register(f));
+  }, [register]);
+
   const { data: decl } = useQuery({
     queryKey: ['declaration', id],
     queryFn: () => getDeclaration(id!),
@@ -135,10 +146,22 @@ const DeclarationEditPage = () => {
     setValue(field, value, { shouldDirty: true });
   }, [setValue]);
 
+  const sanitizeData = (d: any) => {
+    const copy = { ...d };
+    const numFields = ['total_invoice_value','exchange_rate','total_customs_value','total_gross_weight','total_net_weight','spot_amount'];
+    for (const f of numFields) {
+      if (typeof copy[f] === 'string') {
+        const val = copy[f].replace(/\s/g, '').replace(',', '.');
+        copy[f] = val === '' ? null : Number(val);
+      }
+    }
+    return copy;
+  };
+
   const handleSave = useCallback(async () => {
     if (!id) return;
     try {
-      const data = getValues();
+      const data = sanitizeData(getValues());
       const saved = await updateDeclaration(id, data);
       queryClient.setQueryData(['declaration', id], saved);
       if (!getValues().goods_location && saved.goods_location) {
@@ -167,7 +190,7 @@ const DeclarationEditPage = () => {
     autoSaveTimer.current = setTimeout(async () => {
       try {
         setAutoSaveStatus('saving');
-        const data = getValues();
+        const data = sanitizeData(getValues());
         const saved = await updateDeclaration(id, data);
         queryClient.setQueryData(['declaration', id], saved);
         if (!getValues().goods_location && saved.goods_location) {
@@ -333,21 +356,21 @@ const DeclarationEditPage = () => {
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тип (1)" {...register('type_code')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Номер (7)" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label="Валюта (22)" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={`Сумма инвойса (22) ${watchedValues.currency_code || ''}`} type="number" {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={`Сумма инвойса (22) ${watchedValues.currency_code || ''}`} {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label="Страна отпр. (15)" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_code || ''} onChange={(c) => updateField('country_origin_code', c)} label="Происхождение (16)" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label="Назначение (17)" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="incoterms" value={watchedValues.incoterms_code || ''} onChange={(c) => updateField('incoterms_code', c)} label="Incoterms (20)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Город поставки (20)" {...register('delivery_place')} InputLabelProps={{ shrink: true }} placeholder="SHIJIAZHUANG" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Рейс/транспорт (21)" {...register('transport_on_border_id')} InputLabelProps={{ shrink: true }} placeholder="1:U3-9222" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Курс (23)" type="number" {...register('exchange_rate')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Курс (23)" {...register('exchange_rate')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="deal_nature" value={watchedValues.deal_nature_code || ''} onChange={(c) => updateField('deal_nature_code', c)} label="Хар. сделки (24)" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="transport_type" value={watchedValues.transport_type_border || ''} onChange={(c) => updateField('transport_type_border', c)} label="Транспорт (25)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Орган въезда (29)" {...register('entry_customs_code')} InputLabelProps={{ shrink: true }} placeholder="10005020" /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.trading_country_code || ''} onChange={(c) => updateField('trading_country_code', c)} label="Торг. страна (11)" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Мест (6)" type="number" {...register('total_packages_count')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Брутто, кг (35)" type="number" {...register('total_gross_weight')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Нетто, кг (38)" type="number" {...register('total_net_weight')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Брутто, кг (35)" {...register('total_gross_weight')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Нетто, кг (38)" {...register('total_net_weight')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={12} md={6}><TextField size="small" fullWidth label="Местонахождение товаров / СВХ (30)" {...register('goods_location')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="ИНН/КПП декларанта (14)" {...register('declarant_inn_kpp')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тамож. пост (29)" {...register('customs_office_code')} InputLabelProps={{ shrink: true }} placeholder="10005030" /></Grid>

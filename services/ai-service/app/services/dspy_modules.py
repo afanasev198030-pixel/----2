@@ -400,7 +400,13 @@ class HSCodeClassifier:
         self._dspy_module = None
         if _dspy_available:
             demos = self._get_demos()
-            self._dspy_module = dspy.Predict(HSCodeSignature, demos=demos)
+            module = dspy.Predict(HSCodeSignature)
+            if demos:
+                from dspy.teleprompt import LabeledFewShot
+                optimizer = LabeledFewShot(k=len(demos))
+                self._dspy_module = optimizer.compile(module, trainset=demos)
+            else:
+                self._dspy_module = module
 
     def classify(self, description: str, rag_results: list[dict], context: str = "") -> dict:
         from app.services.hs_classifier import classify as keyword_classify, _pad_hs_code
@@ -468,11 +474,14 @@ class HSCodeClassifier:
             (["frame", "рама ", "frame kit", "drone frame", "рама дрон"],
              "8806909000", "Части БПЛА прочие (рама)", 0.91),
             # АКБ LiPo (8507 60 — аккумуляторы литий-ионные)
-            (["lipo", "li-po", "аккумулятор lipo", "battery lipo", "battery pack", "mah", "22000mah", "6s lipo", "4s lipo"],
+            (["lipo", "li-po", "аккумулятор lipo", "battery lipo", "battery pack", "mah ", "22000mah", "6s lipo", "4s lipo"],
              "8507600000", "Аккумуляторы литий-ионные (LiPo)", 0.93),
-            # Антенна FPV/VTX (8529 10 — антенны и их части)
+            # Антенна FPV/VTX (8517 71 — антенны для приёмо-передачи данных)
             (["antenna", "антенна", "lhcp", "rhcp", "sma connector", "pagoda", "клевер", "clover", "5.8g antenna"],
-             "8529109000", "Антенны и отражатели антенн всех типов, их части", 0.92),
+             "8517711900", "Антенны для приёмо-передачи данных (VTX, FPV, 5.8G)", 0.92),
+            # Разъемы, коннекторы (8536 69 - штепсели и розетки)
+            (["connector", "коннектор", "разъем", "разъём", "plug", "socket", "pin ", "pin connector"],
+             "8536699008", "Штепсели и розетки", 0.85),
             # Приёмник (8526 92 — аппаратура дистанционного управления)
             (["receiver", "приемник", "приёмник", "elrs", "crossfire", "rxsr", "flysky", "frsky", "radiolink"],
              "8526920000", "Аппаратура дистанционного управления (приёмник RC)", 0.92),

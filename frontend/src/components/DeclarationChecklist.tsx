@@ -13,7 +13,7 @@ const CHECKS = [
   { key: 'receiver', label: '8. Получатель (графа 8)', field: 'receiver_counterparty_id', critical: true },
   { key: 'countries', label: '15-17. Страны (графы 15-17)', field: 'country_dispatch_code', critical: true },
   { key: 'incoterms', label: '20. Условия поставки (графа 20)', field: 'incoterms_code', critical: false },
-  { key: 'currency', label: '22. Валюта и сумма (графа 22)', field: 'currency_code', critical: true },
+  { key: 'currency', label: '22. Валюта и сумма (графа 22)', field: '_currency', critical: true },
   { key: 'items', label: '31-33. Товарные позиции заполнены', field: '_items', critical: true },
   { key: 'hs_code', label: '33. Код ТН ВЭД указан (10 знаков)', field: '_hs', critical: true },
   { key: 'weights', label: '35, 38. Вес брутто/нетто указан', field: '_weights', critical: true },
@@ -30,6 +30,8 @@ const DeclarationChecklist = ({ declaration, items, formValues }: ChecklistProps
       passed = items.length > 0;
     } else if (check.field === '_hs') {
       passed = items.length > 0 && items.every((i: any) => i.hs_code && i.hs_code.length >= 10);
+    } else if (check.field === '_currency') {
+      passed = !!(d.currency_code && d.total_invoice_value);
     } else if (check.field === '_weights') {
       // Check both item-level AND declaration-level weights
       const hasItemWeights = items.length > 0 && items.every((i: any) => i.gross_weight && i.net_weight);

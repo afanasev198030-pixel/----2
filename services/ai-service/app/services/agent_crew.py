@@ -227,7 +227,12 @@ class DeclarationCrew:
             doc_sections = []
             for d in docs:
                 label = d["doc_type"].upper()
-                text_chunk = (d.get("text") or "")[:4000]
+                text = d.get("text") or ""
+                # For specification, items are often at the end. Take more text.
+                if d["doc_type"] == "specification":
+                    text_chunk = text[:8000]
+                else:
+                    text_chunk = text[:4000]
                 doc_sections.append(f"=== {label}: {d['filename']} ===\n{text_chunk}")
 
             combined_text = "\n\n".join(doc_sections)
@@ -236,7 +241,7 @@ class DeclarationCrew:
             resp = client.chat.completions.create(
                 model=get_model(),
                 messages=[
-                    {"role": "system", "content": "Ты эксперт по таможенному оформлению. Извлеки данные из нескольких документов одного комплекта. Ответь ТОЛЬКО валидным JSON."},
+                    {"role": "system", "content": "Ты эксперт по таможенному оформлению. Извлеки данные из нескольких документов одного комплекта. Ответь ТОЛЬКО валидным JSON. ВАЖНО: description должен содержать ПОЛНОЕ наименование товара (марка, модель, артикул), ЗАПРЕЩЕНО писать 'Item 1', 'Товар 1'."},
                     {"role": "user", "content": f"""Из документов ниже извлеки:
 
 contract: {{contract_number, contract_date, seller: {{name, country_code, address, inn, kpp}}, buyer: {{name, country_code, address, inn, kpp}}, currency, incoterms, payment_terms}}
@@ -245,6 +250,7 @@ tech_description: {{products: [{{product_name, purpose, materials, technical_spe
 transport_invoice: {{freight_amount, freight_currency, carrier_name, awb_number, transport_type}}
 
 Заполни только те разделы, для которых есть документы. Если документа нет — не включай раздел.
+CRITICAL: В specification.items.description пиши РЕАЛЬНОЕ название товара из текста, а не заглушки.
 
 {combined_text[:16000]}
 
@@ -647,8 +653,22 @@ JSON:"""},
         origin_code = inv.get("country_origin") or (packing.get("items", [{}])[0].get("country_origin") if packing.get("items") else None)
 
         # Источник items: спецификация > инвойс
-        raw_items = spec.get("items", []) if spec.get("items") else inv.get("items", [])
-        items_source = "specification" if spec.get("items") else "invoice"
+        spec_items = spec.get("items", [])
+        inv_items = inv.get("items", [])
+        
+        # Check if spec items are placeholders
+        spec_has_bad = any(
+            not it.get("description") or str(it.get("description", "")).strip().lower().startswith("item ")
+            for it in spec_items
+        )
+        if spec_has_bad and len(inv_items) > 0:
+            logger.warning("spec_items_bad_fallback_to_invoice", spec_count=len(spec_items), inv_count=len(inv_items))
+            raw_items = inv_items
+            items_source = "invoice (fallback from spec)"
+        else:
+            raw_items = spec_items if spec_items else inv_items
+            items_source = "specification" if spec_items else "invoice"
+            
         logger.info("items_source", source=items_source, count=len(raw_items))
 
         items = []
