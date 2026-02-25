@@ -1,15 +1,15 @@
 """knowledge articles and checklists
 
-Revision ID: 009
-Revises: 008
+Revision ID: 009_knowledge
+Revises: 008_freight
 Create Date: 2026-02-19
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
-revision = '009'
-down_revision = '008'
+revision = '009_knowledge'
+down_revision = '008_freight'
 branch_labels = None
 depends_on = None
 
