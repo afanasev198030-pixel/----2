@@ -662,6 +662,30 @@ const SettingsPage = () => {
               onClick={handleOptimize} disabled={optimizing}>
               {optimizing ? 'Оптимизация...' : 'Запустить оптимизацию'}
             </Button>
+            <Button variant="contained" size="small" fullWidth color="primary" component="label"
+              startIcon={optimizing ? <CircularProgress size={16} color="inherit" /> : <UploadIcon />}
+              disabled={optimizing} sx={{ mt: 1 }}>
+              Обучить на ГТД (PDF)
+              <input type="file" hidden multiple accept="application/pdf" onChange={async (e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                setOptimizing(true);
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) {
+                  formData.append('files', files[i]);
+                }
+                try {
+                  const res = await client.post('/ai/train-from-gtd', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                  setMessage({ type: 'success', text: `Обучение завершено. Обработано файлов: ${res.data.files_processed}, сохранено прецедентов: ${res.data.precedents_saved}` });
+                  await loadTrainingStats();
+                } catch (err: any) {
+                  setMessage({ type: 'error', text: err?.response?.data?.detail || 'Ошибка при обучении на ГТД' });
+                } finally {
+                  setOptimizing(false);
+                  e.target.value = '';
+                }
+              }} />
+            </Button>
           </Grid>
         </Grid>
 
