@@ -196,6 +196,10 @@ class ApplyParsedRequest(BaseModel):
     # Confidence
     confidence: Optional[float] = None
 
+    # Rules engine output
+    evidence_map: Optional[dict] = None
+    issues: Optional[list[dict]] = None
+
 
 class ApplyParsedResponse(BaseModel):
     declaration_id: str
@@ -204,6 +208,8 @@ class ApplyParsedResponse(BaseModel):
     counterparties_created: int
     documents_linked: int
     message: str
+    issues: list[dict] = []
+    evidence_map: Optional[dict] = None
 
 
 @router.post("/{declaration_id}/apply-parsed", response_model=ApplyParsedResponse)
@@ -275,33 +281,35 @@ async def apply_parsed_data(
         currency = data.currency or declaration.currency_code
         if data.currency:
             declaration.currency_code = data.currency
+
+        # Всегда подтягивать курс ЦБ для не-рублёвых валют
+        if currency and currency.upper() != "RUB":
+            try:
+                async with httpx.AsyncClient(timeout=10) as http:
+                    resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest")
+                    resp.raise_for_status()
+                    rates = resp.json().get("rates", {})
+                    rate_value = rates.get(currency.upper())
+                    if rate_value and float(rate_value) > 0:
+                        exchange_rate = Decimal(str(rate_value))
+                    else:
+                        logger.warning("currency_rate_not_found", currency=currency, available=list(rates.keys())[:10])
+            except Exception as conv_err:
+                logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
+
+            declaration.exchange_rate = exchange_rate
+            logger.info("exchange_rate_fetched", currency=currency, rate=float(exchange_rate))
+
         if data.total_amount is not None:
             declaration.total_invoice_value = Decimal(str(data.total_amount))
-            # Рассчитать таможенную стоимость в рублях
-            if currency and currency.upper() != "RUB":
-                try:
-                    async with httpx.AsyncClient(timeout=10) as http:
-                        resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest")
-                        resp.raise_for_status()
-                        rates = resp.json().get("rates", {})
-                        rate_value = rates.get(currency.upper())
-                        if rate_value and float(rate_value) > 0:
-                            exchange_rate = Decimal(str(rate_value))
-                            total_rub = Decimal(str(data.total_amount)) * exchange_rate
-                        else:
-                            logger.warning("currency_rate_not_found", currency=currency, available=list(rates.keys())[:10])
-                            total_rub = Decimal(str(data.total_amount))
-                except Exception as conv_err:
-                    logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
-                    total_rub = Decimal(str(data.total_amount))
-                declaration.total_customs_value = total_rub.quantize(Decimal("0.01"))
-                declaration.exchange_rate = exchange_rate
-                logger.info("currency_converted",
-                    currency=currency, amount=data.total_amount,
-                    rate=float(exchange_rate), rub=float(total_rub))
+            if exchange_rate > 0 and exchange_rate != Decimal("1"):
+                total_rub = Decimal(str(data.total_amount)) * exchange_rate
             else:
-                declaration.total_customs_value = Decimal(str(data.total_amount))
-                exchange_rate = Decimal("1")
+                total_rub = Decimal(str(data.total_amount))
+            declaration.total_customs_value = total_rub.quantize(Decimal("0.01"))
+            logger.info("currency_converted",
+                currency=currency, amount=data.total_amount,
+                rate=float(exchange_rate), rub=float(total_rub))
         if data.incoterms:
             declaration.incoterms_code = data.incoterms
         if data.country_origin:
@@ -450,6 +458,10 @@ async def apply_parsed_data(
             counters["documents"] += 1
 
         # --- 5. Логирование ---
+        parsed_issues = data.issues or []
+        error_issues = [i for i in parsed_issues if i.get("severity") == "error"]
+        warning_issues = [i for i in parsed_issues if i.get("severity") == "warning"]
+
         log_entry = DeclarationLog(
             declaration_id=declaration.id,
             user_id=current_user.id,
@@ -463,6 +475,10 @@ async def apply_parsed_data(
                 "invoice_number": data.invoice_number,
                 "currency": data.currency,
                 "total_amount": float(data.total_amount) if data.total_amount else None,
+                "rules_issues_errors": len(error_issues),
+                "rules_issues_warnings": len(warning_issues),
+                "evidence_map": data.evidence_map,
+                "issues": parsed_issues,
             },
         )
         db.add(log_entry)
@@ -486,6 +502,8 @@ async def apply_parsed_data(
             counterparties_created=counters["counterparties"],
             documents_linked=counters["documents"],
             message=f"Данные применены: {counters['items']} позиций, {counters['counterparties']} контрагентов",
+            issues=parsed_issues,
+            evidence_map=data.evidence_map,
         )
 
     except Exception as e:

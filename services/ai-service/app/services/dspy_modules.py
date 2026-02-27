@@ -345,6 +345,7 @@ class PackingExtractor:
             "package_type": parsed.package_type,
             "total_gross_weight": parsed.total_gross_weight,
             "total_net_weight": parsed.total_net_weight,
+            "items": parsed.items,   # per-item weights for graphs 35/38
             "confidence": parsed.confidence,
             "source": "regex",
             "raw_text": parsed.raw_text,
