@@ -57,6 +57,7 @@ JSON: {{"freight_amount": ..., "freight_currency": "...", "carrier_name": "...",
             ],
             temperature=0,
             max_tokens=800,
+            response_format={"type": "json_object"},
         )
 
         text = resp.choices[0].message.content.strip()

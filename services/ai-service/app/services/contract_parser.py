@@ -268,6 +268,7 @@ JSON:"""},
             ],
             temperature=0,
             max_tokens=1500,
+            response_format={"type": "json_object"},
         )
         text = resp.choices[0].message.content.strip()
         if text.startswith("```"):

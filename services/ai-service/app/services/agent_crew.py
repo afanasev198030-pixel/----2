@@ -510,6 +510,7 @@ JSON:"""},
                 ],
                 temperature=0,
                 max_tokens=4000,
+                response_format={"type": "json_object"},
             )
 
             text = resp.choices[0].message.content.strip()
@@ -711,9 +712,10 @@ JSON:"""},
         result = self._compile_by_rules(parsed_docs, result)
 
         # --- Шаг 2.5: CrewAI мультиагентная оркестрация (если доступна) ---
-        if _crewai_available:
-            self._progress("crewai", "CrewAI агенты анализируют декларацию...", 75)
-            result = self._run_crewai(parsed_docs, result)
+        # Отключено для оптимизации: дублирует логику шагов 3 и 4, тратит токены и время.
+        # if _crewai_available:
+        #     self._progress("crewai", "CrewAI агенты анализируют декларацию...", 72)
+        #     result = self._run_crewai(parsed_docs, result)
 
         # --- Шаг 3: Классификация ТН ВЭД для позиций БЕЗ кода ---
         items = result.get("items", [])

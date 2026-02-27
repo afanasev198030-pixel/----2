@@ -855,6 +855,7 @@ Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items el
             ],
             temperature=0,
             max_tokens=4000,
+            response_format={"type": "json_object"},
         )
         text = resp.choices[0].message.content.strip()
         logger.debug("llm_enrich_raw_response", response_length=len(text), first_100=text[:100])
