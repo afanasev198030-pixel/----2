@@ -88,6 +88,7 @@ items: массив товаров, каждый:
             ],
             temperature=0,
             max_tokens=4000,
+            response_format={"type": "json_object"},
         )
 
         text = resp.choices[0].message.content.strip()
