@@ -120,6 +120,7 @@ services:
       - "8003:8003"
     volumes:
       - ./services/ai-service/app:/app/app
+      - ./docs:/app/docs:ro
     depends_on:
       - core-api
     environment:

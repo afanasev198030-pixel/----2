@@ -23,6 +23,124 @@ from app.services.dspy_modules import (
 )
 from app.services.index_manager import get_index_manager
 from app.services.ocr_service import extract_text
+from app.services.rules_engine import (
+    EvidenceTracker, validate_declaration,
+    build_graph_rules_prompt, get_source_priority_map,
+    build_full_rules_for_llm,
+)
+
+
+def _classify_invoice_content(text: str, filename: str = "") -> str:
+    """
+    Определяет тип инвойса по содержанию документа с балльной системой.
+
+    Читает текст и подсчитывает сигналы двух категорий:
+      - транспортные сигналы: фрахт, перевозка, airline, surcharge, AWB и т.д.
+      - товарные сигналы: описание товаров, ТН ВЭД, кол-во, цена за единицу и т.д.
+
+    Возвращает:
+      "transport_invoice" — если транспортные сигналы значительно преобладают
+      "invoice"           — если товарные сигналы преобладают или ничья
+    """
+    t = (text[:6000].lower()) if text else ""
+    fn = filename.lower()
+
+    # ── Транспортные сигналы (фраза → вес) ─────────────────────────────────
+    _TRANSPORT: list[tuple[str, float]] = [
+        # Очень сильные — прямое название транспортных услуг
+        ("air freight charge",      12.0),
+        ("air freight",             10.0),
+        ("ocean freight",           10.0),
+        ("sea freight",             10.0),
+        ("freight charge",          9.0),
+        ("freight cost",            9.0),
+        ("airway bill",             9.0),
+        ("air waybill",             9.0),
+        ("авиафрахт",               10.0),
+        ("стоимость перевозки",     9.0),
+        ("за перевозку",            9.0),
+        ("транспортные услуги",     9.0),
+        ("транспортные расходы",    8.0),
+        ("фрахт",                   9.0),
+        # Средние — характерны для транспортных инвойсов
+        ("handling charge",         7.0),
+        ("fuel surcharge",          8.0),
+        ("security surcharge",      7.0),
+        ("terminal handling",       7.0),
+        ("documentation fee",       6.0),
+        ("customs clearance fee",   6.0),
+        ("доставка груза",          7.0),
+        ("перевозка груза",         8.0),
+        ("airline",                 5.0),
+        ("carrier",                 5.0),
+        ("freight forwarder",       6.0),
+        ("экспедитор",              5.0),
+        ("перевозчик",              5.0),
+        ("flight no",               6.0),
+        ("flight number",           6.0),
+        ("номер рейса",             6.0),
+        ("surcharge",               4.0),
+        ("shipping company",        4.0),
+    ]
+
+    # ── Товарные сигналы (фраза → вес) ──────────────────────────────────────
+    _GOODS: list[tuple[str, float]] = [
+        # Очень сильные — прямое описание товаров
+        ("description of goods",    10.0),
+        ("наименование товара",     10.0),
+        ("goods description",       9.0),
+        ("commodity description",   9.0),
+        ("hs code",                 9.0),
+        ("hs-code",                 9.0),
+        ("тн вэд",                  9.0),
+        ("country of origin",       7.0),
+        ("страна происхождения",    7.0),
+        ("unit price",              8.0),
+        ("цена за единицу",         8.0),
+        ("цена за шт",              7.0),
+        # Средние — характерны для товарного инвойса
+        ("quantity",                5.0),
+        ("кол-во",                  5.0),
+        ("количество",              4.0),
+        ("pcs",                     4.0),
+        ("pieces",                  4.0),
+        ("шт",                      3.0),
+        ("net weight",              4.0),
+        ("gross weight",            4.0),
+        ("incoterms",               5.0),
+        ("инкотермс",               5.0),
+        ("part number",             4.0),
+        ("артикул",                 4.0),
+        ("model",                   3.0),
+        ("item no",                 4.0),
+    ]
+
+    transport_score: float = sum(w for kw, w in _TRANSPORT if kw in t)
+    goods_score: float = sum(w for kw, w in _GOODS if kw in t)
+
+    # AWB-номер по паттерну NNN-NNNNNNN в тексте — очень сильный транспортный сигнал
+    if re.search(r'\b\d{3}[-]\d{7,8}\b', t):
+        transport_score += 8.0
+    # AWB-паттерн в начале имени файла
+    fn_stripped = re.sub(r'\.(pdf|jpg|jpeg|png|tif|tiff)$', '', fn).strip()
+    if re.search(r'^\d{3}[-_ ]?\d{7,8}', fn_stripped):
+        transport_score += 10.0
+
+    logger.debug(
+        "invoice_content_score",
+        filename=filename,
+        transport_score=round(transport_score, 1),
+        goods_score=round(goods_score, 1),
+        decision="transport_invoice" if (
+            transport_score >= 15
+            or (transport_score > goods_score and transport_score - goods_score >= 5)
+        ) else "invoice",
+    )
+
+    # Транспортный: балл ≥ 15 ИЛИ превышает товарный на 5+ очков
+    if transport_score >= 15 or (transport_score > goods_score and transport_score - goods_score >= 5):
+        return "transport_invoice"
+    return "invoice"
 
 
 def _detect_doc_type(filename: str, text: str) -> str:
@@ -37,51 +155,57 @@ def _detect_doc_type(filename: str, text: str) -> str:
     if ("inv" in fn_lower and "pl" in fn_lower) or ("инвойс" in fn_lower and "упаков" in fn_lower):
         return "invoice"
 
-    # --- По имени файла ---
-    if any(k in fn_lower for k in ["invoice", "инвойс", "счёт", "счет", "inv-", "inv_"]):
-        # Транспортный инвойс — отличаем от товарного
-        if any(k in fn_lower for k in ["transport", "freight", "shipping", "доставк"]):
-            return "transport_invoice"
-        # Проверяем содержимое — если это инвойс за перевозку
-        if any(k in text_lower for k in ["freight charge", "air freight", "shipping charge", "за перевозку", "транспортные услуги", "air waybill"]):
-            return "transport_invoice"
-        return "invoice"
+    # --- По имени файла: однозначные типы ---
     if any(k in fn_lower for k in ["contract", "договор", "контракт"]):
         return "contract"
     if any(k in fn_lower for k in ["packing", "упаков", "packing_list", "packing-list"]):
         return "packing_list"
     if re.search(r'\bpl\b', fn_lower) and "inv" not in fn_lower:
         return "packing_list"
-    # AWB по паттерну NNN-NNNNNNNN или NNNNNNNNNNN (авианакладная)
-    if re.search(r'^\d{3}[-_ ]?\d{8}', fn_lower.replace('.pdf', '').replace('.jpg', '').strip()):
-        return "transport_doc"
-    if any(k in fn_lower for k in ["awb", "waybill", "накладная"]):
+    if any(k in fn_lower for k in ["awb", "waybill", "накладная", "cmr"]):
         return "transport_doc"
     if any(k in fn_lower for k in ["spec", "спец"]):
         return "specification"
     if any(k in fn_lower for k in ["teh", "тех"]):
         return "tech_description"
 
-    # --- По содержимому (для файлов без очевидного имени) ---
+    # --- Если это инвойс (по имени или содержимому) —
+    #     используем балльную систему по содержанию ---
+    is_invoice_by_name = any(k in fn_lower for k in [
+        "invoice", "инвойс", "счёт", "счет", "inv-", "inv_",
+    ])
+    is_invoice_by_content = (
+        ("invoice" in text_lower or "инвойс" in text_lower or "счёт" in text_lower)
+        and ("total" in text_lower or "amount" in text_lower or "итого" in text_lower)
+    )
 
-    # Транспортный инвойс
-    if ("invoice" in text_lower or "счёт" in text_lower) and any(k in text_lower for k in [
-        "freight", "shipping charge", "air freight", "за перевозку", "транспортные услуги"
-    ]):
-        return "transport_invoice"
+    if is_invoice_by_name or is_invoice_by_content:
+        return _classify_invoice_content(text, filename)
 
-    # Товарный инвойс
-    if "invoice" in text_lower and ("total" in text_lower or "amount" in text_lower):
-        return "invoice"
+    # --- По содержимому (файлы без очевидного имени) ---
+
+    # AWB по паттерну NNN-NNNNNNNN в имени
+    fn_stripped = re.sub(r'\.(pdf|jpg|jpeg|png|tif|tiff)$', '', fn_lower).strip()
+    if re.search(r'^\d{3}[-_ ]?\d{7,8}', fn_stripped):
+        return "transport_doc"
+    if "air waybill" in text_lower or re.search(r'\bawb\b', text_lower):
+        return "transport_doc"
 
     # Контракт
-    if any(k in text_lower for k in ["contract №", "contract no", "договор №", "контракт №", "предмет договора", "subject of"]):
+    if any(k in text_lower for k in [
+        "contract №", "contract no", "договор №", "контракт №",
+        "предмет договора", "subject of contract",
+    ]):
         return "contract"
 
-    # Спецификация — таблица с товарами, количеством, ценой
-    if any(k in text_lower for k in ["specification", "спецификация", "приложение к контракту", "приложение к договору"]):
+    # Спецификация
+    if any(k in text_lower for k in [
+        "specification", "спецификация",
+        "приложение к контракту", "приложение к договору",
+    ]):
         return "specification"
-    if any(k in text_lower for k in ["наименование товара", "кол-во", "цена за ед", "unit price"]) and "total" in text_lower:
+    if any(k in text_lower for k in ["наименование товара", "кол-во", "цена за ед", "unit price"]) \
+            and "total" in text_lower:
         return "specification"
 
     # Техописание
@@ -96,16 +220,37 @@ def _detect_doc_type(filename: str, text: str) -> str:
     if "packing list" in text_lower or "gross weight" in text_lower:
         return "packing_list"
 
-    # AWB
-    if "air waybill" in text_lower or re.search(r'\bawb\b', text_lower):
-        return "transport_doc"
-
     return "other"
 
 
 # Кэш парсинга по MD5 хэшу файла (in-memory, до перезапуска)
 _parse_cache: dict = {}
 _CACHE_MAX = 200
+
+
+def _count_good_items(items: list) -> int:
+    """Считает позиции с содержательным описанием (не 'Item N', не пустые)."""
+    good = 0
+    for item in (items or []):
+        desc = (item.get("description") or item.get("commercial_name") or "").strip()
+        if desc and not re.match(r'^item\s*\d+$', desc.strip(), re.I):
+            good += 1
+    return good
+
+
+def _invoice_score(inv: dict) -> tuple:
+    """
+    Оценка качества инвойса для выбора лучшего из нескольких.
+    Приоритеты (по убыванию важности):
+      1. Количество позиций с нормальными описаниями (не «Item N»)
+      2. Общее количество позиций
+      3. Уверенность парсера (confidence)
+    """
+    items = inv.get("items") or []
+    good = _count_good_items(items)
+    total = len(items)
+    conf = inv.get("confidence") or 0.0
+    return (good, total, conf)
 
 
 def _safe_float(value) -> Optional[float]:
@@ -212,6 +357,95 @@ class DeclarationCrew:
 
         return result
 
+    def _match_items_to_techop(self, invoice_items: list, tech_products: list) -> list:
+        """LLM-матчинг: сопоставить позиции инвойса с товарами из тех.описания.
+
+        Работает поверх языкового барьера (инвойс CN/EN, тех.описание RU/EN).
+        Возвращает обогащённые позиции: description из тех.описания + hs_description для классификации.
+        """
+        if not tech_products or not invoice_items:
+            return invoice_items
+
+        try:
+            from app.config import get_settings
+            if not get_settings().has_llm:
+                return invoice_items
+
+            import json as _json
+            from app.services.llm_client import get_llm_client, get_model
+
+            inv_lines = "\n".join([
+                f"[{i + 1}] desc={it.get('description', '') or '(пусто)'}  qty={it.get('quantity')}  price={it.get('unit_price')}"
+                for i, it in enumerate(invoice_items)
+            ])
+            tech_lines = "\n".join([
+                f"[{i + 1}] name={tp.get('product_name', '')}  purpose={tp.get('purpose', '')}  "
+                f"specs={tp.get('technical_specs', '')}  hs_desc={tp.get('suggested_hs_description', '')}"
+                for i, tp in enumerate(tech_products)
+            ])
+
+            client = get_llm_client()
+            resp = client.chat.completions.create(
+                model=get_model(),
+                messages=[
+                    {"role": "system", "content": (
+                        "Ты эксперт по таможенному оформлению РФ. "
+                        "Сопоставь позиции инвойса с товарами из технических описаний — документы могут быть на разных языках (CN/EN/RU). "
+                        "Ответь ТОЛЬКО валидным JSON."
+                    )},
+                    {"role": "user", "content": f"""Сопоставь позиции инвойса с техническими описаниями товаров.
+
+ПОЗИЦИИ ИНВОЙСА:
+{inv_lines}
+
+ТОВАРЫ ИЗ ТЕХ. ОПИСАНИЯ:
+{tech_lines}
+
+Для каждой позиции инвойса верни:
+- invoice_index: номер позиции инвойса (1-based)
+- tech_index: номер из тех.описания (1-based, null если нет совпадения)
+- description_ru: полное название товара для графы 31 ДТ (из тех.описания, на русском)
+- hs_description: описание для классификации ТН ВЭД (из suggested_hs_description или составь сам — материал + назначение + тип)
+- match_confidence: уверенность совпадения (0.0–1.0)
+
+JSON: {{"matches": [...]}}"""},
+                ],
+                temperature=0,
+                max_tokens=2000,
+            )
+
+            text = resp.choices[0].message.content.strip()
+            if text.startswith("```"):
+                text = text.split("```")[1]
+                if text.startswith("json"):
+                    text = text[4:]
+            matches = _json.loads(text).get("matches", [])
+
+            result = [dict(it) for it in invoice_items]
+            for m in matches:
+                idx = (m.get("invoice_index") or 0) - 1
+                if not (0 <= idx < len(result)):
+                    continue
+                desc_ru = (m.get("description_ru") or "").strip()
+                hs_desc = (m.get("hs_description") or "").strip()
+                conf = float(m.get("match_confidence") or 0.5)
+                if desc_ru:
+                    result[idx]["description_invoice"] = result[idx].get("description", "")
+                    result[idx]["description"] = desc_ru
+                    result[idx]["commercial_name"] = desc_ru
+                    result[idx]["description_source"] = "tech_description"
+                if hs_desc:
+                    result[idx]["hs_description_for_classification"] = hs_desc
+                result[idx]["techop_match_confidence"] = conf
+                logger.info("techop_matched",
+                            invoice_desc=(invoice_items[idx].get("description") or "")[:40],
+                            tech_desc=desc_ru[:60], confidence=conf)
+            return result
+
+        except Exception as e:
+            logger.warning("techop_match_failed", error=str(e))
+            return invoice_items
+
     def _batch_parse_secondary(self, docs: list[dict], parsed_docs: dict) -> dict:
         """Батч-парсинг контракта + спеки + ТехОп + транспорт одним LLM-вызовом."""
         try:
@@ -237,11 +471,29 @@ class DeclarationCrew:
 
             combined_text = "\n\n".join(doc_sections)
 
+            from app.config import get_settings as _get_settings
+            _settings = _get_settings()
+            _rules_hint = build_graph_rules_prompt(_settings.CORE_API_URL)
+
+            system_prompt = (
+                "Ты эксперт по таможенному оформлению РФ. Извлеки данные из нескольких документов одного комплекта. "
+                "Ответь ТОЛЬКО валидным JSON.\n\n"
+                "Требования к форматам:\n"
+                "- Страны: ISO 3166-1 alpha-2 (CN, RU, DE…)\n"
+                "- Валюта: ISO 4217 (USD, EUR, CNY…)\n"
+                "- Числа: убрать пробелы, запятые заменить на точки\n"
+                "- ИНН: только цифры (10 или 12 знаков), КПП: 9 цифр\n"
+                "- Если данных нет в документе — оставь null\n"
+                "- При конфликте между документами: контракт > инвойс > packing list"
+            )
+            if _rules_hint:
+                system_prompt += f"\n\n{_rules_hint}"
+
             client = get_llm_client()
             resp = client.chat.completions.create(
                 model=get_model(),
                 messages=[
-                    {"role": "system", "content": "Ты эксперт по таможенному оформлению. Извлеки данные из нескольких документов одного комплекта. Ответь ТОЛЬКО валидным JSON. ВАЖНО: description должен содержать ПОЛНОЕ наименование товара (марка, модель, артикул), ЗАПРЕЩЕНО писать 'Item 1', 'Товар 1'."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": f"""Из документов ниже извлеки:
 
 contract: {{contract_number, contract_date, seller: {{name, country_code, address, inn, kpp}}, buyer: {{name, country_code, address, inn, kpp}}, currency, incoterms, payment_terms}}
@@ -407,10 +659,30 @@ JSON:"""},
 
             if doc_type == "invoice":
                 self._progress("parsing", f"[{i+1}/{total_files}] AI: инвойс...", pct)
-                parsed_docs["invoice"] = self.invoice_extractor.extract(file_bytes, filename)
-                parsed_docs["invoice"]["_filename"] = filename
-                parsed_docs["invoice"]["_cache_type"] = "invoice"
-                _parse_cache[file_hash] = parsed_docs["invoice"]
+                new_inv = self.invoice_extractor.extract(file_bytes, filename)
+                new_inv["_filename"] = filename
+                new_inv["_cache_type"] = "invoice"
+                _parse_cache[file_hash] = new_inv
+                # Если уже есть инвойс — выбираем лучший по качеству описаний, затем по кол-ву позиций
+                prev_inv = parsed_docs.get("invoice")
+                if prev_inv:
+                    prev_score = _invoice_score(prev_inv)
+                    new_score = _invoice_score(new_inv)
+                    prev_good, prev_total, _ = prev_score
+                    new_good, new_total, _ = new_score
+                    if new_score > prev_score:
+                        parsed_docs["invoice"] = new_inv
+                        logger.info("invoice_replaced",
+                                    prev=prev_inv.get("_filename"), new=filename,
+                                    prev_good=prev_good, new_good=new_good,
+                                    prev_items=prev_total, new_items=new_total)
+                    else:
+                        logger.info("invoice_kept",
+                                    kept=prev_inv.get("_filename"), skipped=filename,
+                                    kept_good=prev_good, skipped_good=new_good,
+                                    kept_items=prev_total, skipped_items=new_total)
+                else:
+                    parsed_docs["invoice"] = new_inv
             elif doc_type == "packing_list":
                 self._progress("parsing", f"[{i+1}/{total_files}] AI: упаковочный лист...", pct)
                 parsed_docs["packing"] = self.packing_extractor.extract(file_bytes, filename)
@@ -430,9 +702,14 @@ JSON:"""},
             self._progress("parsing", f"AI: батч-парсинг {len(secondary_texts)} документов...", 60)
             parsed_docs = self._batch_parse_secondary(secondary_texts, parsed_docs)
 
-        # --- Шаг 2: Компиляция данных декларации ---
+        # --- Шаг 2: Компиляция данных декларации (хардкод-слияние) ---
         self._progress("compiling", "Компиляция данных декларации...", 70)
         result = self._compile_declaration(parsed_docs)
+
+        # --- Шаг 2.1: LLM-компиляция по правилам граф ДТ из БД ---
+        # Повторно вызывает LLM с полными правилами, перекрывает хардкод-значения
+        self._progress("compiling", "AI применяет правила заполнения граф ДТ...", 73)
+        result = self._compile_by_rules(parsed_docs, result)
 
         # --- Шаг 2.5: CrewAI мультиагентная оркестрация (если доступна) ---
         # Отключено для оптимизации: дублирует логику шагов 3 и 4, тратит токены и время.
@@ -479,10 +756,16 @@ JSON:"""},
                 continue
 
             if desc:
+                # Для классификации ТН ВЭД: приоритет — hs_description из тех.описания,
+                # так как оно специально сформулировано для таможенной классификации
+                hs_classify_desc = item.get("hs_description_for_classification") or desc
+                if hs_classify_desc != desc:
+                    logger.info("hs_using_techop_desc", item_no=j+1,
+                                invoice_desc=desc[:50], techop_desc=hs_classify_desc[:50])
                 # RAG поиск
-                rag_results = self.index_manager.search_hs_codes(desc)
+                rag_results = self.index_manager.search_hs_codes(hs_classify_desc)
                 # DSPy/keyword классификация
-                hs_result = self.hs_classifier.classify(desc, rag_results, context=decl_context)
+                hs_result = self.hs_classifier.classify(hs_classify_desc, rag_results, context=decl_context)
                 hs_code = hs_result.get("hs_code", "")
 
                 # Гарантируем 10 знаков
@@ -582,6 +865,8 @@ JSON:"""},
 
     def _compile_declaration(self, parsed_docs: dict) -> dict:
         """Собрать данные декларации из всех распознанных документов."""
+        ev = EvidenceTracker()
+
         inv = self._to_dict(parsed_docs.get("invoice"))
         contract = self._to_dict(parsed_docs.get("contract"))
         packing = self._to_dict(parsed_docs.get("packing"))
@@ -654,24 +939,37 @@ JSON:"""},
             return code
         origin_code = inv.get("country_origin") or (packing.get("items", [{}])[0].get("country_origin") if packing.get("items") else None)
 
-        # Источник items: спецификация > инвойс
-        spec_items = spec.get("items", [])
+        # Источник items: ИНВОЙС НА ТОВАРЫ (приоритет) > Packing List.
+        # Спецификация НЕ является источником позиций для декларации —
+        # она содержит весь заказ, а на таможню едет только то, что в инвойсе/PL.
+        # Спецификация используется только для перекрёстной сверки.
         inv_items = inv.get("items", [])
-        
-        # Check if spec items are placeholders
-        spec_has_bad = any(
-            not it.get("description") or str(it.get("description", "")).strip().lower().startswith("item ")
-            for it in spec_items
-        )
-        if spec_has_bad and len(inv_items) > 0:
-            logger.warning("spec_items_bad_fallback_to_invoice", spec_count=len(spec_items), inv_count=len(inv_items))
+        packing_items = packing.get("items", []) if packing else []
+
+        if inv_items:
             raw_items = inv_items
-            items_source = "invoice (fallback from spec)"
+            items_source = "invoice"
+        elif packing_items:
+            raw_items = packing_items
+            items_source = "packing_list"
         else:
-            raw_items = spec_items if spec_items else inv_items
-            items_source = "specification" if spec_items else "invoice"
-            
+            raw_items = []
+            items_source = "none"
+            logger.warning("no_items_found", msg="Нет позиций в инвойсе и PL — загрузите инвойс на товары")
+
         logger.info("items_source", source=items_source, count=len(raw_items))
+
+        # Перекрёстная сверка со спецификацией (только предупреждение, не замена)
+        spec_items = spec.get("items", [])
+        if spec_items and inv_items:
+            if len(spec_items) != len(inv_items):
+                logger.info(
+                    "spec_vs_invoice_count_mismatch",
+                    spec_count=len(spec_items),
+                    inv_count=len(inv_items),
+                    msg="Количество позиций в спецификации и инвойсе различается — это нормально, "
+                        "спецификация содержит весь заказ",
+                )
 
         items = []
         for item_data in raw_items:
@@ -702,54 +1000,148 @@ JSON:"""},
                 "net_weight": _safe_float(item_data.get("net_weight")),
             })
 
-        # ── Обогащение из техописаний (ТехОп) ──
+        # ── Обогащение из техописаний (ТехОп) через LLM-матчинг ──
         if tech_descs and items:
             all_tech_products = []
             for td in tech_descs:
                 all_tech_products.extend(td.get("products", []))
             if all_tech_products:
-                for item in items:
-                    item_desc_lower = (item.get("description") or "").lower()
-                    for tp in all_tech_products:
-                        tp_name = (tp.get("product_name") or "").lower()
-                        # Fuzzy match: если название техописания содержится в описании товара или наоборот
-                        if tp_name and (tp_name[:20] in item_desc_lower or item_desc_lower[:20] in tp_name):
-                            # Обогащаем описание техническими характеристиками
-                            enrichment = " | ".join(filter(None, [
-                                tp.get("purpose"), tp.get("materials"), tp.get("technical_specs"),
-                                tp.get("suggested_hs_description"),
-                            ]))
-                            if enrichment:
-                                item["tech_description"] = enrichment
-                                item["description"] = f"{item['description']} | {enrichment}"
-                                logger.info("item_enriched_from_techop", desc=item["description"][:80])
-                            break
+                logger.info("techop_match_start", items=len(items), tech_products=len(all_tech_products))
+                items = self._match_items_to_techop(items, all_tech_products)
 
-        # Обогащение весами: packing list (приоритет) > спецификация > инвойс
+        # Веса (гр. 35/38): берём по каждой позиции из PL, не суммарные.
+        # Спецификация НЕ источник весов.
+        # Алгоритм:
+        #   1. PL содержит per-item weights → матчим по описанию или позиции
+        #   2. Если PL нет per-item — смотрим item-weights из инвойса
+        #   3. Fallback: пропорционально по доле стоимости (НЕ поровну)
+        #   4. Суммарные веса для декларации = sum(item weights)
+        pl_items = packing.get("items") or []
+
+        def _desc_key(desc: str) -> str:
+            """Нормализованный ключ описания для матчинга."""
+            return re.sub(r'[^a-zа-я0-9]', ' ', (desc or "").lower()).split()
+
+        def _desc_similarity(a: str, b: str) -> float:
+            """Доля общих слов между двумя описаниями (0..1)."""
+            wa = set(_desc_key(a))
+            wb = set(_desc_key(b))
+            if not wa or not wb:
+                return 0.0
+            return len(wa & wb) / max(len(wa), len(wb))
+
+        def _find_pl_item(inv_desc: str, pl_items: list, used: set) -> dict | None:
+            """Найти PL-строку для инвойс-позиции по наилучшему совпадению описания."""
+            best_score = 0.3       # минимальный порог сходства
+            best_item = None
+            for idx, pl_it in enumerate(pl_items):
+                if idx in used:
+                    continue
+                sim = _desc_similarity(inv_desc, pl_it.get("description", ""))
+                if sim > best_score:
+                    best_score = sim
+                    best_item = (idx, pl_it)
+            return best_item
+
+        # Шаг 1: Присвоить per-item веса из PL по матчингу
+        pl_items_with_weights = [
+            it for it in pl_items
+            if _safe_float(it.get("gross_weight")) or _safe_float(it.get("net_weight"))
+        ]
+        weights_assigned = 0
+        used_pl_indices: set = set()
+
+        if pl_items_with_weights:
+            if len(pl_items_with_weights) == len(items):
+                # Одинаковое число позиций → матч по позиции (надёжнее описания)
+                for j, item in enumerate(items):
+                    pl_it = pl_items_with_weights[j]
+                    pg = _safe_float(pl_it.get("gross_weight"))
+                    pn = _safe_float(pl_it.get("net_weight"))
+                    if pg and not item.get("gross_weight"):
+                        item["gross_weight"] = round(pg, 3)
+                    if pn and not item.get("net_weight"):
+                        item["net_weight"] = round(pn, 3)
+                    if pg or pn:
+                        weights_assigned += 1
+                        used_pl_indices.add(j)
+                logger.info("weights_from_pl_by_position",
+                            assigned=weights_assigned, pl_items=len(pl_items_with_weights))
+            else:
+                # Разное число → матч по описанию
+                for item in items:
+                    match = _find_pl_item(item.get("description", ""), pl_items_with_weights, used_pl_indices)
+                    if match:
+                        idx, pl_it = match
+                        used_pl_indices.add(idx)
+                        pg = _safe_float(pl_it.get("gross_weight"))
+                        pn = _safe_float(pl_it.get("net_weight"))
+                        if pg and not item.get("gross_weight"):
+                            item["gross_weight"] = round(pg, 3)
+                        if pn and not item.get("net_weight"):
+                            item["net_weight"] = round(pn, 3)
+                        if pg or pn:
+                            weights_assigned += 1
+                logger.info("weights_from_pl_by_desc",
+                            assigned=weights_assigned, pl_items=len(pl_items_with_weights))
+
+        # Шаг 2: Для позиций без веса — попробовать из инвойса (если есть item-level)
+        for item in items:
+            if not item.get("gross_weight") and not item.get("net_weight"):
+                inv_items_src = inv.get("items") or []
+                for inv_it in inv_items_src:
+                    if _desc_similarity(item.get("description", ""),
+                                        inv_it.get("description", "")) > 0.3:
+                        ig = _safe_float(inv_it.get("gross_weight"))
+                        in_ = _safe_float(inv_it.get("net_weight"))
+                        if ig:
+                            item["gross_weight"] = round(ig, 3)
+                        if in_:
+                            item["net_weight"] = round(in_, 3)
+                        break
+
+        # Шаг 3: Fallback — пропорционально по стоимости (НЕ поровну)
+        # Применяется только если PL совсем не дал per-item весов
         total_gross = _safe_float(
-            packing.get("total_gross_weight") or spec.get("total_gross_weight") or
+            packing.get("total_gross_weight") or
             inv.get("total_gross_weight") or inv.get("gross_weight")
         )
         total_net = _safe_float(
-            packing.get("total_net_weight") or spec.get("total_net_weight") or
+            packing.get("total_net_weight") or
             inv.get("total_net_weight") or inv.get("net_weight")
         )
-        logger.info("weights_sources", packing_gross=packing.get("total_gross_weight"), spec_gross=spec.get("total_gross_weight"), inv_gross=inv.get("total_gross_weight"), total_gross=total_gross)
-        if items and total_gross:
-            try:
-                tg = float(total_gross)
-                tn = float(total_net) if total_net else tg * 0.9
-                per_item_gross = tg / len(items)
-                per_item_net = tn / len(items)
-                for item in items:
-                    if not item.get("gross_weight"):
-                        item["gross_weight"] = round(per_item_gross, 3)
-                    if not item.get("net_weight"):
-                        item["net_weight"] = round(per_item_net, 3)
-            except (ValueError, TypeError):
-                pass
+        items_missing_weight = [it for it in items if not it.get("gross_weight")]
+        if items_missing_weight and total_gross:
+            # Оставшийся вес = total - уже назначенные
+            assigned_gross = sum((_safe_float(it.get("gross_weight")) or 0.0)
+                                 for it in items if it.get("gross_weight"))
+            assigned_net = sum((_safe_float(it.get("net_weight")) or 0.0)
+                               for it in items if it.get("net_weight"))
+            remaining_gross = max(0.0, (total_gross or 0.0) - assigned_gross)
+            remaining_net = max(0.0, (total_net or 0.0) - assigned_net) if total_net else None
 
-        # Если общие веса не найдены, суммируем из позиций
+            # Пропорция по стоимости
+            total_price = sum((_safe_float(it.get("line_total")) or 0.0) for it in items_missing_weight)
+            for item in items_missing_weight:
+                price = _safe_float(item.get("line_total")) or 0.0
+                share = (price / total_price) if total_price > 0 else (1.0 / len(items_missing_weight))
+                item["gross_weight"] = round(remaining_gross * share, 3)
+                if remaining_net:
+                    item["net_weight"] = round(remaining_net * share, 3)
+                elif item.get("gross_weight"):
+                    item["net_weight"] = round(item["gross_weight"] * 0.9, 3)
+            logger.info("weights_fallback_proportional",
+                        items=len(items_missing_weight),
+                        remaining_gross=remaining_gross,
+                        method="by_value_share")
+
+        logger.info("weights_sources",
+                    packing_gross=packing.get("total_gross_weight"),
+                    inv_gross=inv.get("total_gross_weight"),
+                    total_gross=total_gross,
+                    pl_per_item_assigned=weights_assigned)
+
+        # Суммарные веса из позиций
         if items and (total_gross is None or total_net is None):
             gross_sum = sum((_safe_float(it.get("gross_weight")) or 0.0) for it in items)
             net_sum = sum((_safe_float(it.get("net_weight")) or 0.0) for it in items)
@@ -816,9 +1208,46 @@ JSON:"""},
         if not goods_location and customs_office_code:
             goods_location = f"Таможенный пост {customs_office_code}"
 
-        # Валюта: спецификация > инвойс > контракт
-        currency = spec.get("currency") or inv.get("currency") or contract.get("currency")
-        total_amount = spec.get("total_amount") or inv.get("total_amount")
+        # Гр. 22: валюта — ТОЛЬКО из контракта/договора купли-продажи (правило гр. 22).
+        # Инвойс не является источником валюты для гр. 22.
+        # Гр. 22: сумма = sum(гр. 42 по позициям); для сверки — итог инвойса на товары.
+        currency = contract.get("currency")
+        if not currency:
+            logger.warning("currency_not_in_contract",
+                           msg="Валюта не найдена в контракте — гр.22 требует проверки")
+            currency = inv.get("currency")
+        # Сумма — из инвойса на товары (спецификация не источник суммы)
+        total_amount = inv.get("total_amount")
+
+        # ── Evidence tracking ──
+        seller_src = "contract" if contract.get("seller") or contract.get("seller_name") else "invoice"
+        ev.record("seller", seller, seller_src, confidence=0.85 if seller_src == "contract" else 0.8, graph=2)
+        buyer_src = "contract" if contract.get("buyer") or contract.get("buyer_name") else "invoice"
+        ev.record("buyer", buyer, buyer_src, confidence=0.85 if buyer_src == "contract" else 0.8, graph=8)
+        cur_src = "contract" if contract.get("currency") else "invoice"
+        ev.record("currency", currency, cur_src, confidence=0.97 if cur_src == "contract" else 0.7, graph=22)
+        ev.record("total_amount", total_amount, "invoice", confidence=0.85, graph=22)
+        inco_val = inv.get("incoterms") or contract.get("incoterms")
+        ev.record("incoterms", inco_val, "invoice" if inv.get("incoterms") else "contract", confidence=0.85, graph=20)
+        origin_val = ((origin_code or inv.get("country_origin")) or "")[:2] or None
+        ev.record("country_origin", origin_val, items_source, confidence=0.7, graph=16)
+        ev.record("country_destination", "RU", "default", confidence=1.0, graph=17)
+        ev.record("transport_type", transport_type,
+                  "transport_invoice" if transport_inv.get("transport_type") else "default", confidence=0.8, graph=25)
+        ev.record("transport_doc_number", awb_number, "transport_doc", confidence=0.9, graph=18)
+        ev.record("customs_office_code", customs_office_code, "heuristic", confidence=0.7, graph=29)
+        ev.record("goods_location", goods_location, "heuristic", confidence=0.6, graph=30)
+        weight_src = "packing_list" if packing.get("total_gross_weight") else "invoice"
+        ev.record("total_gross_weight", total_gross, weight_src, confidence=0.85, graph=35)
+        ev.record("total_net_weight", total_net, weight_src, confidence=0.85, graph=38)
+        ev.record("type_code", "IM40", "default", confidence=0.3, graph=1)
+        ev.record("deal_nature_code", "01", "default", confidence=0.3, graph=24)
+        ev.record("items", f"{len(items)} позиций", items_source, confidence=0.85, graph=31)
+        contract_num = inv.get("contract_number") or contract.get("contract_number")
+        ev.record("contract_number", contract_num,
+                  "invoice" if inv.get("contract_number") else "contract", confidence=0.85)
+        ev.record("declarant_inn_kpp", declarant_inn_kpp,
+                  "contract" if contract.get("buyer") else "invoice", confidence=0.8, graph=14)
 
         result = {
             "invoice_number": inv.get("invoice_number"),
@@ -827,10 +1256,10 @@ JSON:"""},
             "buyer": buyer,
             "currency": currency,
             "total_amount": total_amount,
-            "incoterms": inv.get("incoterms") or contract.get("incoterms"),
-            "country_origin": ((origin_code or inv.get("country_origin")) or "")[:2] or None,
+            "incoterms": inco_val,
+            "country_origin": origin_val,
             "country_destination": inv.get("country_destination", "RU"),
-            "contract_number": inv.get("contract_number") or contract.get("contract_number"),
+            "contract_number": contract_num,
             "contract_date": contract.get("contract_date"),
             "total_packages": packing.get("total_packages") or inv.get("total_packages"),
             "package_type": packing.get("package_type"),
@@ -849,4 +1278,168 @@ JSON:"""},
             "freight_currency": transport_inv.get("freight_currency"),
         }
 
+        evidence_map = ev.to_dict()
+        issues = validate_declaration(result, evidence_map)
+        result["evidence_map"] = evidence_map
+        result["issues"] = issues
+
         return result
+
+    def _compile_by_rules(self, parsed_docs: dict, base_result: dict) -> dict:
+        """Финальная LLM-компиляция декларации с полными правилами из БД.
+
+        Берёт все извлечённые данные + полный текст правил для каждой графы
+        и просит LLM заполнить поля декларации с соблюдением всех условий.
+        Результат мержится поверх base_result (хардкод-компиляции).
+        """
+        import json as _json
+        from app.config import get_settings as _get_settings
+        from app.services.llm_client import get_llm_client, get_model
+
+        settings = _get_settings()
+        rules_text = build_full_rules_for_llm(section="header", core_api_url=settings.CORE_API_URL)
+        if not rules_text:
+            logger.warning("compile_by_rules_skipped", reason="no_rules_from_db")
+            return base_result
+
+        # ── Подготовка контекста документов ──────────────────────────────────
+        inv = self._to_dict(parsed_docs.get("invoice"))
+        contract = self._to_dict(parsed_docs.get("contract"))
+        packing = self._to_dict(parsed_docs.get("packing"))
+        spec = parsed_docs.get("specification") or {}
+        transport_inv = parsed_docs.get("transport_invoice") or {}
+        transport = parsed_docs.get("transport") or {}
+
+        docs_ctx: dict = {}
+        if inv:
+            docs_ctx["invoice"] = {
+                k: v for k, v in inv.items()
+                if k not in ("items",) and v is not None
+            }
+        if contract:
+            docs_ctx["contract"] = {
+                k: v for k, v in contract.items()
+                if v is not None
+            }
+        if packing:
+            docs_ctx["packing_list"] = {
+                k: v for k, v in packing.items()
+                if k not in ("items",) and v is not None
+            }
+        if transport_inv:
+            docs_ctx["transport_invoice"] = {
+                k: v for k, v in transport_inv.items()
+                if v is not None
+            }
+        if transport.get("raw_text"):
+            docs_ctx["transport_doc_text"] = transport["raw_text"][:600]
+
+        docs_json = _json.dumps(docs_ctx, ensure_ascii=False, indent=2)
+
+        # ── Промпт ────────────────────────────────────────────────────────────
+        system_prompt = (
+            "Ты опытный таможенный брокер РФ. Заполняешь таможенную декларацию ИМ40 (импорт).\n"
+            "Тебе предоставлены данные из документов и официальные правила заполнения каждой графы.\n"
+            "ВАЖНО: строго следуй правилам — источникам, форматам, специальным значениям.\n"
+            "Ответь ТОЛЬКО валидным JSON. Если данных нет — null. Не придумывай."
+        )
+
+        user_prompt = f"""=== ДАННЫЕ ИЗ ЗАГРУЖЕННЫХ ДОКУМЕНТОВ ===
+{docs_json[:6000]}
+
+=== ОФИЦИАЛЬНЫЕ ПРАВИЛА ЗАПОЛНЕНИЯ ГРАФ ДТ ===
+{rules_text[:7000]}
+
+=== ЗАДАЧА ===
+На основе документов и правил заполни поля декларации.
+Соблюдай: приоритет источников, специальные значения (СМ. ГРАФУ 14 ДТ, ЕВРОСОЮЗ, РАЗНЫЕ, 00, 99),
+форматы (ISO 3166-1 alpha-2 для стран, ISO 4217 для валют, Инкотермс-коды).
+
+Верни JSON со следующими полями (null если нет данных):
+{{
+  "type_code": "код типа декларации (гр.1), обычно ИМ 40",
+  "seller": {{"name": "...", "country_code": "ISO2", "address": "..."}},
+  "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "..."}},
+  "responsible_person": "гр.9: лицо за фин. урегулирование или 'СМ. ГРАФУ 14 ДТ'",
+  "trading_partner_country": "гр.11: ISO2 страна контрагента",
+  "declarant_inn_kpp": "гр.14: ИНН/КПП декларанта",
+  "country_dispatch": "гр.15: ISO2 страна отправления",
+  "country_origin": "гр.16: ISO2 страна происхождения (или ЕВРОСОЮЗ/РАЗНЫЕ)",
+  "country_destination": "гр.17: ISO2 страна назначения",
+  "container": true/false (гр.19),
+  "incoterms": "гр.20: код Инкотермс",
+  "delivery_place": "гр.20: географический пункт поставки",
+  "transport_id": "гр.21: номера/названия ТС через ;",
+  "transport_country": "гр.21: ISO2 страна регистрации ТС или 00/99",
+  "currency": "гр.22: ISO 4217 валюта",
+  "total_amount": число (гр.22: общая фактурная стоимость),
+  "deal_nature_code": "гр.24: код характера сделки",
+  "contract_number": "гр.37: номер контракта",
+  "contract_date": "гр.37: дата контракта ГГГГ-ММ-ДД",
+  "customs_office_code": "гр.30: код таможенного поста",
+  "special_features_code": "гр.7: код особенностей или null"
+}}
+
+JSON:"""
+
+        try:
+            client = get_llm_client()
+            resp = client.chat.completions.create(
+                model=get_model(),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0,
+                max_tokens=2000,
+            )
+            raw = resp.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            llm_result = _json.loads(raw.strip())
+            logger.info("compile_by_rules_ok", fields=list(llm_result.keys()))
+        except Exception as e:
+            logger.warning("compile_by_rules_llm_failed", error=str(e))
+            return base_result
+
+        # ── Мерж: LLM перекрывает хардкод там где вернул реальное значение ──
+        merged = dict(base_result)
+        flagged: list[str] = []
+
+        for key, value in llm_result.items():
+            if value is None or value == "":
+                continue
+            if isinstance(value, str) and value.upper() in ("NULL", "NONE", "N/A", "Н/Д"):
+                continue
+            merged[key] = value
+
+        # Обновляем evidence_map: поля от compile_by_rules помечаем как источник "rules_llm"
+        ev_map = merged.get("evidence_map") or {}
+        for key in llm_result:
+            if llm_result[key] is not None and key not in (
+                "evidence_map", "issues", "items",
+            ):
+                if key not in ev_map:
+                    ev_map[key] = {
+                        "value_preview": str(llm_result[key])[:80],
+                        "source": "rules_llm",
+                        "confidence": 0.82,
+                        "note": "Заполнено по правилам граф ДТ",
+                    }
+        merged["evidence_map"] = ev_map
+
+        if flagged:
+            existing_issues = merged.get("issues") or []
+            for field in flagged:
+                existing_issues.append({
+                    "id": "rules_flag",
+                    "severity": "info",
+                    "field": field,
+                    "graph": None,
+                    "message": f"Поле «{field}» требует проверки пользователем",
+                })
+            merged["issues"] = existing_issues
+
+        return merged

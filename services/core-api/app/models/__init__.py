@@ -14,6 +14,7 @@ from .hs_requirement import HsRequirement
 from .audit_log import AuditLog
 from .parse_issue import ParseIssue
 from .knowledge import KnowledgeArticle, Checklist
+from .graph_rule import DeclarationGraphRule
 
 __all__ = [
     "Base",
@@ -40,4 +41,5 @@ __all__ = [
     "ParseIssue",
     "KnowledgeArticle",
     "Checklist",
+    "DeclarationGraphRule",
 ]

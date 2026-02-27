@@ -22,6 +22,7 @@ from app.routers import counterparties, companies
 from app.routers import export_pdf
 from app.routers import admin as admin_router
 from app.routers import knowledge as knowledge_router
+from app.routers import graph_rules as graph_rules_router
 
 # Setup logging
 setup_logging()
@@ -184,6 +185,7 @@ app.include_router(export_pdf.router)
 app.include_router(broker_clients.router)
 app.include_router(admin_router.router)
 app.include_router(knowledge_router.router)
+app.include_router(graph_rules_router.router)
 
 
 if __name__ == "__main__":

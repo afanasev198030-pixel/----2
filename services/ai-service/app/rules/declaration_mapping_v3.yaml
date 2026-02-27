@@ -1,0 +1,1025 @@
+# Machine-readable mapping rules for Declaration filling (ТЗ v3.0)
+# This file is intended as a configuration source for an AI/LLM pipeline:
+# - document classification → field extraction → validation → mapping into core-api schema
+#
+# Notes:
+# - "graph" is the DT box number from the ТЗ.
+# - "target" is the destination field name (core-api / apply-parsed payload).
+# - "sources" are prioritized evidence types (higher first).
+# - "validation" is a lightweight, implementation-agnostic contract.
+# - Some graphs are not yet present in the current core-api schema; they are marked as "extension".
+#
+# РОЛЬ ДОКУМЕНТОВ (приоритет источников для товарных позиций):
+#   invoice        — ГЛАВНЫЙ источник: список товаров, едущих на таможню, цены
+#   packing_list   — ГЛАВНЫЙ источник: веса (гр.35/38), упаковка (гр.31), доп. единицы (гр.41)
+#   contract       — источник: валюта (гр.22), условия поставки (гр.20), характер сделки (гр.24)
+#   specification  — ТОЛЬКО СВЕРКА: содержит полный список заказа, НЕ используется как источник
+#                    позиций, весов и количеств. Передаётся в таможню как вложение (гр.4).
+
+version: "3.0"
+document_sources_priority:
+  - origin_certificate
+  - fcs_classification_decision
+  - dts1_customs_value_calc
+  - license_or_quota
+  - contract
+  - contract_addendum
+  - invoice
+  - packing_list
+  - specification
+  - transport_doc
+  - company_profile
+  - heuristic
+
+header_graphs:
+  - graph: 1
+    name: "Тип декларации / код процедуры"
+    target:
+      kind: core_declaration
+      field: type_code
+    sources: [application_statement, contract]
+    default: "IM40"
+    validation:
+      type: string
+      examples: ["IM40", "EX10"]
+    confidence:
+      contract: 0.7
+      application_statement: 0.9
+      default: 0.3
+
+  - graph: 2
+    name: "Отправитель/Экспортер"
+    target:
+      kind: core_declaration_relation
+      field: sender_counterparty_id
+      counterparty_type: seller
+      extracted_object: seller
+    sources: [contract, invoice, foreign_company_registration]
+    required_fields: [name, address, country_code]
+    validation:
+      type: object
+      country_code: { type: iso3166_1_alpha2, not_eq: "RU" }
+      note: "обычно не RU при импорте — если RU, поднять warning"
+    confidence:
+      contract: 0.85
+      invoice: 0.8
+
+  - graph: 3
+    name: "Формуляры (листы ДТ)"
+    note: |
+      Подраздел 1 — порядковый номер текущего листа (X).
+      Подраздел 2 — общее количество листов ДТ, включая основной и все добавочные (Y).
+      Формат: X/Y (например 2/3). На основном листе не заполняется.
+      Основной лист: 1 товар. Каждый добавочный лист: до 3 товаров.
+    target:
+      kind: core_declaration
+      field: forms_count
+    sources: [invoice]
+    note_sources: "Количество товарных позиций берётся ТОЛЬКО из инвойса на товары."
+    compute:
+      total_sheets: "1 + ceil((total_items - 1) / 3) если total_items > 1, иначе 1"
+      sheet_label: "X/Y где X — номер листа (с 2), Y — total_sheets. На основном листе не заполняется."
+    validation:
+      type: integer
+      min: 1
+    confidence:
+      computed: 0.9
+
+  - graph: 4
+    name: "Отгрузочные спецификации"
+    note: "Заполняется только если к ДТ приложены отгрузочные спецификации. В остальных случаях — пусто."
+    target:
+      kind: core_declaration
+      field: specifications_count
+    sources: [specification]
+    compute:
+      expression: "count(specification_docs) if specification_docs else null"
+    validation:
+      type: integer
+      min: 1
+      nullable: true
+    confidence:
+      computed: 0.8
+
+  - graph: 5
+    name: "Всего товаров (кол-во наименований)"
+    note: |
+      Количество товарных наименований (позиций), а НЕ штук.
+      Источник — инвойс на товары (не транспортный инвойс/фрахтовый).
+      В PL считать уникальные наименования, а не количество штук или мест.
+      При наличии обоих документов — сверить: при расхождении поднять issue.
+    target:
+      kind: core_declaration
+      field: total_items_count
+    sources: [invoice, packing_list]
+    source_notes:
+      invoice: "ТОЛЬКО инвойс на товары (goods invoice), не транспортный инвойс. Считать строки товарных позиций (line items)."
+      packing_list: "Считать уникальные наименования товаров, а не штуки/места."
+    compute:
+      expression: "len(distinct_item_names)"
+    cross_check: "count(invoice.line_items) == count(pl.distinct_names) — при расхождении поднять issue с обеими цифрами"
+    validation:
+      type: integer
+      min: 1
+    confidence:
+      invoice: 0.95
+      packing_list: 0.9
+      computed: 0.95
+
+  - graph: 6
+    name: "Всего мест"
+    target:
+      kind: core_declaration
+      field: total_packages_count
+    sources: [packing_list, transport_doc, acceptance_act]
+    validation:
+      type: integer
+      min: 0
+    conflict_check: "если packing_list и transport_doc расходятся — показать обе цифры и поднять flag"
+    confidence:
+      packing_list: 0.9
+      transport_doc: 0.7
+
+  - graph: 7
+    name: "Особенности декларирования"
+    note: |
+      Код особенности декларирования из классификатора особенностей таможенного декларирования товаров.
+      Заполняется только если для партии есть применимый код.
+      Если особенностей нет или код не предусмотрен классификатором — оставить пустым.
+    target:
+      kind: core_declaration
+      field: special_ref_code
+    sources: []
+    ai_rule: |
+      НЕ заполнять автоматически.
+      Оставить пустым и подсветить графу для пользователя с сообщением:
+      "Укажите код особенности декларирования из классификатора или оставьте пустым."
+      Severity подсветки: info (не error и не warning).
+    user_action_required: true
+    validation:
+      type: string
+      max_len: 9
+      nullable: true
+
+  - graph: 8
+    name: "Получатель"
+    target:
+      kind: core_declaration_relation
+      field: receiver_counterparty_id
+      counterparty_type: buyer
+      extracted_object: buyer
+    sources: [company_profile, contract, invoice]
+    source_notes:
+      company_profile: "Наивысший приоритет — брать из профиля компании в системе."
+      contract: "Раздел «Buyer» / «Покупатель». Предпочитать русскоязычные реквизиты."
+      invoice: "Поле «Buyer» / «Покупатель» в инвойсе на товары (не транспортном). Предпочитать русскоязычные реквизиты."
+    language_priority: "ru > en — если одни и те же реквизиты присутствуют на русском и английском, использовать русский вариант"
+    required_fields: [name, address]
+    validation:
+      type: object
+      inn: { type: digits, length: [10, 12] }
+      kpp: { type: digits, length: [9] }
+      ogrn: { type: digits, length: [13, 15] }
+    confidence:
+      company_profile: 0.95
+      contract: 0.85
+      invoice: 0.8
+
+  - graph: 9
+    name: "Лицо, ответственное за финансовое урегулирование"
+    target:
+      kind: extension
+      field: financial_responsible
+    sources: [power_of_attorney, broker_agreement]
+    source_notes:
+      power_of_attorney: "Доверенность на таможенного представителя."
+      broker_agreement: "Договор с таможенным представителем (брокером)."
+    fallback:
+      value: "СМ. ГРАФУ 14 ДТ"
+      condition: "если не найдены документы power_of_attorney или broker_agreement"
+    ai_rule: |
+      Проверить наличие доверенности или договора с брокером среди загруженных документов.
+      Если документы есть — извлечь реквизиты лица.
+      Если документов нет — заполнить фиксированным текстом "СМ. ГРАФУ 14 ДТ".
+    confidence:
+      power_of_attorney: 0.9
+      broker_agreement: 0.8
+      fallback: 1.0
+
+  - graph: 10
+    name: "Станция 1-го назначения"
+    skip: true
+    note: "Графа 10 не заполняется."
+    target:
+      kind: extension
+      field: first_destination_country_code
+
+  - graph: 11
+    name: "Торгующая страна"
+    note: "Страна местонахождения иностранного контрагента (продавца)."
+    target:
+      kind: core_declaration
+      field: trading_country_code
+    sources: [contract, origin_certificate, invoice]
+    source_notes:
+      contract: "Страна из реквизитов продавца/поставщика."
+      origin_certificate: "Страна контрагента в сертификате происхождения."
+      invoice: "Страна из реквизитов продавца в инвойсе на товары."
+    validation:
+      type: iso3166_1_alpha2
+    confidence:
+      contract: 0.9
+      origin_certificate: 0.85
+      invoice: 0.8
+
+  - graph: 12
+    name: "Общая таможенная стоимость"
+    target:
+      kind: core_declaration
+      field: total_customs_value
+    sources: [dts1_customs_value_calc, invoice, contract, transport_invoice]
+    compute:
+      primary: "sum(items[].customs_value_rub)"
+      note: "сумма из граф 45 основного и добавочных листов, округление до 2 знаков после запятой"
+      requires: [exchange_rate, graph_23]
+    validation:
+      type: money_rub
+    confidence:
+      dts1_customs_value_calc: 0.95
+      computed_invoice_fx: 0.6
+
+  - graph: 13
+    name: "не заполняется"
+    skip: true
+    note: "графа 13 не заполняется согласно ТЗ v3.0"
+
+  - graph: 14
+    name: "Декларант"
+    note: "Краткое наименование, место нахождения, ИНН/КПП, ОГРН лица, подающего ДТ."
+    target:
+      kind: core_declaration
+      field: declarant_inn_kpp
+    sources: [power_of_attorney, broker_agreement, company_profile, contract, invoice]
+    source_notes:
+      power_of_attorney: "Если есть — данные брокера/таможенного представителя."
+      broker_agreement: "Если есть — данные брокера/таможенного представителя."
+      company_profile: "Если нет доверенности/договора с брокером — данные Получателя из профиля компании."
+      contract: "Раздел «Buyer» / «Покупатель». Предпочитать русский язык."
+      invoice: "Поле «Buyer» / «Покупатель» в инвойсе на товары. Предпочитать русский язык."
+    fallback:
+      condition: "если нет power_of_attorney и broker_agreement — использовать данные Получателя (гр. 8)"
+    language_priority: "ru > en"
+    validation:
+      type: object
+      required_fields: [short_name, location, inn, kpp, ogrn]
+      inn: { type: digits, length: [10, 12] }
+      kpp: { type: digits, length: [9] }
+      ogrn: { type: digits, length: [13, 15] }
+    confidence:
+      power_of_attorney: 0.95
+      broker_agreement: 0.9
+      company_profile: 0.95
+      contract: 0.85
+      invoice: 0.8
+
+  - graph: 15
+    name: "Страна отправления"
+    note: |
+      Страна, из которой непосредственно прибыл товар.
+      Определяется из транспортных документов международной перевозки.
+      Может отличаться от страны происхождения (гр. 16).
+      Графа 15 — наименование, Графа 15А — ISO-код.
+    target:
+      kind: core_declaration
+      field: country_dispatch_code
+    sources: [transport_doc, transport_invoice]
+    source_notes:
+      transport_doc: "AWB или CMR — поле «Departure» / «From»."
+      transport_invoice: "Транспортный инвойс — поле «Departure»."
+    validation:
+      type: iso3166_1_alpha2
+    ai_rule: "Извлечь страну отправления из AWB/CMR (поле Departure/From) или транспортного инвойса (поле Departure). Не путать со страной происхождения товара."
+    confidence:
+      transport_doc: 0.95
+      transport_invoice: 0.85
+
+  - graph: 16
+    name: "Страна происхождения"
+    note: |
+      Страна, где товар произведён или подвергнут достаточной обработке.
+      Источники: сертификат происхождения, декларация соответствия (страна изготовителя).
+    target:
+      kind: core_declaration
+      field: country_origin_code
+    sources: [origin_certificate, conformity_declaration]
+    source_notes:
+      origin_certificate: "Сертификат происхождения — основной источник."
+      conformity_declaration: "Декларация соответствия — поле «страна изготовителя»."
+    filling_rules:
+      eu_origin: "Если маркировка/документы указывают на ЕС без конкретной страны → значение «ЕВРОСОЮЗ»."
+      mixed_origin: "Если товары из разных стран ИЛИ страна хотя бы одного товара неизвестна → значение «РАЗНЫЕ»."
+      all_unknown: "Если страна происхождения всех товаров неизвестна → оставить пустым, подсветить пользователю (severity: warning)."
+      skip_condition: "Не заполняется при декларировании наличной валюты (банкноты/монеты) при реализации на транспорте."
+    validation:
+      type: string
+      special_values: ["ЕВРОСОЮЗ", "РАЗНЫЕ"]
+      or_iso3166_1_alpha2: true
+      nullable: true
+    confidence:
+      origin_certificate: 0.95
+      conformity_declaration: 0.85
+
+  - graph: 17
+    name: "Страна назначения"
+    note: |
+      Краткое название страны, где товары будут потребляться, использоваться или перерабатываться.
+      Если конечная страна неизвестна — указать страну доставки.
+      «НЕИЗВЕСТНА» только для: беспошлинной торговли, неполной/периодической ДТ, временной ДТ.
+    target:
+      kind: core_declaration
+      field: country_destination_code
+    sources: [transport_doc]
+    source_notes:
+      transport_doc: "Транспортные документы AWB/CMR — поле «страна прибытия» / destination."
+    cross_check: "Гр. 17 обычно совпадает с гр. 10. При расхождении — поднять issue (severity: warning) для проверки пользователем."
+    filling_rules:
+      general: "Страна назначения из транспортных документов."
+      fallback: "Если конечная страна потребления неизвестна — указать страну доставки из транспортных документов."
+      unknown_allowed_only_for:
+        - "беспошлинная торговля (вывоз)"
+        - "неполная или периодическая ДТ"
+        - "временная (дополнительная временная) ДТ"
+    subfields:
+      graph_17: "Краткое наименование страны назначения."
+      graph_17a: "Двузначный буквенный код страны из гр. 17 по классификатору стран мира (ISO 3166-1 alpha-2). Заполняется автоматически на основе гр. 17."
+    validation:
+      type: string
+      special_values: ["НЕИЗВЕСТНА"]
+      or_iso3166_1_alpha2: true
+    confidence:
+      transport_doc: 0.95
+
+  - graph: 18
+    name: "ТС при отправлении/прибытии"
+    target:
+      kind: core_declaration
+      field: transport_at_border
+    sources: [transport_doc]
+    validation:
+      type: string
+      max_len: 512
+      subfields:
+        subsection_1:
+          description: "Кол-во ТС: список идентификаторов через ';' без пробела"
+          transport_rules:
+            auto: "регистрационные номера (активное ТС / прицепы через '/')"
+            rail: "номера вагонов (платформ, цистерн)"
+            sea: "наименования судов"
+            air: "номера рейсов"
+            pipeline_electric: "способ транспортировки (газопровод, нефтепровод, ЛЭП и т.п.)"
+        subsection_2:
+          description: "ISO-код страны регистрации ТС"
+          type: iso3166_1_alpha2
+          skip_if: [rail, pipeline, electric]
+    skip_condition: "не заполняется при отсутствии международной перевозки и для МПО"
+
+  - graph: 19
+    name: "Контейнер"
+    note: "Признак перевозки в контейнере. Определяется из транспортных документов."
+    target:
+      kind: core_declaration
+      field: container_info
+    sources: [transport_doc]
+    source_notes:
+      transport_doc: "AWB / CMR / B/L — наличие номера контейнера или пометки «container»."
+    ai_rule: |
+      Если в транспортном документе есть номер контейнера (формат XXXX 1234567) или
+      явное указание на контейнерную перевозку — ставить «1».
+      В остальных случаях — «0».
+    validation:
+      type: enum
+      values: ["0", "1"]
+      labels:
+        "1": "перевозка в контейнере"
+        "0": "иные случаи"
+    default: "0"
+    confidence:
+      transport_doc: 0.95
+
+  - graph: 20
+    name: "Условия поставки (Incoterms)"
+    note: "Код Инкотермс + наименование географического пункта, к которому относится базис. Например: CIF Москва, FOB Shanghai."
+    target:
+      kind: core_declaration
+      field: incoterms_code
+    sources: [contract]
+    source_notes:
+      contract: "Договор поставки — раздел с условиями поставки (Delivery Terms / Базис поставки). Основной и единственный источник."
+    ai_rule: |
+      Извлечь из контракта:
+      1) код Инкотермс (3 буквы: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF);
+      2) наименование географического пункта (город/порт/склад), к которому относится базис.
+      Хранить оба значения: код и место.
+    validation:
+      type: incoterms_2020
+      valid_codes: [EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF]
+    confidence:
+      contract: 0.95
+
+  - graph: 21
+    name: "Активное ТС на границе"
+    note: |
+      Подраздел 1: [кол-во ТС]:[id1];[id2] без пробелов.
+        Авто — рег. номера; Море/река — названия судов; Авиа — номера рейсов;
+        Трубопровод/ЛЭП — способ: газопровод/нефтепровод/нефтепродуктопровод/линии электропередачи.
+      Подраздел 2: код страны регистрации ТС (ISO alpha-2).
+        Состав ТС — код страны тягача.
+        Страна неизвестна → «00».
+        Несколько ТС из разных стран → «99».
+        Трубопровод/ЛЭП — не заполняется.
+    target:
+      kind: core_declaration
+      field: transport_on_border_id
+    sources: [transport_doc]
+    source_notes:
+      transport_doc: "AWB / CMR / B/L — идентификатор ТС, пересекающего таможенную границу."
+    ai_rule: |
+      Подраздел 1 — определить тип транспорта и извлечь идентификатор:
+        - авто: рег. номера ТС;
+        - море/река: названия судов;
+        - авиа: номера рейсов;
+        - трубопровод/ЛЭП: «газопровод», «нефтепровод», «нефтепродуктопровод», «линии электропередачи».
+        Формат: [кол-во ТС]:[id1];[id2] без пробелов.
+      Подраздел 2 — код страны регистрации ТС:
+        - состав ТС: код страны тягача (приводящего в движение);
+        - страна неизвестна → «00»;
+        - несколько ТС из разных стран → «99»;
+        - трубопровод/ЛЭП: не заполнять.
+    confidence:
+      transport_doc: 0.9
+
+  - graph: 22
+    name: "Валюта и общая фактурная стоимость"
+    note: |
+      Подраздел 1: код валюты ТОЛЬКО из договора/контракта купли-продажи (ISO 4217).
+      Инвойс не является источником для валюты.
+      Подраздел 2: сумма значений гр. 42 по всем позициям основного и добавочных листов.
+      Для сверки использовать инвойс на товары.
+    target:
+      kind: core_declaration
+      field_currency: currency_code
+      field_amount: total_invoice_value
+    sources: [contract, invoice]
+    source_notes:
+      contract: |
+        Договор/контракт купли-продажи — ЕДИНСТВЕННЫЙ источник кода валюты (ISO 4217).
+        Искать ключевые фразы: «Валютой Контракта являются», «Валюта контракта —»,
+        «Contract currency is», «Payment currency:», «расчёты производятся в».
+        После фразы следует название валюты — привести к ISO 4217
+        (доллары США→USD, евро→EUR, юани/RMB→CNY, рубли→RUB и т.д.).
+      invoice: "Инвойс на товары — только для сверки итоговой суммы. НЕ источник валюты. НЕ транспортный инвойс."
+    compute:
+      amount: "sum(items[].graph_42)"
+    cross_check: "sum(items[].graph_42) должна совпадать с итогом инвойса на товары; при расхождении — поднять warning"
+    validation:
+      currency: { type: iso4217 }
+      amount: { type: money, min: 0 }
+    confidence:
+      contract: 0.97
+      invoice: 0.0
+
+  - graph: 23
+    name: "Курс валюты (ЦБ РФ)"
+    target:
+      kind: core_declaration
+      field: exchange_rate
+    sources: [cbr_official_rate]
+    note: "использовать курс на дату принятия ДТ (или ближайший доступный)"
+    validation:
+      type: decimal
+      min: 0
+
+  - graph: 24
+    name: "Характер сделки"
+    note: "Код характера внешнеторговой сделки из классификатора. Источник — контракт/договор."
+    target:
+      kind: core_declaration
+      field: deal_nature_code
+    sources: [contract]
+    source_notes:
+      contract: "Контракт/договор — тип сделки (купля-продажа, бартер, безвозмездная и т.д.)."
+    default: "01"
+    flag_if_default: "проверьте характер сделки"
+    validation:
+      type: enum
+      values: ["01", "02", "03"]
+      labels:
+        "01": "купля-продажа"
+        "02": "бартер"
+        "03": "безвозмездная"
+
+  - graph: 25
+    name: "Вид транспорта на границе"
+    note: "Код вида транспорта, пересекающего таможенную границу. Определяется по типу транспортного документа."
+    target:
+      kind: core_declaration
+      field: transport_type_border
+    sources: [transport_doc]
+    source_notes:
+      transport_doc: "AWB → 40 (воздух); CMR → 30 (авто); B/L → 10 (море); ж/д накладная → 20."
+    ai_rule: |
+      Определить код по типу транспортного документа:
+      - AWB (Air Waybill) → «40» (воздушный);
+      - CMR → «30» (автомобильный);
+      - B/L (Bill of Lading) → «10» (морской);
+      - ж/д накладная (CIM/СМГС) → «20» (железнодорожный).
+    validation:
+      type: enum
+      values: ["10", "20", "30", "40"]
+      labels:
+        "10": "морской"
+        "20": "железнодорожный"
+        "30": "автомобильный"
+        "40": "воздушный"
+    confidence:
+      transport_doc: 0.95
+
+  - graph: 26
+    name: "Вид транспорта внутри страны"
+    skip: true
+    note: "Графа 26 не заполняется."
+    target:
+      kind: core_declaration
+      field: transport_type_inland
+
+  - graph: 27
+    name: "Место погрузки/разгрузки"
+    skip: true
+    note: "Графа 27 не заполняется."
+    target:
+      kind: core_declaration
+      field: loading_place
+
+  - graph: 28
+    name: "Финансовые и банковские сведения"
+    skip: true
+    note: "Графа 28 не заполняется."
+    target:
+      kind: core_declaration
+      field: financial_info
+
+  - graph: 29
+    name: "Таможенный пост / орган въезда"
+    target:
+      kind: core_declaration
+      field_customs_post: customs_office_code
+      field_entry: entry_customs_code
+    sources: [transport_doc, application_statement]
+    validation:
+      formats:
+        - type: digits
+          length: [8]
+          description: "8-значный код таможенного органа РФ"
+        - pattern: "\\d{3} \\d{5}"
+          description: "код органа через РБ/КЗ: ZZZ XXXXX (3-значный код государства + 5-значный код органа)"
+      multiple_allowed: true
+      note: "если ввоз через несколько пунктов — перечислить все коды"
+      skip_for: [pipeline, electric]
+    ai_rule: "определить место прибытия из транспортных документов; сопоставить с классификатором таможенных органов для получения кода"
+
+  - graph: 30
+    name: "Местонахождение товаров"
+    note: "Место нахождения товара на момент подачи ДТ. Определяется из транспортных документов. Если не найдено — подсветить пользователю (warning)."
+    target:
+      kind: core_declaration
+      field: goods_location
+    sources: [transport_doc]
+    source_notes:
+      transport_doc: "AWB / CMR / B/L — поле «Place of Delivery» / «Место доставки»."
+    ai_rule: |
+      Извлечь место нахождения товара из транспортных документов (поле Place of Delivery / место доставки).
+      Если информация не найдена — оставить пустым и подсветить поле пользователю
+      с сообщением: «Укажите место нахождения товаров». Severity: warning.
+    confidence:
+      transport_doc: 0.85
+
+  - graph: 49
+    name: "Наименование склада (СВХ)"
+    target:
+      kind: core_declaration
+      field: warehouse_name
+    sources: [warehouse_contract, svh_registry]
+
+  - graph: 54
+    name: "Место и дата"
+    target:
+      kind: core_declaration
+      field: place_and_date
+    sources: [company_profile, power_of_attorney]
+    compute:
+      expression: "city_from_declarant + ', ' + today_dd_mm_yyyy"
+
+item_graphs:
+  # ─── КЛЮЧЕВОЕ ПРАВИЛО ДЛЯ ВСЕХ ГРАФ 31–46 ────────────────────────────────
+  # Каждая из граф 31–46 заполняется ОТДЕЛЬНО для каждой товарной позиции.
+  # Все суммы, веса, количества, цены — ТОЛЬКО по конкретному товару:
+  #   • граф 35 (брутто), 38 (нетто) — вес только строк данного товара в PL
+  #   • граф 42 (цена) — line_total данной позиции в инвойсе, не итог инвойса
+  #   • граф 45 (там. стоимость) — по данному товару; расходы (фрахт, страховка)
+  #                                 распределяются пропорционально доле товара
+  #   • граф 46 (стат. стоимость) — производная от гр. 45/42 данной позиции
+  # Как искать данные по конкретному товару: сопоставлять строки в PL/инвойсе
+  # по наименованию, описанию или артикулу, суммировать только совпавшие строки.
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - graph: 31
+    name: "Грузовые места и описание товаров"
+    note: |
+      Сведения указываются с новой строки с порядковым номером:
+      1. Наименование — из технического описания. Без обобщений «Item 1».
+      2. Грузовые места и упаковка — из PL:
+         - общее кол-во мест; если частично — доп. в скобках «(X часть места)»;
+         - коды видов упаковки по Классификатору через «-» количество упаковок.
+         Пример: «3, 21-2, 4G-1».
+    target:
+      kind: core_item
+      field: description
+    sources: [technical_docs, packing_list]
+    source_notes:
+      technical_docs: "Документ «Техническое описание» — наименование товара (пункт 1)."
+      packing_list: "PL — общее кол-во грузовых мест и коды видов упаковки (пункт 2)."
+    ai_rule: |
+      Заполнить в два пункта с новой строки:
+      1. Наименование товара — извлечь из технического описания. Не использовать обобщения.
+      2. Грузовые места — из PL:
+         - кол-во мест, занятых товаром;
+         - если неполные места — добавить в скобках (N часть места);
+         - коды упаковки по классификатору через «-» количество (напр. 21-2, 4G-1).
+    confidence:
+      technical_docs: 0.9
+      packing_list: 0.9
+
+  - graph: 32
+    name: "Порядковый номер товара"
+    note: "Порядковый номер позиции в ДТ: 1–999. Основной лист — не более 1 товара, добавочный — до 3."
+    target:
+      kind: core_item
+      field: line_no
+    sources: []
+    compute:
+      expression: "line_no (auto)"
+    validation:
+      type: integer
+      min: 1
+      max: 999
+
+  - graph: 33
+    name: "ТН ВЭД (10 знаков)"
+    target:
+      kind: core_item
+      field: hs_code
+    sources: [fcs_classification_decision, preliminary_classification, tnved_reference, technical_docs]
+    validation:
+      type: hs10
+
+  - graph: 34
+    name: "Страна происхождения товара"
+    target:
+      kind: core_item
+      field: country_origin_code
+    sources: [origin_certificate, conformity_declaration, technical_docs]
+    source_notes:
+      origin_certificate: "Сертификат происхождения — основной источник."
+      conformity_declaration: "Декларация о соответствии — поле «страна изготовителя»."
+      technical_docs: "Техническое описание — страна производителя."
+    validation:
+      type: iso3166_1_alpha2
+    confidence:
+      origin_certificate: 0.95
+      conformity_declaration: 0.85
+      technical_docs: 0.75
+
+  - graph: 35
+    name: "Вес брутто"
+    note: |
+      Масса брутто (с упаковкой) в кг. Источник — PL. Округление до 3 знаков.
+      ТОЛЬКО по данному конкретному товару — суммировать строки PL по этому наименованию.
+      Не брать общий вес брутто всей партии/всего PL.
+    per_item: true
+    target:
+      kind: core_item
+      field: gross_weight
+    sources: [packing_list, transport_doc, weighing_certificate]
+    source_notes:
+      packing_list: |
+        PL — найти все строки данного товара (по наименованию/артикулу),
+        суммировать gross_weight по ним. Не брать итоговую строку PL.
+      transport_doc: "AWB / CMR / B/L — вес брутто. Использовать если нет PL."
+      weighing_certificate: "Сертификат взвешивания. Использовать если нет PL."
+    validation:
+      type: decimal
+      min: 0
+      round: 3
+    confidence:
+      packing_list: 0.95
+      transport_doc: 0.8
+      weighing_certificate: 0.85
+
+  - graph: 36
+    name: "Преференции"
+    note: |
+      4 элемента (разряда) по Инструкции к Решению КТС № 257:
+        1 — тарифная преференция по пошлине (ЗСТ, СНГ, наименее развитые страны и др.)
+        2 — льготы по таможенной пошлине
+        3 — льготы по акцизу
+        4 — льготы по НДС (при ввозе)
+      Если льгота не заявляется: «00» (ставка есть, льготы нет).
+      Если платёж не возникает вообще: «--».
+      Коды из Классификатора льгот/преференций (национальный + ЕАЭС).
+    target:
+      kind: core_item
+      field: preference_code
+    sources: [origin_certificate, preference_agreement, preference_decision]
+    source_notes:
+      origin_certificate: "Сертификат происхождения (СТ-1, Form A, EUR.1) — основание для тарифной преференции (элемент 1)."
+      preference_agreement: "Международное соглашение о преференциях (ЗСТ, СНГ и т.п.)."
+      preference_decision: "Решение о предоставлении тарифной преференции."
+    depends_on: [graph_33]
+    ai_rule: |
+      Применимые преференции и льготы определяются в соответствии с кодом ТН ВЭД (гр. 33).
+      Определить наличие сертификата происхождения и применимых соглашений.
+      Заполнить 4 элемента, используя классификатор льгот/преференций.
+      Если льгота не заявляется — «00»; если платёж не возникает — «--».
+      Подсветить пользователю для проверки (severity: info) — финальные коды требуют подтверждения.
+    user_action_required: true
+    confidence:
+      origin_certificate: 0.8
+      preference_agreement: 0.75
+
+  - graph: 37
+    name: "Процедура"
+    note: |
+      Подраздел 1: составной код ААББ.
+        АА — код заявляемой процедуры (классификатор видов таможенных процедур).
+        ББ — код предшествующей процедуры или «00» если её не было.
+        Пример: «4000» (ИМ40, без предшествующей).
+      Подраздел 2: 3-значный код особенности перемещения или «000» если нет особенностей.
+      Согласован с гр. 1 — при несоответствии подсветить пользователю (warning).
+    target:
+      kind: core_item
+      field: procedure_code
+    sources: [contract, application_statement]
+    source_notes:
+      contract: "Контракт/договор купли-продажи — тип сделки определяет процедуру."
+      application_statement: "Заявление/заявка на оформление — код заявляемой процедуры."
+    cross_check: "Значение АА должно совпадать с кодом процедуры из гр. 1; при расхождении — warning пользователю."
+    depends_on: [graph_1]
+    ai_rule: |
+      Подраздел 1: взять код процедуры из гр. 1 (АА), добавить код предшествующей процедуры (ББ)
+      или «00» если предшествующей не было. Итог: 4 символа (напр. «4000»).
+      Подраздел 2: указать код особенности перемещения или «000».
+      Если нет уверенности в коде — подсветить пользователю (severity: warning).
+    user_action_required: true
+    confidence:
+      application_statement: 0.85
+      derived_from_graph_1: 0.9
+
+  - graph: 38
+    name: "Вес нетто"
+    note: |
+      Масса нетто (без упаковки) в кг. Источник — PL.
+      ТОЛЬКО по данному конкретному товару — суммировать все строки PL по этому наименованию.
+      Не брать суммарный нетто всего PL и не брать значение одной случайной строки.
+    per_item: true
+    target:
+      kind: core_item
+      field: net_weight
+    sources: [packing_list]
+    source_notes:
+      packing_list: |
+        PL — найти все строки данного товара (по наименованию/артикулу),
+        суммировать net_weight по ним. Не брать итоговую строку PL.
+    ai_rule: |
+      Найти в PL все строки, относящиеся к данному наименованию товара (match по названию/артикулу).
+      Суммировать net_weight ТОЛЬКО по этим строкам — итог и есть значение гр. 38.
+      НЕ использовать total/итоговую строку PL — там вес всей партии, а не одного товара.
+      Нетто должно быть меньше брутто (гр. 35); если нет — warning.
+    cross_check: "net_weight < gross_weight (гр. 35); при нарушении — warning"
+    depends_on: [graph_35]
+    validation:
+      type: decimal
+      min: 0
+    confidence:
+      packing_list: 0.95
+
+  - graph: 39
+    name: "Квота"
+    target:
+      kind: core_item
+      field: quota_info
+    sources: [license_or_quota]
+
+  - graph: 40
+    name: "Предшествующий документ"
+    target:
+      kind: core_item
+      field: prev_doc_ref
+    sources: [previous_declaration, temporary_storage_doc]
+
+  - graph: 41
+    name: "Дополнительная единица измерения"
+    note: "Заполняется только если доп. единица предусмотрена для кода ТН ВЭД (гр. 33)."
+    target:
+      kind: core_item
+      field_unit: additional_unit
+      field_qty: additional_unit_qty
+    sources: [packing_list]
+    source_notes:
+      packing_list: "PL — количество товара в доп. единице (штуки, литры, пары и т.д.) по конкретной позиции."
+    depends_on: [graph_33]
+    ai_rule: |
+      Проверить по коду ТН ВЭД (гр. 33), предусмотрена ли дополнительная единица измерения.
+      Если предусмотрена — взять количество из Packing List по конкретной позиции.
+      Если не предусмотрена — не заполнять.
+      Спецификацию для этого поля не использовать.
+    confidence:
+      packing_list: 0.9
+      specification: 0.9
+
+  - graph: 42
+    name: "Цена товара"
+    note: |
+      Фактурная стоимость КОНКРЕТНОГО товара в валюте контракта (гр. 22).
+      Источник стоимости — инвойс на товары. Валюта — из договора/контракта.
+      Если валюта инвойса ≠ валюте контракта — пересчитать по курсу ЦБ на дату инвойса.
+      НЕ брать итоговую сумму инвойса — только строку данного товара.
+    per_item: true
+    target:
+      kind: core_item
+      field: unit_price
+    sources: [invoice, contract]
+    source_notes:
+      invoice: |
+        Инвойс на товары — найти строку данного товара (по наименованию/артикулу),
+        взять line_total или unit_price × quantity именно этой строки.
+        НЕ транспортный инвойс. НЕ итоговая строка инвойса (total).
+      contract: "Договор/контракт — для определения целевой валюты гр. 22."
+    depends_on: [graph_22]
+    ai_rule: |
+      1. Найти строку данного товара в инвойсе на товары (match по наименованию/артикулу/описанию).
+         Взять line_total или unit_price × quantity ТОЛЬКО этой строки.
+         НЕ использовать итоговую строку инвойса (grand total / итого).
+      2. Определить валюту контракта из гр. 22 (только договор/контракт купли-продажи).
+      3. Если валюта инвойса совпадает с валютой контракта — использовать напрямую.
+      4. Если валюты различаются — пересчитать по курсу ЦБ на дату инвойса,
+         результат подсветить пользователю с предупреждением о конвертации.
+    cross_check: "sum(graph_42 по всем позициям) = подраздел 2 гр. 22"
+    confidence:
+      invoice: 0.95
+      contract: 0.97
+
+  - graph: 43
+    name: "МОС"
+    target:
+      kind: core_item
+      field: mos_method_code
+    sources: [customs_valuation_rules, dts1_customs_value_calc]
+    default: "01"
+    flag_if_default: "проверьте метод определения стоимости"
+
+  - graph: 44
+    name: "Представленные документы (коды)"
+    note: |
+      Перечень всех загруженных документов. Каждый документ: код по классификатору ФТС + номер + дата.
+      Формат строки: КОД_ФТС; №НОМЕР; ДД.ММ.ГГГГ
+    target:
+      kind: extension
+      field: documents_codes
+    sources: [all_uploaded_documents]
+    source_notes:
+      all_uploaded_documents: >
+        Все загруженные пользователем файлы: инвойс, транспортные документы, контракт,
+        упаковочный лист, сертификаты происхождения, доверенности, лицензии, разрешения и др.
+    ai_rule: |
+      Для каждого загруженного документа:
+      1. Определить тип документа (invoice, transport_doc, contract, packing_list, origin_certificate, и т.д.).
+      2. Извлечь номер документа и дату.
+      3. Подобрать код по классификатору видов документов ФТС.
+      4. Сформировать строку: КОД_ФТС; №НОМЕР; ДД.ММ.ГГГГ
+      Итог — список строк, по одной на каждый документ.
+
+  - graph: 45
+    name: "Таможенная стоимость (RUB)"
+    note: |
+      Не заполняется при декларировании товаров с одним кодом ТН ВЭД разных наименований
+      и при декларировании национальной валюты.
+      Метод 1 (основной): цена из инвойса на товары (гр. 42) + добавки до границы ЕАЭС,
+      переведённые в рубли. ТОЛЬКО по данному конкретному товару.
+      Транспортные расходы распределяются пропорционально МАССЕ БРУТТО данного товара.
+    per_item: true
+    target:
+      kind: core_item
+      field: customs_value_rub
+    sources: [dts1_customs_value_calc, invoice, transport_invoice, insurance_doc, royalty_doc, packaging_doc]
+    source_notes:
+      dts1_customs_value_calc: "ДТС-1 — если есть, использовать как основной источник (значение по данному товару)."
+      invoice: "Инвойс на товары — базовая цена ДАННОГО товара (line_total строки, не итог инвойса)."
+      transport_invoice: |
+        Транспортный инвойс — если указана общая стоимость за всю партию, распределить по массе брутто:
+        freight_item = freight_total × (item_gross_weight / total_gross_weight_all_items)
+        Если стоимость указана по каждому товару отдельно — использовать напрямую.
+      insurance_doc: "Страховые документы — страховка распределяется пропорционально массе брутто товара (если нет раздельных данных по позициям)."
+      royalty_doc: "Документы по роялти/лицензиям — только если загружены и связаны с данным товаром."
+      packaging_doc: "Документы по упаковке — только если загружены."
+    compute:
+      primary: "dts1.item_customs_value"
+      method_1: |
+        item_price = invoice.line_total            # только строка данного товара (гр. 42)
+        weight_share = item_gross_weight / total_gross_weight_all_items
+        freight_item = transport_invoice.freight_total * weight_share
+        insurance_item = insurance.amount * weight_share  # если загружены документы
+        customs_value = (item_price + freight_item + insurance_item
+                         + commissions + royalty + packaging) * exchange_rate
+      flag_if_method_1: "предварительно — нет ДТС-1"
+    depends_on: [graph_23, graph_35, graph_42]
+    ai_rule: |
+      ВАЖНО: рассчитывать таможенную стоимость ТОЛЬКО для данной позиции, не для всей партии.
+      Алгоритм (Метод 1):
+      1. Базовая цена = line_total данного товара из инвойса на товары (гр. 42, не grand total).
+      2. Прибавить стоимость перевозки до границы ЕАЭС из транспортного инвойса:
+         — если транспортный инвойс содержит общую сумму за всю партию:
+           weight_share = gross_weight_этого_товара / суммарный_gross_weight_всех_товаров;
+           freight_item = total_freight × weight_share;
+         — если транспортный инвойс содержит стоимость по данному товару — брать напрямую.
+      3. Если загружены страховые документы — прибавить страховку (пропорционально массе брутто).
+      4. Если загружены документы по комиссионным/посредникам — прибавить (кроме комиссионера по покупке).
+      5. Если загружены документы по упаковке — прибавить стоимость упаковки.
+      6. Если загружены документы по роялти/лицензиям — прибавить (только если связаны с данным товаром).
+      7. Итог умножить на курс ЦБ (гр. 23). Округлить до 2 знаков.
+      8. Пометить «предварительно — нет ДТС-1».
+      Указать, какие компоненты учтены, а какие документы отсутствуют.
+    validation:
+      type: money_rub
+      round: 2
+
+  - graph: 46
+    name: "Статистическая стоимость (USD)"
+    note: |
+      Статистическая стоимость в USD по ДАННОЙ товарной подсубпозиции.
+      Рассчитывается по конкретному товару, не суммарно по декларации.
+      Формат: без пробелов, разделителей и знака валюты, 2 знака после запятой (напр. 12345.67).
+    per_item: true
+    target:
+      kind: core_item
+      field: statistical_value_usd
+    sources: [graph_45, graph_42, cbr_official_rate]
+    source_notes:
+      graph_45: "Таможенная стоимость ДАННОГО товара (гр. 45) — основной источник."
+      graph_42: "Цена ДАННОГО товара (гр. 42) — если гр. 45 не заполнена."
+      cbr_official_rate: "Официальный курс ЦБ USD на дату регистрации ДТ."
+    compute:
+      primary: "graph_45.customs_value_rub / cbr_usd_rate"
+      fallback: "graph_42.price_in_contract_currency / cbr_usd_rate"
+      export_adjustment: "привести к базису FOB последний порт убытия или DAP/граница ЕАЭС"
+    depends_on: [graph_42, graph_45]
+    ai_rule: |
+      ВАЖНО: рассчитывать статистическую стоимость ТОЛЬКО для данной позиции, не для всей партии.
+      1. Взять таможенную стоимость ДАННОГО товара из гр. 45 (в рублях).
+         Если гр. 45 не заполнена — взять цену ДАННОГО товара из гр. 42.
+      2. При экспорте: скорректировать на транспортные расходы (доля данного товара)
+         до получения базиса FOB/DAP граница.
+      3. Разделить на курс ЦБ USD на дату регистрации ДТ.
+      4. Округлить до 2 знаков. Записать без пробелов и знака валюты (формат: 12345.67).
+    validation:
+      type: money_usd
+      round: 2
+
+payments_graphs:
+  - graph: 47
+    name: "Исчисление платежей"
+    target:
+      kind: derived
+      calculator: calc_service
+    sources: [hs_code, customs_value_rub, preference_code, vat_rules]
+
+  - graph: 48
+    name: "Отсрочка платежей"
+    target:
+      kind: extension
+      field: payment_deferral
+    sources: [deferral_request, customs_decision, bank_guarantee, pledge]
+
+quality_checks:
+  - id: cross_country_10_17
+    description: "Графа 10 обычно совпадает с графой 17; при расхождении — issue"
+  - id: origin_requires_evidence
+    description: "Графа 16/34 без сертификата/подтверждения → confidence cap 0.6 + flag 'неподтверждено'; значение показывать, не скрывать"
+  - id: hs_requires_confirmation
+    description: "Графа 33 без решения ФТС → mark as candidate + require user confirm"
+  - id: weights_consistency
+    description: "Сумма item gross/net должна соответствовать header totals (если заданы) в пределах допуска"
+  - id: items_count_cross_check
+    description: "Количество товарных позиций в инвойсе должно совпадать с PL (если оба документа есть); при расхождении — issue"
+  - id: required_parties_filled
+    description: "Графы 2 (Отправитель), 8 (Получатель), 14 (Декларант) должны быть заполнены — если нет, блокирующая ошибка"
+

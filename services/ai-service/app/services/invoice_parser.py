@@ -926,14 +926,12 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
             if real_hs and not items[0].hs_code:
                 items[0].hs_code = real_hs[0]
 
-        # Enrich items with country_origin
+        # Enrich items with country_origin.
+        # Веса НЕ распределяем поровну — это приведёт к одинаковому весу у всех позиций.
+        # Per-item веса будут назначены в agent_crew по данным Packing List.
         for item in items:
             if not item.country_origin and country_origin:
                 item.country_origin = country_origin
-            if not item.gross_weight and gross_weight and len(items) > 0:
-                item.gross_weight = round(gross_weight / len(items), 3)
-            if not item.net_weight and net_weight and len(items) > 0:
-                item.net_weight = round(net_weight / len(items), 3)
 
         # LLM enrichment
         regex_result = {
