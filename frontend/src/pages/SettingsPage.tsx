@@ -72,6 +72,12 @@ const SettingsPage = () => {
   const [parseIssues, setParseIssues] = useState<any>(null);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [availableModels, setAvailableModels] = useState<string[]>([
+    'deepseek-chat',
+    'deepseek-reasoner',
+    'gpt-4o',
+    'gpt-4o-mini',
+  ]);
 
   const loadAiDebug = useCallback(async () => {
     setDebugLoading(true);
@@ -94,7 +100,7 @@ const SettingsPage = () => {
     finally { setIssuesLoading(false); }
   }, []);
 
-  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); loadParseIssues(); }, []);
+  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); loadParseIssues(); loadModels(); }, []);
 
   const loadSettings = async () => {
     try {
@@ -108,6 +114,22 @@ const SettingsPage = () => {
       setLoading(false);
     }
   };
+
+  const loadModels = useCallback(async () => {
+    try {
+      const resp = await client.get('/ai/models');
+      const ids: string[] = (resp.data?.models || []).map((m: any) => m.id).filter((id: string) => !!id);
+      if (ids.length > 0) {
+        setAvailableModels(ids);
+        // Если текущая выбранная модель отсутствует в списке — выбрать первую
+        if (!ids.includes(model)) {
+          setModel(ids[0]);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load models:', e);
+    }
+  }, [model]);
 
   const loadTrainingStats = useCallback(async () => {
     try {
@@ -141,6 +163,7 @@ const SettingsPage = () => {
         setApiKey('');
         await loadSettings();
         await loadTrainingStats();
+        await loadModels();
       }
     } catch (e: any) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Ошибка сохранения' });
@@ -152,6 +175,7 @@ const SettingsPage = () => {
       await client.post('/settings/openai-model', { key: 'openai_model', value: model });
       setMessage({ type: 'success', text: `Модель изменена на ${model}` });
       await loadSettings();
+      await loadModels();
     } catch (e: any) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Ошибка' });
     }
@@ -783,10 +807,9 @@ const SettingsPage = () => {
         <Typography variant="h6" sx={{ mb: 2 }}>Модель LLM</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 200 }} SelectProps={{ native: true }}>
-            <option value="deepseek-chat">DeepSeek V3 (рекомендуется)</option>
-            <option value="deepseek-reasoner">DeepSeek R1 (рассуждения)</option>
-            <option value="gpt-4o">GPT-4o</option>
-            <option value="gpt-4o-mini">GPT-4o Mini</option>
+            {availableModels.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
           </TextField>
           <Button variant="outlined" onClick={handleSaveModel}>Применить</Button>
         </Box>

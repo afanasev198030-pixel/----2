@@ -111,7 +111,7 @@ class IndexManager:
             _log_event("chromadb_connect_failed", str(e), "error")
             return
 
-        # Embeddings: multilingual E5 (local) or OpenAI (cloud)
+        # Embeddings: multilingual E5 (local) или OpenAI‑совместимый провайдер (cloud, в т.ч. proxyapi)
         from app.config import get_settings
         settings = get_settings()
         ef = _get_embedding_function()
@@ -119,13 +119,15 @@ class IndexManager:
             self._openai_client = None  # Не нужен — используем E5 локально
             _log_event("embed_provider_e5", f"model={_E5_MODEL}, local multilingual embeddings")
         elif settings.EMBED_PROVIDER == "openai" and _openai_available:
+            # Используем тот же base_url, что и для LLM (может быть OpenAI, DeepSeek или proxyapi)
             embed_key = settings.effective_api_key
+            embed_base_url = settings.effective_base_url
             if embed_key and embed_key != "sk-your-key-here":
                 self._openai_client = _openai_mod.OpenAI(
                     api_key=embed_key,
-                    base_url="https://api.openai.com/v1",
+                    base_url=embed_base_url,
                 )
-                _log_event("openai_embed_client_ready", f"model={self.EMBED_MODEL}")
+                _log_event("openai_embed_client_ready", f"model={self.EMBED_MODEL}, base_url={embed_base_url}")
             else:
                 _log_event("openai_embed_no_key", "Set key in Settings page", "warning")
         else:

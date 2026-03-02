@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 
@@ -181,6 +181,41 @@ async def configure_ai(data: dict):
         "model": new_settings.effective_model,
         "base_url": new_settings.effective_base_url,
     }
+
+
+@app.get("/api/v1/ai/models")
+async def list_llm_models():
+    """
+    Получить список моделей из текущего LLM провайдера (OpenAI-совместимый / proxy).
+    Использует настройки ключа и base_url из ai-service.
+    """
+    from app.config import get_settings
+    import openai
+
+    current_settings = get_settings()
+    if not current_settings.has_llm:
+        return {"models": [], "error": "LLM API ключ не настроен"}
+
+    client = openai.OpenAI(
+        api_key=current_settings.effective_api_key,
+        base_url=current_settings.effective_base_url,
+    )
+
+    try:
+        resp = client.models.list()
+        items = []
+        for m in resp.data:
+            items.append(
+                {
+                    "id": getattr(m, "id", ""),
+                    "created": getattr(m, "created", None),
+                    "owned_by": getattr(m, "owned_by", ""),
+                }
+            )
+        return {"models": items}
+    except Exception as e:
+        logger.error("llm_models_list_failed", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Не удалось получить список моделей: {str(e)[:200]}")
 
 
 @app.on_event("startup")
