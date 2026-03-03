@@ -22,6 +22,7 @@ import {
   Skeleton,
   Chip,
   Divider,
+  Alert,
 } from '@mui/material';
 import {
   People as PeopleIcon,
@@ -35,6 +36,7 @@ import {
 import { getDeclarations } from '../api/declarations';
 import { getBrokerClients, BrokerClient } from '../api/broker';
 import { getMe } from '../api/auth';
+import client from '../api/client';
 import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import { Declaration } from '../types';
@@ -56,6 +58,12 @@ const BrokerDashboard = () => {
   const { data: clientsData, isLoading: clientsLoading } = useQuery({
     queryKey: ['broker-clients'],
     queryFn: getBrokerClients,
+  });
+
+  const { data: aiHealth } = useQuery({
+    queryKey: ['ai-health'],
+    queryFn: () => client.get('/ai/health-detailed').then(r => r.data).catch(() => null),
+    staleTime: 60_000,
   });
 
   const metrics = useMemo(() => {
@@ -108,6 +116,23 @@ const BrokerDashboard = () => {
 
   return (
     <AppLayout>
+      {/* LLM status banner */}
+      {aiHealth && !aiHealth.llm_configured && (
+        <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={() => navigate('/settings')}>Настройки</Button>}>
+          API-ключ LLM не настроен. AI-парсинг и классификация ТН ВЭД не будут работать.
+        </Alert>
+      )}
+      {aiHealth && aiHealth.llm_configured && aiHealth.dspy && !aiHealth.dspy.configured && (
+        <Alert severity="warning" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={() => navigate('/settings')}>Настройки</Button>}>
+          LLM подключен, но DSPy не сконфигурирован. Классификация ТН ВЭД может не работать. Проверьте API-ключ.
+        </Alert>
+      )}
+      {aiHealth === null && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          AI-сервис недоступен. Парсинг документов не будет работать.
+        </Alert>
+      )}
+
       {/* Welcome */}
         <Typography variant="h5" fontWeight={700} gutterBottom>
           Добро пожаловать{meData?.full_name ? `, ${meData.full_name.split(' ')[0]}` : ''}

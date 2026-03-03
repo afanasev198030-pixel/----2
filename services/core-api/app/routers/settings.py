@@ -309,13 +309,38 @@ async def set_openai_model(
     current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Установить модель OpenAI."""
+    """Установить модель и применить к ai-service."""
     if data.key != "openai_model":
         raise HTTPException(status_code=400, detail="Invalid key")
 
     await _set_setting(db, "openai_model", data.value)
-    logger.info("openai_model_updated", model=data.value)
-    return {"status": "saved", "model": data.value}
+    await _set_setting(db, "llm_model", data.value)
+
+    is_deepseek = data.value.startswith("deepseek")
+    provider = "deepseek" if is_deepseek else "openai"
+    base_url = "https://api.deepseek.com" if is_deepseek else "https://api.openai.com/v1"
+
+    await _set_setting(db, "llm_provider", provider)
+    await _set_setting(db, "llm_base_url", base_url)
+
+    ai_result = {}
+    try:
+        import os
+        ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+        r_key = await db.execute(text("SELECT value FROM core.system_settings WHERE key='openai_api_key'"))
+        api_key = (r_key.scalar() or "").strip()
+        if api_key:
+            async with httpx.AsyncClient(timeout=15, headers=tracing_headers()) as c:
+                resp = await c.post(f"{ai_url}/api/v1/ai/configure", json={
+                    "api_key": api_key, "model": data.value,
+                    "provider": provider, "base_url": base_url,
+                })
+                ai_result = resp.json()
+    except Exception as e:
+        logger.warning("model_change_ai_reconfigure_failed", error=str(e)[:100])
+
+    logger.info("openai_model_updated", model=data.value, provider=provider)
+    return {"status": "saved", "model": data.value, "provider": provider, "ai_service": ai_result}
 
 
 @router.post("/load-tnved")

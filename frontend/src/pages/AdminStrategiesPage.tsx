@@ -83,7 +83,7 @@ const AdminStrategiesPage = () => {
   };
 
   return (
-    <AppLayout title="AI-стратегии">
+    <AppLayout>
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
