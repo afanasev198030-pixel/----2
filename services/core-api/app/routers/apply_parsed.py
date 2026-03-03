@@ -398,13 +398,44 @@ async def apply_parsed_data(
                     logger.warning("goods_location_post_not_found", code=office_code)
 
         # --- 3. Создать товарные позиции ---
+        from app.models.hs_code_history import HsCodeHistory
+        from sqlalchemy import func as sa_func
+
         for item_data in data.items:
+            hs_code = item_data.hs_code or ""
+            hs_source = "ai"
+            desc_norm = (item_data.description or "")[:300].strip().lower()
+
+            if not hs_code and desc_norm and current_user.company_id:
+                try:
+                    hist = await db.execute(
+                        select(HsCodeHistory)
+                        .where(
+                            HsCodeHistory.company_id == current_user.company_id,
+                            sa_func.similarity(HsCodeHistory.description_trgm, desc_norm) > 0.3,
+                        )
+                        .order_by(
+                            sa_func.similarity(HsCodeHistory.description_trgm, desc_norm).desc(),
+                            HsCodeHistory.usage_count.desc(),
+                        )
+                        .limit(1)
+                    )
+                    match = hist.scalar_one_or_none()
+                    if match:
+                        hs_code = match.hs_code
+                        hs_source = "history"
+                        logger.info("hs_code_from_history",
+                                    desc=desc_norm[:50], hs_code=hs_code,
+                                    similarity="trgm", usage_count=match.usage_count)
+                except Exception as e:
+                    logger.debug("hs_history_lookup_failed", error=str(e)[:80])
+
             item = DeclarationItem(
                 declaration_id=declaration.id,
                 item_no=item_data.line_no,
                 description=item_data.description,
                 commercial_name=item_data.commercial_name or item_data.description,
-                hs_code=item_data.hs_code,
+                hs_code=hs_code,
                 country_origin_code=(item_data.country_origin_code or data.country_origin or "")[:2] or None,
                 gross_weight=_to_decimal(item_data.gross_weight),
                 net_weight=_to_decimal(item_data.net_weight),
@@ -413,21 +444,49 @@ async def apply_parsed_data(
                 package_type=item_data.package_type,
                 additional_unit=item_data.unit,
                 additional_unit_qty=_to_decimal(item_data.quantity),
-                mos_method_code="01",  # Метод 1 по умолчанию (по стоимости сделки)
+                mos_method_code="01",
                 risk_score=data.risk_score or 0,
                 risk_flags=data.risk_flags,
             )
 
-            # Рассчитать customs_value_rub через курс ЦБ
             if item_data.unit_price and item_data.quantity:
                 line_val_currency = Decimal(str(item_data.unit_price * item_data.quantity))
                 item.customs_value_rub = (line_val_currency * exchange_rate).quantize(Decimal("0.01"))
 
             db.add(item)
+            await db.flush()
             counters["items"] += 1
 
-            # Автосохранение прецедента при высокой confidence
-            if item_data.hs_code and item_data.description and data.confidence and data.confidence > 0.85:
+            if hs_code and desc_norm and current_user.company_id:
+                try:
+                    existing_hist = await db.execute(
+                        select(HsCodeHistory).where(
+                            HsCodeHistory.company_id == current_user.company_id,
+                            HsCodeHistory.hs_code == hs_code,
+                            HsCodeHistory.description_trgm == desc_norm,
+                        )
+                    )
+                    hist_row = existing_hist.scalar_one_or_none()
+                    if hist_row:
+                        hist_row.usage_count += 1
+                        hist_row.declaration_id = declaration.id
+                        hist_row.item_id = item.id
+                    else:
+                        db.add(HsCodeHistory(
+                            company_id=current_user.company_id,
+                            counterparty_id=sender_id,
+                            counterparty_name=(data.seller.name if data.seller else None),
+                            description=item_data.description or "",
+                            description_trgm=desc_norm,
+                            hs_code=hs_code,
+                            declaration_id=declaration.id,
+                            item_id=item.id,
+                            source=hs_source,
+                        ))
+                except Exception as e:
+                    logger.debug("hs_history_save_failed", error=str(e)[:80])
+
+            if hs_code and item_data.description:
                 try:
                     import httpx as _httpx
                     import os
@@ -435,11 +494,13 @@ async def apply_parsed_data(
                     ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
                     _httpx.post(f"{ai_url}/api/v1/ai/feedback", json={
                         "declaration_id": str(declaration.id),
-                        "item_id": "",
+                        "item_id": str(item.id),
                         "feedback_type": "hs_auto_confirmed",
-                        "predicted_value": item_data.hs_code,
-                        "actual_value": item_data.hs_code,
+                        "predicted_value": hs_code,
+                        "actual_value": hs_code,
                         "description": (item_data.description or "")[:300],
+                        "company_id": str(current_user.company_id) if current_user.company_id else "",
+                        "counterparty_name": (data.seller.name if data.seller else ""),
                     }, headers=tracing_headers(), timeout=3)
                 except Exception:
                     pass
@@ -558,20 +619,57 @@ async def _find_or_create_counterparty(
     cp_type: str,
     company_id: Optional[uuid.UUID],
 ) -> uuid.UUID:
-    """Найти существующего контрагента или создать нового."""
-    # Поиск по имени
-    result = await db.execute(
-        select(Counterparty).where(
-            Counterparty.name == parsed.name,
-            Counterparty.type == cp_type,
+    """Найти существующего контрагента или создать нового.
+    Приоритет поиска: tax_number > exact name > ilike name.
+    Обновляет недостающие поля у найденного контрагента.
+    """
+    existing = None
+
+    if parsed.tax_number:
+        result = await db.execute(
+            select(Counterparty).where(
+                Counterparty.tax_number == parsed.tax_number,
+                Counterparty.company_id == company_id,
+            )
         )
-    )
-    existing = result.scalar_one_or_none()
+        existing = result.scalar_one_or_none()
+
+    if not existing and parsed.name:
+        result = await db.execute(
+            select(Counterparty).where(
+                Counterparty.name == parsed.name,
+                Counterparty.type == cp_type,
+                Counterparty.company_id == company_id,
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+    if not existing and parsed.name:
+        result = await db.execute(
+            select(Counterparty).where(
+                Counterparty.name.ilike(f"%{parsed.name[:30]}%"),
+                Counterparty.type == cp_type,
+                Counterparty.company_id == company_id,
+            )
+        )
+        existing = result.scalars().first()
 
     if existing:
+        updated = False
+        if parsed.country_code and not existing.country_code:
+            existing.country_code = parsed.country_code
+            updated = True
+        if parsed.tax_number and not existing.tax_number:
+            existing.tax_number = parsed.tax_number
+            updated = True
+        if parsed.address and not existing.address:
+            existing.address = parsed.address
+            updated = True
+        if updated:
+            await db.flush()
+            logger.info("counterparty_updated", id=str(existing.id), name=existing.name)
         return existing.id
 
-    # Создать нового
     counterparty = Counterparty(
         type=cp_type,
         name=parsed.name,

@@ -259,11 +259,12 @@ const DeclarationEditPage = () => {
       });
       if (parsed.risk_score) setRiskScore(parsed.risk_score);
       if (parsed.risk_flags) setRiskFlags(parsed.risk_flags);
-      // Reload fresh data from server
       const fresh = await getDeclaration(id);
       reset(normalizeDecl(fresh));
       loadedRef.current = fresh.id;
       queryClient.setQueryData(['declaration', id], fresh);
+      queryClient.invalidateQueries({ queryKey: ['counterparties'] });
+      queryClient.invalidateQueries({ queryKey: ['declaration-docs', id] });
       await refetchItems();
       setSnackMsg('AI заполнил декларацию');
       setActiveStep(1);
