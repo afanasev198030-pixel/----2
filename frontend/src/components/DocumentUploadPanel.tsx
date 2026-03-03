@@ -143,23 +143,39 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
       clearInterval(pollInterval);
       if (parsed.request_id) requestId = parsed.request_id;
 
+      const hasItems = (parsed.items || []).length > 0;
+      const itemsWithHs = (parsed.items || []).filter((it: any) => it.hs_code && it.hs_code.length >= 6).length;
+      const totalItems = (parsed.items || []).length;
+
       setProgress(100);
       setProgressStep('complete');
-      setProgressDetail('Готово! Данные распознаны.');
       setResult(parsed);
       setEditableResult({
         ...parsed,
-        items: (parsed.items || []).map((it) => ({ ...it })),
+        items: (parsed.items || []).map((it: any) => ({ ...it })),
       });
 
-      // Show preview after short delay
+      if (!hasItems) {
+        setProgressDetail('Документы распознаны, но позиции не найдены. Проверьте API-ключ в Настройках.');
+        setError('AI не смог извлечь позиции. Возможно, API-ключ LLM невалидный или истёк. Перейдите в Настройки и проверьте ключ.');
+      } else if (itemsWithHs === 0 && totalItems > 0) {
+        setProgressDetail(`Найдено ${totalItems} позиций, но коды ТН ВЭД не определены.`);
+        setError(`Коды ТН ВЭД не определены для ${totalItems} позиций. Вероятная причина: API-ключ LLM невалидный. Проверьте ключ в Настройках.`);
+      } else if (itemsWithHs < totalItems) {
+        setProgressDetail(`Готово! ${itemsWithHs} из ${totalItems} позиций с кодами ТН ВЭД.`);
+      } else {
+        setProgressDetail('Готово! Данные распознаны.');
+      }
+
       setTimeout(() => setShowPreview(true), 500);
 
     } catch (err: any) {
       console.error('Smart parse error:', err);
       const msg = err?.response?.data?.detail || err?.message || 'Ошибка';
-      if (msg.includes('timeout') || msg.includes('Network Error')) {
-        setError('Таймаут: обработка заняла слишком много времени. Попробуйте загрузить меньше файлов или проверьте OpenAI ключ в Настройках.');
+      if (msg.includes('401') || msg.includes('Authentication') || msg.includes('auth')) {
+        setError('API-ключ LLM невалидный или истёк. Перейдите в Настройки и обновите ключ.');
+      } else if (msg.includes('timeout') || msg.includes('Network Error')) {
+        setError('Таймаут: обработка заняла слишком много времени. Попробуйте загрузить меньше файлов или проверьте API-ключ в Настройках.');
       } else {
         setError(msg);
       }

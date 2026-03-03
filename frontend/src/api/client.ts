@@ -11,12 +11,15 @@ const client: AxiosInstance = axios.create({
   },
 });
 
-// Request interceptor: attach JWT token
+// Request interceptor: attach JWT token + X-Request-ID
 client.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (config.headers && !config.headers['X-Request-ID']) {
+      config.headers['X-Request-ID'] = crypto.randomUUID();
     }
     return config;
   },

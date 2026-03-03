@@ -5,6 +5,7 @@ import structlog
 from app.config import get_settings
 from app.routers import parser, classifier, risk
 from app.routers import smart_parser
+from app.middleware.tracing import TracingMiddleware
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -15,6 +16,7 @@ app = FastAPI(
     description="AI Service: OCR parsing, HS classification (RAG), risk assessment, multi-agent pipeline",
 )
 
+app.add_middleware(TracingMiddleware, service_name=settings.SERVICE_NAME)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

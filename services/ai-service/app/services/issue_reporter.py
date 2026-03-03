@@ -5,6 +5,8 @@
 import httpx
 import structlog
 
+from app.middleware.tracing import get_correlation_id
+
 logger = structlog.get_logger()
 
 CORE_API_URL = "http://core-api:8001"
@@ -30,12 +32,16 @@ def report_issue(
             "details": details,
             "declaration_id": declaration_id,
         }
+        headers = {}
+        cid = get_correlation_id()
+        if cid:
+            headers["X-Request-ID"] = cid
         httpx.post(
             f"{CORE_API_URL}/api/v1/internal/parse-issue",
             json=payload,
+            headers=headers,
             timeout=5,
         )
         logger.debug("issue_reported", stage=stage, severity=severity, message=message[:80])
     except Exception as e:
-        # Не ломаем основной процесс из-за логирования
         logger.warning("issue_report_failed", error=str(e)[:100])

@@ -10,16 +10,19 @@ import {
 import {
   Save, AutoAwesome as AiIcon,
   Visibility as ViewIcon, Delete as DeleteIcon,
+  Description as DocsIcon,
 } from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
 import {
   getDeclaration, updateDeclaration,
 } from '../api/declarations';
 import { getItems, deleteItem } from '../api/items';
+import { getDocuments } from '../api/documents';
 import { calculatePayments, PaymentResult } from '../api/calc';
 import client from '../api/client';
 import StatusChip from '../components/StatusChip';
 import DocumentUploadPanel from '../components/DocumentUploadPanel';
+import DocumentViewer from '../components/DocumentViewer';
 import ClassifierSelect from '../components/ClassifierSelect';
 import HSCodeSuggestions from '../components/HSCodeSuggestions';
 import RequirementsPanel from '../components/RequirementsPanel';
@@ -27,7 +30,7 @@ import RiskPanel from '../components/RiskPanel';
 import DeclarationChecklist from '../components/DeclarationChecklist';
 import HistoryPanel from '../components/HistoryPanel';
 import CounterpartyLookup from '../components/CounterpartyLookup';
-import { Declaration, DeclarationItem } from '../types';
+import { Declaration, DeclarationItem, Document as DocType } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
 
@@ -40,6 +43,7 @@ const DeclarationEditPage = () => {
   const [riskScore, setRiskScore] = useState(0);
   const [riskFlags, setRiskFlags] = useState<any>(null);
   const [payments, setPayments] = useState<PaymentResult | null>(null);
+  const [docViewerOpen, setDocViewerOpen] = useState(false);
 
   // react-hook-form — single source of truth for form state
   const { register, reset, setValue, getValues, watch } = useForm<any>({
@@ -73,6 +77,18 @@ const DeclarationEditPage = () => {
     enabled: !!id,
     staleTime: 10_000,
   });
+
+  const { data: docsData } = useQuery({
+    queryKey: ['declaration-docs', id],
+    queryFn: () => getDocuments({ declaration_id: id! }),
+    enabled: !!id,
+    staleTime: 15_000,
+  });
+
+  const docs: DocType[] = useMemo(() => {
+    if (!docsData) return [];
+    return (docsData as any)?.items || (Array.isArray(docsData) ? docsData : []);
+  }, [docsData]);
 
   const items: DeclarationItem[] = useMemo(() => {
     if (Array.isArray(itemsData)) return itemsData;
@@ -243,11 +259,12 @@ const DeclarationEditPage = () => {
       });
       if (parsed.risk_score) setRiskScore(parsed.risk_score);
       if (parsed.risk_flags) setRiskFlags(parsed.risk_flags);
-      // Reload fresh data from server
       const fresh = await getDeclaration(id);
       reset(normalizeDecl(fresh));
       loadedRef.current = fresh.id;
       queryClient.setQueryData(['declaration', id], fresh);
+      queryClient.invalidateQueries({ queryKey: ['counterparties'] });
+      queryClient.invalidateQueries({ queryKey: ['declaration-docs', id] });
       await refetchItems();
       setSnackMsg('AI заполнил декларацию');
       setActiveStep(1);
@@ -271,7 +288,14 @@ const DeclarationEditPage = () => {
         {autoSaveStatus === 'saving' && <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>Сохранение...</Typography>}
         {autoSaveStatus === 'saved' && <Typography variant="caption" color="success.main" sx={{ ml: 1 }}>Сохранено</Typography>}
         <Button startIcon={<ViewIcon />} onClick={() => navigate(`/declarations/${id}/view`)} sx={{ ml: 1 }} variant="outlined">Просмотр ДТ</Button>
+        {docs.length > 0 && (
+          <Button startIcon={<DocsIcon />} onClick={() => setDocViewerOpen(true)} sx={{ ml: 1 }} variant="outlined" color="secondary">
+            Документы ({docs.length})
+          </Button>
+        )}
       </Box>
+
+      <DocumentViewer documents={docs} open={docViewerOpen} onClose={() => setDocViewerOpen(false)} />
 
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <Stepper activeStep={activeStep} sx={{ mb: 3 }}>

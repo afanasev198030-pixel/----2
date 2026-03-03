@@ -4,12 +4,14 @@ import structlog
 
 from app.config import get_settings
 from app.routers import payments
+from app.middleware.tracing import TracingMiddleware
 
 logger = structlog.get_logger()
 settings = get_settings()
 
 app = FastAPI(title="Calc Service", version="0.1.0")
 
+app.add_middleware(TracingMiddleware, service_name=settings.SERVICE_NAME)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(payments.router)
 

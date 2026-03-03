@@ -1,16 +1,20 @@
 import time
 import uuid
+
+import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-import structlog
 
-from app.config import settings
 
 logger = structlog.get_logger()
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    """Middleware for request logging with correlation_id."""
+class TracingMiddleware(BaseHTTPMiddleware):
+    """Propagate X-Request-ID across services and log requests."""
+
+    def __init__(self, app, service_name: str = "unknown"):
+        super().__init__(app)
+        self.service_name = service_name
 
     async def dispatch(self, request: Request, call_next):
         correlation_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
@@ -18,7 +22,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
             correlation_id=correlation_id,
-            service_name=settings.SERVICE_NAME,
+            service_name=self.service_name,
         )
 
         start_time = time.time()
@@ -55,12 +59,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
 
 def get_correlation_id() -> str:
-    """Retrieve current correlation_id from structlog context for inter-service calls."""
+    """Retrieve current correlation_id from structlog context."""
     ctx = structlog.contextvars.get_contextvars()
     return ctx.get("correlation_id", "")
-
-
-def tracing_headers() -> dict[str, str]:
-    """Build headers dict with X-Request-ID for outbound httpx calls."""
-    cid = get_correlation_id()
-    return {"X-Request-ID": cid} if cid else {}

@@ -26,7 +26,7 @@ from app.services.ocr_service import extract_text
 from app.services.rules_engine import (
     EvidenceTracker, validate_declaration,
     build_graph_rules_prompt, get_source_priority_map,
-    build_full_rules_for_llm,
+    build_full_rules_for_llm, build_strategies_prompt,
 )
 
 
@@ -474,6 +474,7 @@ JSON: {{"matches": [...]}}"""},
             from app.config import get_settings as _get_settings
             _settings = _get_settings()
             _rules_hint = build_graph_rules_prompt(_settings.CORE_API_URL)
+            _strategies_hint = build_strategies_prompt(_settings.CORE_API_URL)
 
             system_prompt = (
                 "Ты эксперт по таможенному оформлению РФ. Извлеки данные из нескольких документов одного комплекта. "
@@ -488,6 +489,8 @@ JSON: {{"matches": [...]}}"""},
             )
             if _rules_hint:
                 system_prompt += f"\n\n{_rules_hint}"
+            if _strategies_hint:
+                system_prompt += f"\n\n{_strategies_hint}"
 
             client = get_llm_client()
             resp = client.chat.completions.create(

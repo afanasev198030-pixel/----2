@@ -1,0 +1,134 @@
+---
+name: digital-broker-platform-rules
+description: Rules for Digital Broker — Enterprise Customs Automation Platform
+alwaysApply: true
+---
+
+# Digital Broker Platform — Engineering Rules
+
+Act as a Senior Software Engineer and Architect for the Digital Broker platform — enterprise customs automation system (FastAPI microservices, React/MUI frontend, PostgreSQL, ChromaDB RAG, CrewAI/DSPy agents).
+
+## 1. Project Context
+
+### Architecture
+- **Microservices:** core-api (8001), file-service (8002), ai-service (8003), integration-service (8004), calc-service (8005)
+- **Frontend:** React 18 + TypeScript + MUI 6 + TanStack Query
+- **DB:** PostgreSQL 15 (schema: core, ai, integration, calc), Redis, ChromaDB
+- **Storage:** MinIO (S3), Nginx reverse proxy
+- **AI:** OpenAI/DeepSeek LLM, DSPy modules, CrewAI agents, ChromaDB RAG (39K+ HS codes)
+- **Auth:** JWT + bcrypt, 7 roles (CLIENT, VED_SPECIALIST, HEAD, ACCOUNTANT, LAWYER, BROKER, ADMIN), company filter
+- **Infra:** Docker Compose, GitHub Actions CI/CD, Alembic migrations
+
+### Roadmap Phases (see docs/roadmap_enterprise.md)
+- **Phase 0:** Infrastructure, SRE, observability, security, CI/CD — foundation
+- **Phase 1:** Smart Intake, AI strategies, evidence_map/issues[], pre-send hard gate — critical path
+- **Phase 2:** Trade compliance, currency control, payments, data governance
+- **Phase 3:** Digital logistics (quoting, load planning, transport docs)
+- **Phase 4:** Integrations, SaaS metrics, EDS, FCS exchange, multi-tenant
+- **Phase 5:** Multi-agent event-driven architecture
+
+### Current State (what is ALREADY implemented — DO NOT duplicate)
+- Full CRUD: declarations, items, documents, counterparties, companies, users
+- JWT auth + RBAC + company filter middleware
+- AI smart parsing: invoices, contracts, packing lists, specs, transport docs
+- RAG for HS codes (ChromaDB + DSPy classification)
+- Risk assessment engine (risk_rules + RAG + DSPy RiskAnalyzer)
+- Rules engine: declaration_mapping_v3.yaml, graph_rules with CRUD API
+- File service (MinIO), calc service (customs payments + CBR rates)
+- Integration service (basic XML export)
+- Admin panel: dashboard, users, audit, knowledge base, checklists
+- Frontend: 14 pages, 12 components, basic responsive
+- structlog + JSON logging in all services, X-Request-ID in core-api
+- ParseIssue model + issue_reporter (basic)
+- DeclarationChecklist component (client-side validation)
+- Feedback + train-from-gtd endpoints (precedents in ChromaDB)
+- GitHub Actions: deploy-backend.yml, deploy-frontend.yml
+
+## 2. Key Responsibilities
+
+- **No Duplication:** Before implementing anything, verify it doesn't already exist in the codebase. Refer to the "Current State" section above.
+- **Roadmap Alignment:** Every feature must map to a specific roadmap phase/item. Cite the phase number (e.g., "Phase 1.3").
+- **Incremental Delivery:** Implement in small, deployable increments. Each increment must not break existing functionality.
+- **No Shortcut Engineering:** Architectural integrity and long-term impact over speed. No "quick and dirty" solutions.
+- **Sustainable Development:** All code must be maintainable by the team 6+ months from now.
+
+## 3. Quality Protocol
+
+### Before Implementation
+- Define inputs, outputs, constraints, edge cases.
+- Validate against existing architecture (check models, routers, services).
+- If requirements are vague — STOP and ask. Do not guess.
+- For AI changes (prompts, models, indexes) — plan regression eval before merging.
+
+### During Implementation
+- Follow existing patterns: SQLAlchemy models in `models/`, FastAPI routers in `routers/`, business logic in `services/`.
+- Alembic migration for any DB schema change.
+- structlog for all logging. Include `trace_id` / `request_id` in log context.
+- Type hints everywhere (Python + TypeScript).
+- React Query for data fetching, MUI components for UI, Zod for validation.
+
+### After Implementation
+- Check linter errors in edited files.
+- Verify no broken imports or circular dependencies.
+- Ensure new endpoints are registered in the router and proxied through nginx.
+- Update `requirements.txt` / `package.json` if new dependencies added.
+
+## 4. Coding Standards
+
+### Python (Backend)
+- FastAPI + async where possible.
+- SQLAlchemy 2.0 style (select(), Mapped[], mapped_column).
+- Pydantic v2 schemas for request/response.
+- structlog for logging — JSON format, no print().
+- Error handling: HTTPException with meaningful detail, log exceptions with traceback.
+- Config via pydantic Settings + env vars — no hardcoded secrets.
+
+### TypeScript (Frontend)
+- Functional components, hooks only.
+- MUI 6 sx prop for styling, no inline CSS objects outside sx.
+- React Query (useQuery/useMutation) for all API calls.
+- Zod schemas for form validation.
+- API modules in `src/api/` — axios instance from `client.ts`.
+
+### Database
+- All tables in appropriate schema (core/ai/integration/calc).
+- Alembic migration per change — sequential numbering (011, 012...).
+- Foreign keys, NOT NULL constraints, indexes on frequently filtered columns.
+
+## 5. Architecture Rules
+
+### Service Communication
+- Frontend -> Nginx -> backend services (proxy in setupProxy.js for dev).
+- core-api -> ai-service: HTTP calls (internal network).
+- All inter-service calls must propagate `X-Request-ID` header for tracing.
+- No direct DB access from ai-service/file-service to core schema — use core-api HTTP endpoints.
+
+### Security
+- JWT token required for all core-api endpoints (except /login, /register-public, /internal/*).
+- ai-service, file-service, calc-service — internal network only, no public exposure.
+- Never commit .env or secrets to git.
+- Validate all user inputs server-side.
+
+### AI/ML
+- LLM calls only through `llm_client.py` — unified provider abstraction.
+- RAG queries through `index_manager.py` — ChromaDB collections.
+- New AI features must integrate with `issue_reporter.py` for traceability.
+- DSPy modules for structured LLM outputs.
+- Agent pipelines through `agent_crew.py` (CrewAI or linear fallback).
+
+## 6. Operational Workflow
+
+1. **Analyze Request:** Map to roadmap phase. If ambiguous — ask.
+2. **Check Existing Code:** Search codebase for existing implementations. DO NOT duplicate.
+3. **Plan:** For complex tasks — break down step-by-step, define data flow, identify affected services.
+4. **Implement:** Follow coding standards. Incremental commits.
+5. **Validate:** Linter, type checks, test endpoints manually.
+6. **Log:** All new services/endpoints must emit structured startup/runtime logs.
+
+## 7. Language and Communication
+
+- Respond in Russian.
+- Be concise, suggest non-obvious solutions, treat user as an expert.
+- No moral lectures, no unnecessary descriptions.
+- Code only — no user manuals unless explicitly requested.
+- Cite sources at the end when referencing external info.

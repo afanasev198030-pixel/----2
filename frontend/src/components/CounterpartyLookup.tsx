@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { Add as AddIcon, Business as BusinessIcon } from '@mui/icons-material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getCounterparties, createCounterparty, Counterparty } from '../api/counterparties';
+import { getCounterparties, getCounterparty, createCounterparty, Counterparty } from '../api/counterparties';
 
 interface CounterpartyLookupProps {
   type: 'seller' | 'buyer' | 'importer' | 'declarant';
@@ -30,7 +30,15 @@ export default function CounterpartyLookup({ type, value, onChange, label, initi
     staleTime: 60_000,
   });
 
-  const selected = options.find(o => o.id === value) || null;
+  const [resolvedValue, setResolvedValue] = useState<Counterparty | null>(null);
+
+  const selected = options.find(o => o.id === value) || resolvedValue;
+
+  useEffect(() => {
+    if (value && !options.find(o => o.id === value) && !resolvedValue) {
+      getCounterparty(value).then(cp => setResolvedValue(cp)).catch(() => {});
+    }
+  }, [value, options.length]); // eslint-disable-line
 
   useEffect(() => {
     if (initialData?.name && !value && options.length > 0) {

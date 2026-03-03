@@ -219,6 +219,7 @@ async def update_item(
         try:
             import httpx as _httpx
             import os
+            from app.middleware.logging_middleware import tracing_headers
             ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
             _httpx.post(f"{ai_url}/api/v1/ai/feedback", json={
                 "declaration_id": str(declaration_id),
@@ -227,7 +228,7 @@ async def update_item(
                 "predicted_value": "",
                 "actual_value": item.hs_code,
                 "description": item.description[:300],
-            }, timeout=5)
+            }, headers=tracing_headers(), timeout=5)
             logger.info("hs_feedback_sent", description=item.description[:50], hs_code=item.hs_code)
         except Exception as e:
             logger.debug("hs_feedback_failed", error=str(e)[:100])

@@ -9,6 +9,7 @@ from structlog.stdlib import LoggerFactory
 
 from app.config import get_settings
 from app.routers import xml_export
+from app.middleware.tracing import TracingMiddleware
 
 settings = get_settings()
 
@@ -55,6 +56,7 @@ app = FastAPI(
     description="XML export, FTS integration, EDS signing for customs declarations",
 )
 
+app.add_middleware(TracingMiddleware, service_name=settings.SERVICE_NAME)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

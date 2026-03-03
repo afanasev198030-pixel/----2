@@ -810,6 +810,18 @@ const SettingsPage = () => {
             {availableModels.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
+{/*            <optgroup label="OpenAI">
+              <option value="gpt-4.1">GPT-4.1 (рекомендуется)</option>
+              <option value="gpt-4.1-mini">GPT-4.1 Mini (быстрее)</option>
+              <option value="gpt-4.1-nano">GPT-4.1 Nano (дешёвый)</option>
+              <option value="gpt-4o">GPT-4o (legacy)</option>
+              <option value="gpt-4o-mini">GPT-4o Mini (legacy)</option>
+            </optgroup>
+            <optgroup label="DeepSeek">
+              <option value="deepseek-chat">DeepSeek V3</option>
+              <option value="deepseek-reasoner">DeepSeek R1 (рассуждения)</option>
+            </optgroup>
+*/}
           </TextField>
           <Button variant="outlined" onClick={handleSaveModel}>Применить</Button>
         </Box>
@@ -820,6 +832,7 @@ const SettingsPage = () => {
         <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Администрирование</Typography>
         <List disablePadding>
           {[
+            { label: 'AI-стратегии', desc: 'Бизнес-правила для AI-заполнения деклараций', icon: <AiIcon />, path: '/admin/strategies' },
             { label: 'Пользователи', desc: 'Управление пользователями и ролями', icon: <PeopleIcon />, path: '/admin/users' },
             { label: 'Аудит-лог', desc: 'История действий в системе', icon: <AuditIcon />, path: '/admin/audit' },
             { label: 'База знаний', desc: 'Статьи по классификации товаров', icon: <BookIcon />, path: '/admin/knowledge' },

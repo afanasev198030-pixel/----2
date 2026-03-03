@@ -15,6 +15,8 @@ from .audit_log import AuditLog
 from .parse_issue import ParseIssue
 from .knowledge import KnowledgeArticle, Checklist
 from .graph_rule import DeclarationGraphRule
+from .ai_strategy import AiStrategy
+from .hs_code_history import HsCodeHistory
 
 __all__ = [
     "Base",
@@ -42,4 +44,6 @@ __all__ = [
     "KnowledgeArticle",
     "Checklist",
     "DeclarationGraphRule",
+    "AiStrategy",
+    "HsCodeHistory",
 ]

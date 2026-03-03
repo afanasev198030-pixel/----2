@@ -30,6 +30,9 @@ interface AppLayoutProps {
 import {
   AdminPanelSettings as AdminIcon,
   History as AuditIcon,
+  Psychology as StrategyIcon,
+  MenuBook as BookIcon,
+  ChecklistRtl as ChecklistIcon,
 } from '@mui/icons-material';
 
 const NAV_ITEMS = [
@@ -39,7 +42,13 @@ const NAV_ITEMS = [
   { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" />, adminOnly: true },
 ];
 
-const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [];
+const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [
+  { label: 'AI-стратегии', path: '/admin/strategies', icon: <StrategyIcon fontSize="small" /> },
+  { label: 'Пользователи', path: '/admin/users', icon: <PeopleIcon fontSize="small" /> },
+  { label: 'Аудит', path: '/admin/audit', icon: <AuditIcon fontSize="small" /> },
+  { label: 'База знаний', path: '/admin/knowledge', icon: <BookIcon fontSize="small" /> },
+  { label: 'Чек-листы', path: '/admin/checklists', icon: <ChecklistIcon fontSize="small" /> },
+];
 
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   const navigate = useNavigate();
