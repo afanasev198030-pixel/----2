@@ -285,8 +285,9 @@ async def apply_parsed_data(
         # Всегда подтягивать курс ЦБ для не-рублёвых валют
         if currency and currency.upper() != "RUB":
             try:
+                from app.middleware.logging_middleware import tracing_headers
                 async with httpx.AsyncClient(timeout=10) as http:
-                    resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest")
+                    resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest", headers=tracing_headers())
                     resp.raise_for_status()
                     rates = resp.json().get("rates", {})
                     rate_value = rates.get(currency.upper())
@@ -430,6 +431,7 @@ async def apply_parsed_data(
                 try:
                     import httpx as _httpx
                     import os
+                    from app.middleware.logging_middleware import tracing_headers
                     ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
                     _httpx.post(f"{ai_url}/api/v1/ai/feedback", json={
                         "declaration_id": str(declaration.id),
@@ -438,7 +440,7 @@ async def apply_parsed_data(
                         "predicted_value": item_data.hs_code,
                         "actual_value": item_data.hs_code,
                         "description": (item_data.description or "")[:300],
-                    }, timeout=3)
+                    }, headers=tracing_headers(), timeout=3)
                 except Exception:
                     pass
 

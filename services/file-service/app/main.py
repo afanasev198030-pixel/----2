@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.storage import ensure_bucket
 from app.routes import router
+from app.middleware.tracing import TracingMiddleware
 
 
 def setup_logging():
@@ -56,7 +57,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware (allow all origins for dev)
+app.add_middleware(TracingMiddleware, service_name=settings.SERVICE_NAME)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

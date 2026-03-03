@@ -14,7 +14,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 
 from .base import Base
 
@@ -110,6 +110,16 @@ class Declaration(Base):
     goods_location: Mapped[Optional[str]] = mapped_column(Text)             # Графа 30
     freight_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))   # Транспортные расходы
     freight_currency: Mapped[Optional[str]] = mapped_column(String(3))          # Валюта фрахта
+
+    evidence_map: Mapped[Optional[dict]] = mapped_column(
+        JSONB, nullable=True,
+        comment='{"field_name": {"source": "invoice", "document_id": "...", "confidence": 0.95, "raw_value": "..."}}',
+    )
+    ai_issues: Mapped[Optional[list]] = mapped_column(
+        JSONB, nullable=True,
+        comment='[{"code": "MISSING_FIELD", "severity": "error", "field": "hs_code", "blocking": true, "message": "...", "source": "ai"}]',
+    )
+    ai_confidence: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(3, 2), nullable=True)
 
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

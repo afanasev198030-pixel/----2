@@ -12,6 +12,7 @@ import httpx
 
 from app.database import get_db
 from app.middleware.auth import get_current_user, require_role
+from app.middleware.logging_middleware import tracing_headers
 from app.models.user import User, UserRole
 
 logger = structlog.get_logger()
@@ -90,7 +91,7 @@ async def get_settings(
     ai_status = "unknown"
     ai_message = ""
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=5, headers=tracing_headers()) as client:
             resp = await client.get(f"{ai_url}/health")
             health_data = resp.json()
             rag_available = health_data.get("rag_available", False)
@@ -146,7 +147,7 @@ async def get_settings(
     # MinIO
     try:
         minio_host = os.environ.get("MINIO_ENDPOINT", "minio:9000").replace("http://", "").split(":")[0]
-        async with httpx.AsyncClient(timeout=3) as c:
+        async with httpx.AsyncClient(timeout=3, headers=tracing_headers()) as c:
             r = await c.get(f"http://{minio_host}:9000/minio/health/live")
             services.append(ServiceStatus(name="MinIO", port=9000, status="ok" if r.status_code == 200 else "error", detail="Файловое хранилище S3"))
     except Exception:
@@ -154,7 +155,7 @@ async def get_settings(
 
     # file-service
     try:
-        async with httpx.AsyncClient(timeout=3) as c:
+        async with httpx.AsyncClient(timeout=3, headers=tracing_headers()) as c:
             r = await c.get("http://file-service:8002/health")
             services.append(ServiceStatus(name="file-service", port=8002, status="ok", detail="Загрузка файлов"))
     except Exception:
@@ -162,7 +163,7 @@ async def get_settings(
 
     # ai-service
     try:
-        async with httpx.AsyncClient(timeout=3) as c:
+        async with httpx.AsyncClient(timeout=3, headers=tracing_headers()) as c:
             r = await c.get(f"{ai_url}/health")
             d = r.json()
             detail = f"RAG={'OK' if d.get('rag_available') else 'OFF'}, OpenAI={'OK' if d.get('openai_configured') else 'OFF'}"
@@ -172,7 +173,7 @@ async def get_settings(
 
     # ChromaDB (internal port 8000, exposed as 8100)
     try:
-        async with httpx.AsyncClient(timeout=3) as c:
+        async with httpx.AsyncClient(timeout=3, headers=tracing_headers()) as c:
             r = await c.get("http://chromadb:8000/api/v2/heartbeat")
             services.append(ServiceStatus(name="ChromaDB", port=8100, status="ok" if r.status_code == 200 else "error", detail="Векторная БД"))
     except Exception:
@@ -180,7 +181,7 @@ async def get_settings(
 
     # calc-service
     try:
-        async with httpx.AsyncClient(timeout=3) as c:
+        async with httpx.AsyncClient(timeout=3, headers=tracing_headers()) as c:
             r = await c.get("http://calc-service:8005/health")
             services.append(ServiceStatus(name="calc-service", port=8005, status="ok", detail="Расчёт платежей, курсы ЦБ"))
     except Exception:
@@ -267,7 +268,7 @@ async def set_openai_key(
     ai_check = {"status": "unknown", "message": ""}
     try:
         ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
-        async with httpx.AsyncClient(timeout=30) as validate_client:
+        async with httpx.AsyncClient(timeout=30, headers=tracing_headers()) as validate_client:
             validate_resp = await validate_client.post(
                 f"{ai_url}/api/v1/ai/configure",
                 json={
@@ -451,7 +452,7 @@ async def init_rag(
         batches = [all_codes[i:i + BATCH_SIZE] for i in range(0, len(all_codes), BATCH_SIZE)]
         for idx, batch in enumerate(batches):
             try:
-                async with httpx.AsyncClient(timeout=300) as client:
+                async with httpx.AsyncClient(timeout=300, headers=tracing_headers()) as client:
                     resp = await client.post(
                         f"{ai_url}/api/v1/ai/index-hs-codes",
                         json={"codes": batch, "force": (idx == 0)},
@@ -495,7 +496,7 @@ async def get_training_stats(
     # AI service stats
     ai_stats = {}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=10, headers=tracing_headers()) as client:
             resp = await client.get(f"{ai_url}/api/v1/ai/training-stats")
             ai_stats = resp.json()
     except Exception as e:

@@ -15,6 +15,7 @@ import AdminAuditPage from './pages/AdminAuditPage';
 import AdminKnowledgePage from './pages/AdminKnowledgePage';
 import AdminChecklistPage from './pages/AdminChecklistPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import AdminStrategiesPage from './pages/AdminStrategiesPage';
 
 function App() {
   return (
@@ -35,6 +36,7 @@ function App() {
         <Route path="/admin/audit" element={<AdminAuditPage />} />
         <Route path="/admin/knowledge" element={<AdminKnowledgePage />} />
         <Route path="/admin/checklists" element={<AdminChecklistPage />} />
+        <Route path="/admin/strategies" element={<AdminStrategiesPage />} />
       </Route>
     </Routes>
   );

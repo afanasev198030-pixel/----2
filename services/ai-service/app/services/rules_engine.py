@@ -13,6 +13,7 @@ logger = structlog.get_logger()
 
 _rules: dict | None = None
 _db_rules_cache: list[dict] | None = None
+_strategies_cache: list[dict] | None = None
 
 
 def fetch_db_rules(core_api_url: str = "http://core-api:8001") -> list[dict]:
@@ -22,10 +23,16 @@ def fetch_db_rules(core_api_url: str = "http://core-api:8001") -> list[dict]:
         return _db_rules_cache
     try:
         import httpx
+        from app.middleware.tracing import get_correlation_id
+        headers = {}
+        cid = get_correlation_id()
+        if cid:
+            headers["X-Request-ID"] = cid
         resp = httpx.get(
             f"{core_api_url}/api/v1/graph-rules/internal",
             timeout=5.0,
             params={"declaration_type": "IM40"},
+            headers=headers,
         )
         if resp.status_code == 200:
             _db_rules_cache = resp.json()
@@ -36,6 +43,46 @@ def fetch_db_rules(core_api_url: str = "http://core-api:8001") -> list[dict]:
         logger.warning("db_rules_fetch_failed", error=str(e))
     _db_rules_cache = []
     return []
+
+
+def fetch_ai_strategies(core_api_url: str = "http://core-api:8001") -> list[dict]:
+    """Загрузить активные AI-стратегии из core-api. Кешируются до перезапуска."""
+    global _strategies_cache
+    if _strategies_cache is not None:
+        return _strategies_cache
+    try:
+        import httpx
+        from app.middleware.tracing import get_correlation_id
+        headers = {}
+        cid = get_correlation_id()
+        if cid:
+            headers["X-Request-ID"] = cid
+        resp = httpx.get(
+            f"{core_api_url}/api/v1/ai-strategies/internal",
+            timeout=5.0,
+            headers=headers,
+        )
+        if resp.status_code == 200:
+            _strategies_cache = resp.json()
+            logger.info("ai_strategies_loaded", count=len(_strategies_cache))
+            return _strategies_cache
+        logger.warning("ai_strategies_bad_status", status=resp.status_code)
+    except Exception as e:
+        logger.warning("ai_strategies_fetch_failed", error=str(e))
+    _strategies_cache = []
+    return []
+
+
+def build_strategies_prompt(core_api_url: str = "http://core-api:8001") -> str:
+    """Сформировать блок бизнес-правил для system prompt LLM."""
+    strategies = fetch_ai_strategies(core_api_url)
+    if not strategies:
+        return ""
+    lines = ["\n=== БИЗНЕС-ПРАВИЛА (AI-стратегии) ==="]
+    for s in strategies:
+        lines.append(f"[Приоритет {s.get('priority', 0)}] {s.get('name', '')}: {s.get('rule_text', '')}")
+    text = "\n".join(lines)
+    return text[:3000]
 
 
 def build_graph_rules_prompt(core_api_url: str = "http://core-api:8001") -> str:
