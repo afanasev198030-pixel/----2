@@ -1,20 +1,19 @@
-# Деплой бэкенда на сервер по SSH при пуше в main.
+# Ручной деплой бэкенда на сервер по SSH (workflow_dispatch).
 # Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service.
 # Секреты в GitHub: Settings → Secrets and variables → Actions:
 #   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
 #   SERVER_HOST     — хост (напр. 82.148.28.122)
 #   SERVER_USER     — пользователь SSH (напр. root)
+# Опционально:
+#   DEPLOY_PATH      — каталог на сервере (по умолчанию /home/2/----2)
 
-name: Deploy backend to server
+name: Manual deploy backend to server
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'services/**'
-      - 'docker-compose.prod.yml'
-      - 'docs/**'
-      - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
 jobs:
@@ -29,25 +28,35 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 15m
           script: |
-            set -e
-            cd /home/2/----2
+            set -euo pipefail
 
-            echo "==> [1/5] Pulling latest code from main..."
-            git fetch origin && git reset --hard origin/main
+            # Simple lock to avoid concurrent deploys on the server
+            (
+              flock -n 9 || { echo "Another deploy is running. Exiting."; exit 1; }
 
-            echo "==> [2/5] Running DB migrations..."
-            docker-compose -f docker-compose.prod.yml exec -T core-api alembic upgrade head
+              DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+              if [ -z "${DEPLOY_PATH}" ]; then DEPLOY_PATH="/opt/digital_broker"; fi
+              cd "${DEPLOY_PATH}"
 
-            echo "==> [3/5] Loading graph rules into DB (upsert — safe to run always)..."
-            docker-compose -f docker-compose.prod.yml exec -T core-api \
-              python -m app.seeds.load_graph_rules || echo "Seed skipped (non-critical)"
+              echo "==> [1/6] Pulling code..."
+              git fetch origin && git reset --hard origin/main
 
-            echo "==> [4/5] Rebuilding backend images..."
-            docker-compose -f docker-compose.prod.yml build \
-              core-api ai-service file-service calc-service --no-cache
+              DC="docker compose -f docker-compose.prod.yml"
 
-            echo "==> [5/5] Restarting backend containers..."
-            docker-compose -f docker-compose.prod.yml up -d \
-              core-api ai-service file-service calc-service
+              echo "==> [2/6] Building backend images..."
+              ${DC} build core-api ai-service file-service calc-service
 
-            echo "==> Done. Backend deployed successfully."
+              echo "==> [3/6] Ensuring dependencies are up..."
+              ${DC} up -d postgres redis minio chromadb
+
+              echo "==> [4/6] Running DB migrations (from fresh image)..."
+              ${DC} run --rm core-api alembic upgrade head
+
+              echo "==> [5/6] Loading graph rules into DB (upsert — safe to run always)..."
+              ${DC} run --rm core-api python -m app.seeds.load_graph_rules || echo "Seed skipped (non-critical)"
+
+              echo "==> [6/6] Restarting backend containers..."
+              ${DC} up -d core-api ai-service file-service calc-service
+
+              echo "==> Done. Backend deployed successfully."
+            ) 9>/tmp/deploy.lock
