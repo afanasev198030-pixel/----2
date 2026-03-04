@@ -153,12 +153,21 @@ def _llm_parse_pl(raw_text: str) -> dict:
             messages=[
                 {"role": "system", "content": "Extract data from a packing list. Return JSON only."},
                 {"role": "user", "content": f"""Extract from this packing list:
-- total_packages (int)
-- package_type (string)
+- total_packages (int): total number of cargo places (грузовые места)
+- package_type (string): type of packaging (e.g. carton, pallet, box)
 - total_gross_weight (float, kg)
 - total_net_weight (float, kg)
 - country_origin (2-letter ISO code)
-- items: array of {{description, quantity, gross_weight, net_weight, country_origin}}
+- items: array of objects, one per product line:
+  {{
+    description: product name,
+    quantity: number of units,
+    packages_count: number of cargo places (грузовые места) for this item (int or null),
+    package_type: type of packaging for this item (string or null),
+    gross_weight: gross weight of this item in kg (float or null),
+    net_weight: net weight of this item in kg (float or null),
+    country_origin: 2-letter ISO code or null
+  }}
 
 Text:
 {raw_text[:4000]}
@@ -204,6 +213,8 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
                 items.append({
                     "description": it.get("description", ""),
                     "quantity": _to_float(it.get("quantity")),
+                    "packages_count": _to_int(it.get("packages_count")),
+                    "package_type": it.get("package_type"),
                     "gross_weight": _to_float(it.get("gross_weight")),
                     "net_weight": _to_float(it.get("net_weight")),
                     "country_origin": it.get("country_origin"),

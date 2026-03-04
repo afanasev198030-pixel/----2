@@ -112,14 +112,21 @@ export const parsePackingList = async (file: File): Promise<any> => {
 export interface ParseSmartResult {
   invoice_number?: string;
   invoice_date?: string;
-  seller?: { name?: string; country_code?: string; address?: string };
-  buyer?: { name?: string; country_code?: string; address?: string };
+  seller?: { name?: string; country_code?: string; address?: string; inn?: string; kpp?: string; ogrn?: string };
+  buyer?: { name?: string; country_code?: string; address?: string; inn?: string; kpp?: string; ogrn?: string };
   currency?: string;
   total_amount?: number;
   incoterms?: string;
+  delivery_place?: string;
+  transport_id?: string;
+  transport_country_code?: string;
+  trading_partner_country?: string;  // Гр. 11: страна контрагента
+  country_dispatch?: string;          // Гр. 15: страна отправления
+  container?: boolean;                // Гр. 19: контейнер
   country_origin?: string;
   country_destination?: string;
   contract_number?: string;
+  contract_date?: string;
   total_packages?: number;
   total_gross_weight?: number;
   total_net_weight?: number;
@@ -131,6 +138,7 @@ export interface ParseSmartResult {
     unit?: string;
     unit_price?: number;
     line_total?: number;
+    invoice_currency?: string;       // Валюта инвойса (для проверки с контрактной)
     hs_code?: string;
     hs_code_name?: string;
     hs_confidence?: number;
@@ -138,6 +146,9 @@ export interface ParseSmartResult {
     hs_candidates?: HSSuggestion[];
     gross_weight?: number;
     net_weight?: number;
+    package_count?: number;          // Гр. 31: кол-во грузовых мест
+    package_type?: string;           // Гр. 31: тип упаковки
+    country_origin_code?: string;
   }>;
   risk_score?: number;
   risk_flags?: any;

@@ -1,8 +1,10 @@
-"""Admin endpoints: audit log, user details with audit."""
+"""Admin endpoints: audit log, user details with audit, classifier sync."""
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import selectinload
@@ -10,7 +12,7 @@ import structlog
 
 from app.database import get_db
 from app.middleware.auth import require_role
-from app.models import User, UserRole
+from app.models import User, UserRole, ClassifierSyncLog
 from app.models.audit_log import AuditLog
 
 logger = structlog.get_logger()
@@ -127,6 +129,146 @@ async def get_user_audit(
                 "details": log.details,
                 "ip_address": log.ip_address,
                 "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Classifier sync endpoints
+# ---------------------------------------------------------------------------
+
+class SyncRequest(BaseModel):
+    classifier_types: Optional[list[str]] = None
+    force_full: bool = False
+
+
+@router.post("/classifiers-sync")
+async def trigger_classifier_sync(
+    body: SyncRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Trigger classifier synchronization from portal.eaeunion.org.
+
+    Runs in the background so the request returns immediately.
+    """
+    from app.services.classifier_sync import full_sync, incremental_sync, sync_all
+    from app.services.eec_classifier_config import EEC_CLASSIFIERS
+
+    if body.classifier_types:
+        unknown = [t for t in body.classifier_types if t not in EEC_CLASSIFIERS]
+        if unknown:
+            raise HTTPException(400, f"Unknown classifier types: {unknown}")
+
+    async def _run_sync():
+        if body.classifier_types:
+            for ct in body.classifier_types:
+                if body.force_full:
+                    await full_sync(ct)
+                else:
+                    await incremental_sync(ct)
+        else:
+            await sync_all(force_full=body.force_full)
+
+    background_tasks.add_task(_run_sync)
+
+    return {
+        "status": "started",
+        "classifier_types": body.classifier_types or list(EEC_CLASSIFIERS.keys()),
+        "force_full": body.force_full,
+    }
+
+
+@router.get("/classifiers-sync/status")
+async def get_classifier_sync_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Get the latest sync status for each classifier type."""
+    from app.services.eec_classifier_config import EEC_CLASSIFIERS
+
+    subq = (
+        select(
+            ClassifierSyncLog.classifier_type,
+            func.max(ClassifierSyncLog.last_sync_at).label("max_sync"),
+        )
+        .group_by(ClassifierSyncLog.classifier_type)
+        .subquery()
+    )
+    query = (
+        select(ClassifierSyncLog)
+        .join(
+            subq,
+            and_(
+                ClassifierSyncLog.classifier_type == subq.c.classifier_type,
+                ClassifierSyncLog.last_sync_at == subq.c.max_sync,
+            ),
+        )
+    )
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    log_map = {log.classifier_type: log for log in logs}
+
+    items = []
+    for ct, cfg in EEC_CLASSIFIERS.items():
+        log = log_map.get(ct)
+        items.append({
+            "classifier_type": ct,
+            "title": cfg["title"],
+            "last_sync_at": log.last_sync_at.isoformat() if log else None,
+            "last_modification_check": log.last_modification_check.isoformat() if log and log.last_modification_check else None,
+            "records_total": log.records_total if log else 0,
+            "records_updated": log.records_updated if log else 0,
+            "status": log.status if log else "never",
+            "error_message": log.error_message if log else None,
+        })
+
+    return {"items": items}
+
+
+@router.get("/classifiers-sync/log")
+async def get_classifier_sync_log(
+    classifier_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Get sync history log, optionally filtered by classifier type."""
+    query = select(ClassifierSyncLog)
+    count_query = select(func.count()).select_from(ClassifierSyncLog)
+
+    if classifier_type:
+        query = query.where(ClassifierSyncLog.classifier_type == classifier_type)
+        count_query = count_query.where(ClassifierSyncLog.classifier_type == classifier_type)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    offset = (page - 1) * per_page
+    query = query.order_by(ClassifierSyncLog.last_sync_at.desc()).offset(offset).limit(per_page)
+
+    result = await db.execute(query)
+    logs = result.scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": str(log.id),
+                "classifier_type": log.classifier_type,
+                "eec_guid": log.eec_guid,
+                "last_sync_at": log.last_sync_at.isoformat() if log.last_sync_at else None,
+                "last_modification_check": log.last_modification_check.isoformat() if log.last_modification_check else None,
+                "records_total": log.records_total,
+                "records_updated": log.records_updated,
+                "status": log.status,
+                "error_message": log.error_message,
             }
             for log in logs
         ],

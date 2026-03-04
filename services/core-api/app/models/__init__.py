@@ -6,6 +6,7 @@ from .declaration import Declaration, DeclarationStatus, SpotStatus
 from .declaration_item import DeclarationItem
 from .document import Document, DocumentType
 from .classifier import Classifier
+from .classifier_sync_log import ClassifierSyncLog
 from .customs_payment import CustomsPayment, PaymentType
 from .declaration_log import DeclarationLog
 from .declaration_status_history import DeclarationStatusHistory
@@ -32,6 +33,7 @@ __all__ = [
     "Document",
     "DocumentType",
     "Classifier",
+    "ClassifierSyncLog",
     "CustomsPayment",
     "PaymentType",
     "DeclarationLog",

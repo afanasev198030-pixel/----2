@@ -67,7 +67,7 @@ class Declaration(Base):
         UUID(as_uuid=True), ForeignKey("core.counterparties.id"), nullable=True
     )
     country_dispatch_code: Mapped[Optional[str]] = mapped_column(String(2))
-    country_origin_code: Mapped[Optional[str]] = mapped_column(String(2))
+    country_origin_code: Mapped[Optional[str]] = mapped_column(String(20))
     country_destination_code: Mapped[Optional[str]] = mapped_column(String(2))
     transport_at_border: Mapped[Optional[str]] = mapped_column(String(100))
     container_info: Mapped[Optional[str]] = mapped_column(String(200))
@@ -76,7 +76,7 @@ class Declaration(Base):
     currency_code: Mapped[Optional[str]] = mapped_column(String(3))
     total_invoice_value: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
     exchange_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 6))
-    deal_nature_code: Mapped[Optional[str]] = mapped_column(String(2))
+    deal_nature_code: Mapped[Optional[str]] = mapped_column(String(3))
     transport_type_border: Mapped[Optional[str]] = mapped_column(String(2))
     transport_type_inland: Mapped[Optional[str]] = mapped_column(String(2))
     loading_place: Mapped[Optional[str]] = mapped_column(String(200))

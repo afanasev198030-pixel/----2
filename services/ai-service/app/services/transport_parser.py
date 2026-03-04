@@ -24,15 +24,42 @@ def parse(file_bytes: bytes, filename: str) -> dict:
         "freight_amount": None,
         "freight_currency": None,
         "carrier_name": None,
+        "shipper_name": None,    # Отправитель груза (для гр. 2)
+        "shipper_address": None, # Адрес отправителя
         "transport_route": None,
         "awb_number": None,
+        "flight_number": None,
         "transport_type": None,
     }
+
+    # Regex fallback: извлечь базовые данные без LLM
+    import re as _re
+    awb_match = _re.search(r'(\d{3})[- ]?(\d{8})', raw_text)
+    if awb_match:
+        result["awb_number"] = f"{awb_match.group(1)}-{awb_match.group(2)}"
+        result["transport_type"] = "40"
+    freight_match = _re.search(r'(?:total|amount|freight|charge)[:\s]*([A-Z]{3})\s*([\d,. ]+)', raw_text, _re.IGNORECASE)
+    if freight_match:
+        result["freight_currency"] = freight_match.group(1).upper()
+        amt = freight_match.group(2).replace(" ", "").replace(",", "")
+        try:
+            result["freight_amount"] = float(amt)
+        except ValueError:
+            pass
+    if not result.get("transport_type"):
+        lower = raw_text.lower()
+        if "cmr" in lower or "consignment note" in lower:
+            result["transport_type"] = "30"
+        elif "bill of lading" in lower or "b/l" in lower:
+            result["transport_type"] = "10"
+        elif "airway" in lower or "awb" in lower:
+            result["transport_type"] = "40"
 
     try:
         from app.config import get_settings
         settings = get_settings()
         if not settings.has_llm:
+            logger.info("transport_parsed_regex_only", filename=filename, awb=result.get("awb_number"))
             return result
 
         from app.services.llm_client import get_llm_client, get_model
@@ -46,14 +73,21 @@ def parse(file_bytes: bytes, filename: str) -> dict:
 - freight_amount: стоимость перевозки (число)
 - freight_currency: валюта (USD, EUR, CNY, RUB)
 - carrier_name: название перевозчика/экспедитора
+- shipper_name: наименование ОТПРАВИТЕЛЯ груза (для графы 2 ДТ).
+    Искать: "Shipper", "Shipper's Name", "Consignor", "Отправитель", "Грузоотправитель".
+    Это компания-отправитель, НЕ перевозчик и НЕ экспедитор.
+- shipper_address: ПОЛНЫЙ адрес отправителя (для графы 2 ДТ).
+    Искать: "Shipper's Address", "Address", "Адрес отправителя" — рядом с именем отправителя.
+    Включить: улицу, город, индекс, страну.
 - transport_route: маршрут (откуда — куда)
-- awb_number: номер авианакладной (AWB) или транспортной накладной
+- awb_number: номер авианакладной (AWB) или транспортной накладной (только номер, без слова AWB)
+- flight_number: номер рейса (например "CA836", "SU100") — для графы 21 ДТ; null если не авиа
 - transport_type: тип транспорта (40=воздушный, 10=морской, 30=авто, 20=ж/д)
 
 Текст:
 {raw_text[:8000]}
 
-JSON: {{"freight_amount": ..., "freight_currency": "...", "carrier_name": "...", "transport_route": "...", "awb_number": "...", "transport_type": "..."}}"""},
+JSON:"""},
             ],
             temperature=0,
             max_tokens=800,

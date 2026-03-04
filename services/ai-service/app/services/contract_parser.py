@@ -14,6 +14,7 @@ class ContractParty(BaseModel):
     country_code: Optional[str] = None
     inn: Optional[str] = None
     kpp: Optional[str] = None
+    ogrn: Optional[str] = None  # ОГРН или эквивалент (Company Reg. No., Business Reg. No.)
     bank_name: Optional[str] = None
     account: Optional[str] = None
 
@@ -28,6 +29,7 @@ class ContractParsed(BaseModel):
     total_amount: Optional[float] = None
     currency: Optional[str] = None
     incoterms: Optional[str] = None
+    delivery_place: Optional[str] = None
     payment_terms: Optional[str] = None
     delivery_terms: Optional[str] = None
     confidence: float = 0.5
@@ -249,14 +251,19 @@ def _llm_enrich_contract(raw_text: str, result: ContractParsed) -> ContractParse
             messages=[
                 {"role": "system", "content": "Извлеки реквизиты сторон из контракта/договора. Ответь ТОЛЬКО валидным JSON."},
                 {"role": "user", "content": f"""Извлеки из контракта/договора купли-продажи:
-- seller: {{name, address, country_code (2 буквы ISO), inn, kpp}}
-- buyer: {{name, address, country_code, inn, kpp}}
+- seller: {{name, address, country_code (2 буквы ISO), inn, kpp, ogrn}}
+  Искать в разделах «Продавец», «Seller», «Поставщик», «Supplier».
+  Для иностранных компаний: inn = налоговый номер (VAT, Tax ID, 统一社会信用代码 и т.п.),
+  ogrn = регистрационный номер компании (Company Reg. No., Business Registration No.).
+- buyer: {{name, address, country_code, inn, kpp, ogrn}}
+  Искать в разделах «Покупатель», «Buyer», «Заказчик».
 - currency: ВАЛЮТА КОНТРАКТА (ISO 4217: USD/EUR/CNY/RUB).
   ВАЖНО: искать ключевые фразы «Валютой Контракта являются», «Валюта контракта —»,
   «расчёты производятся в», «Contract currency is», «Payment currency:».
   После фразы следует название валюты — вернуть ISO 4217 код.
   Доллары США → USD, евро → EUR, юани/RMB → CNY, рубли → RUB.
-- incoterms: условия поставки (EXW/FCA/FOB/CIF и т.д.)
+- incoterms: код условий поставки (только 3 буквы: EXW/FCA/FOB/CIF/DAP/DDP и т.д.)
+- delivery_place: географический пункт поставки (город/порт/склад), к которому относится базис Инкотермс. Например: "Shanghai", "Москва", "Hamburg". Только название места, без кода Инкотермс.
 - payment_terms: условия оплаты (кратко)
 - contract_number: номер договора/контракта
 - contract_date: дата договора (YYYY-MM-DD)
@@ -282,7 +289,7 @@ JSON:"""},
             result.seller = ContractParty(
                 name=s.get("name"), address=s.get("address"),
                 country_code=(s.get("country_code") or "")[:2] or None,
-                inn=s.get("inn"), kpp=s.get("kpp"),
+                inn=s.get("inn"), kpp=s.get("kpp"), ogrn=s.get("ogrn"),
             )
             if not result.seller_name and s.get("name"):
                 result.seller_name = s["name"]
@@ -292,7 +299,7 @@ JSON:"""},
             result.buyer = ContractParty(
                 name=b.get("name"), address=b.get("address"),
                 country_code=(b.get("country_code") or "")[:2] or None,
-                inn=b.get("inn"), kpp=b.get("kpp"),
+                inn=b.get("inn"), kpp=b.get("kpp"), ogrn=b.get("ogrn"),
             )
             if not result.buyer_name and b.get("name"):
                 result.buyer_name = b["name"]
@@ -303,6 +310,8 @@ JSON:"""},
             result.currency = llm_currency.upper().strip()
         if data.get("incoterms") and not result.incoterms:
             result.incoterms = data["incoterms"]
+        if data.get("delivery_place") and not result.delivery_place:
+            result.delivery_place = data["delivery_place"]
         if data.get("payment_terms"):
             result.payment_terms = data["payment_terms"]
         if data.get("contract_number") and not result.contract_number:
