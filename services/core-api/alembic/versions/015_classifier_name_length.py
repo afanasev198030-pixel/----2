@@ -2,15 +2,15 @@
 
 Some EEC classifier names exceed 500 characters (e.g. doc_type, preference, tax_type).
 
-Revision ID: 012
-Revises: 011
+Revision ID: 015
+Revises: 014
 Create Date: 2026-03-05
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = '012'
-down_revision = '011'
+revision = '015'
+down_revision = '014'
 branch_labels = None
 depends_on = None
 

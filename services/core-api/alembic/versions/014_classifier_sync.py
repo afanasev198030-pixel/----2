@@ -1,15 +1,15 @@
 """Add EEC sync fields to classifiers + classifier_sync_log table
 
-Revision ID: 011
-Revises: 010
+Revision ID: 014
+Revises: 013
 Create Date: 2026-03-05
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
-revision = '011'
-down_revision = '010'
+revision = '014'
+down_revision = '013'
 branch_labels = None
 depends_on = None
 
