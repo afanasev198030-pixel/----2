@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
+from sqlalchemy.orm import selectinload
 import structlog
 
 from app.database import get_db
@@ -23,7 +24,7 @@ async def list_counterparties(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    query = select(Counterparty)
+    query = select(Counterparty).options(selectinload(Counterparty.company))
     if current_user.company_id:
         query = query.where(Counterparty.company_id == current_user.company_id)
     if type:
@@ -55,7 +56,10 @@ async def create_counterparty(
     )
     db.add(cp)
     await db.commit()
-    await db.refresh(cp)
+    result = await db.execute(
+        select(Counterparty).options(selectinload(Counterparty.company)).where(Counterparty.id == cp.id)
+    )
+    cp = result.scalar_one()
     logger.info("counterparty_created", id=str(cp.id), name=cp.name, type=cp.type)
     return CounterpartyResponse.model_validate(cp)
 
@@ -66,7 +70,6 @@ async def get_counterparty(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from sqlalchemy.orm import selectinload
     result = await db.execute(
         select(Counterparty).options(selectinload(Counterparty.company)).where(Counterparty.id == id)
     )
@@ -83,14 +86,19 @@ async def update_counterparty(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Counterparty).where(Counterparty.id == id))
+    result = await db.execute(
+        select(Counterparty).options(selectinload(Counterparty.company)).where(Counterparty.id == id)
+    )
     cp = result.scalar_one_or_none()
     if not cp:
         raise HTTPException(status_code=404, detail="Counterparty not found")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(cp, field, value)
     await db.commit()
-    await db.refresh(cp)
+    result = await db.execute(
+        select(Counterparty).options(selectinload(Counterparty.company)).where(Counterparty.id == id)
+    )
+    cp = result.scalar_one()
     return CounterpartyResponse.model_validate(cp)
 
 

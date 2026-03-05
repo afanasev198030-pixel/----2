@@ -1,0 +1,111 @@
+{
+  "traces": [],
+  "train": [],
+  "demos": [
+    {
+      "augmented": true,
+      "description": "ПРИЕМНИК ELRS 433 MHZ",
+      "rag_results": "",
+      "hs_code": "8526922000",
+      "name_ru": "Аппаратура радионавигации",
+      "reasoning": "Поскольку приемник ELRS 433 MHz относится к радионавигационному оборудованию, он подпадает под категорию кодов, предназначенных для передачи и приема радиоволн. Код 8526922000 наиболее точно описывает данный товар как аппарат для радионавигации.",
+      "confidence": "0.9"
+    },
+    {
+      "augmented": true,
+      "description": "ПРИЕМНИК ELRS 433 MHZ",
+      "rag_results": "",
+      "hs_code": "8526920000",
+      "name_ru": "Аппаратура радиосвязи",
+      "reasoning": "Поскольку ELRS 433 MHz — это приемник, предназначенный для беспроводной связи, его можно отнести к аппаратуре радиосвязи. Коды, начинающиеся с 8526, обычно используются для аппаратуры передачи или приема радиоволн.",
+      "confidence": "0.9"
+    },
+    {
+      "augmented": true,
+      "description": "ПРИЕМНИК ELRS 433 MHZ",
+      "rag_results": "",
+      "hs_code": "8526920000",
+      "name_ru": "Аппаратура радиосвязи",
+      "reasoning": "Поскольку ELRS 433 MHz — это приемник, предназначенный для беспроводной связи, его можно отнести к аппаратуре радиосвязи. Коды, начинающиеся с 8526, обычно используются для аппаратуры передачи или приема радиоволн.",
+      "confidence": "0.9"
+    },
+    {
+      "augmented": true,
+      "description": "ПРИЕМНИК ELRS 433 MHZ",
+      "rag_results": "",
+      "hs_code": "8526920000",
+      "name_ru": "Аппаратура радиосвязи",
+      "reasoning": "Поскольку ELRS 433 MHz — это приемник, предназначенный для беспроводной связи, его можно отнести к аппаратуре радиосвязи. Коды, начинающиеся с 8526, обычно используются для аппаратуры передачи или приема радиоволн.",
+      "confidence": "0.9"
+    },
+    {
+      "description": "Flight controller 70A XT90",
+      "rag_results": "",
+      "hs_code": "8537109100",
+      "name_ru": "",
+      "reasoning": "",
+      "confidence": "0.8"
+    },
+    {
+      "description": "Flight controller 70A XT90",
+      "rag_results": "",
+      "hs_code": "8537109100",
+      "name_ru": "",
+      "reasoning": "",
+      "confidence": "0.8"
+    },
+    {
+      "description": "ПРИЕМНИК ELRS 433 MHZ",
+      "rag_results": "",
+      "hs_code": "8526920",
+      "name_ru": "",
+      "reasoning": "",
+      "confidence": "0.8"
+    },
+    {
+      "description": "Flight controller 70A XT90",
+      "rag_results": "",
+      "hs_code": "8537109100",
+      "name_ru": "",
+      "reasoning": "",
+      "confidence": "0.8"
+    }
+  ],
+  "signature": {
+    "instructions": "Определи 10-значный код ТН ВЭД ЕАЭС для товара.\nИспользуй результаты поиска по справочнику ТН ВЭД.",
+    "fields": [
+      {
+        "prefix": "Description:",
+        "description": "Описание товара"
+      },
+      {
+        "prefix": "Rag Results:",
+        "description": "Результаты поиска по справочнику ТН ВЭД (top-10 похожих кодов)"
+      },
+      {
+        "prefix": "Hs Code:",
+        "description": "10-значный код ТН ВЭД ЕАЭС"
+      },
+      {
+        "prefix": "Name Ru:",
+        "description": "Название кода ТН ВЭД на русском"
+      },
+      {
+        "prefix": "Reasoning:",
+        "description": "Обоснование выбора кода"
+      },
+      {
+        "prefix": "Confidence:",
+        "description": "Уверенность 0.0-1.0"
+      }
+    ]
+  },
+  "lm": null,
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.11",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

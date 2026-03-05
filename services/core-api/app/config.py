@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     SERVICE_NAME: str = "core-api"
     LOG_LEVEL: str = "INFO"
 
+    # EEC portal classifier sync
+    EEC_PORTAL_BASE_URL: str = "https://portal.eaeunion.org/sites/odata/_api/web/lists"
+    EEC_SYNC_ENABLED: bool = True
+    EEC_SYNC_INTERVAL_HOURS: int = 24
+
     @property
     def database_url(self) -> str:
         """Returns async PostgreSQL connection URL."""

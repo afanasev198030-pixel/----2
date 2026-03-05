@@ -77,6 +77,9 @@ services:
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES}
       LOG_LEVEL: ${LOG_LEVEL}
       AI_SERVICE_URL: http://ai-service:8003
+      EEC_PORTAL_BASE_URL: ${EEC_PORTAL_BASE_URL:-https://portal.eaeunion.org/sites/odata/_api/web/lists}
+      EEC_SYNC_ENABLED: ${EEC_SYNC_ENABLED:-true}
+      EEC_SYNC_INTERVAL_HOURS: ${EEC_SYNC_INTERVAL_HOURS:-24}
     env_file:
       - .env
     healthcheck:

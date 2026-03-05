@@ -114,7 +114,10 @@ class ParsedCounterparty(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
     country_code: Optional[str] = None
-    tax_number: Optional[str] = None
+    tax_number: Optional[str] = None  # устаревшее, используется как fallback
+    inn: Optional[str] = None         # ИНН или эквивалент (VAT, Tax ID)
+    kpp: Optional[str] = None         # КПП (для РФ) или None
+    ogrn: Optional[str] = None        # ОГРН или эквивалент (Company Reg. No.)
     type: str = "seller"  # seller, buyer, importer, declarant
 
 
@@ -126,6 +129,7 @@ class ParsedItem(BaseModel):
     unit: Optional[str] = None
     unit_price: Optional[float] = None
     line_total: Optional[float] = None
+    invoice_currency: Optional[str] = None  # валюта инвойса (для гр. 42: сверка с валютой контракта)
     hs_code: Optional[str] = None
     hs_code_name: Optional[str] = None
     country_origin_code: Optional[str] = None
@@ -169,9 +173,17 @@ class ApplyParsedRequest(BaseModel):
     total_gross_weight: Optional[float] = None
     total_net_weight: Optional[float] = None
 
+    # Из транспортных документов
+    trading_partner_country: Optional[str] = None  # Гр. 11: ISO2 страна контрагента
+    country_dispatch: Optional[str] = None          # Гр. 15: ISO2 страна отправления (может отличаться от origin)
+    container: Optional[bool] = None                # Гр. 19: контейнер (true/false)
+
     # Из AWB / транспорта
     transport_doc_number: Optional[str] = None
     transport_type: Optional[str] = None  # 40=воздушный, 10=морской, 30=авто
+    transport_id: Optional[str] = None   # Гр. 21: идентификатор ТС (номер рейса / рег. номер / судно)
+    transport_country_code: Optional[str] = None  # Гр. 21 подраздел 2: страна регистрации ТС
+    delivery_place: Optional[str] = None  # Гр. 20: место поставки по Инкотермс
     customs_office_code: Optional[str] = None  # Код таможенного поста (8 цифр)
     goods_location: Optional[str] = None
 
@@ -181,8 +193,15 @@ class ApplyParsedRequest(BaseModel):
     # Ссылки на загруженные документы
     documents: list[ParsedDocumentRef] = []
 
+    # Графа 8: по умолчанию True → "СМ. ГРАФУ 14 ДТ"
+    buyer_matches_declarant: Optional[bool] = True
+
+    # Графа 9: лицо, ответственное за финансовое урегулирование
+    responsible_person: Optional[ParsedCounterparty] = None
+    responsible_person_matches_declarant: Optional[bool] = True
+
     # Общие
-    deal_nature_code: Optional[str] = "01"  # купля-продажа по умолчанию
+    deal_nature_code: Optional[str] = "010"  # купля-продажа (трёхзначный код по Классификатору характера сделки)
     type_code: Optional[str] = "IM40"  # импорт по умолчанию
 
     # Транспортные расходы (графа 17)
@@ -257,6 +276,7 @@ async def apply_parsed_data(
         # --- 1. Создать/найти контрагентов ---
         sender_id = None
         receiver_id = None
+        declarant_id = None
 
         if data.seller and data.seller.name:
             sender_id = await _find_or_create_counterparty(
@@ -264,9 +284,56 @@ async def apply_parsed_data(
             )
             counters["counterparties"] += 1
 
-        if data.buyer and data.buyer.name:
+        # Графа 14: декларант — приоритет: Профиль компании > Контракт (buyer)
+        # Каждое поле: если в профиле заполнено — берём из профиля, если пусто — из контракта
+        c = company
+        bp = data.buyer
+        decl_name = (c.name if c else None) or (bp.name if bp else None)
+        decl_address = (c.address if c else None) or (bp.address if bp else None)
+        decl_country = (c.country_code if c else None) or (bp.country_code if bp else None) or "RU"
+        decl_inn = (c.inn if c else None) or (bp.inn if bp else None)
+        decl_kpp = (c.kpp if c else None) or (bp.kpp if bp else None)
+        decl_ogrn = (c.ogrn if c else None) or (bp.ogrn if bp else None)
+
+        if decl_name:
+            declarant_cp = ParsedCounterparty(
+                name=decl_name,
+                address=decl_address,
+                country_code=decl_country,
+                inn=decl_inn,
+                kpp=decl_kpp,
+                ogrn=decl_ogrn,
+                type="declarant",
+            )
+            declarant_id = await _find_or_create_counterparty(
+                db, declarant_cp, "declarant", current_user.company_id
+            )
+            counters["counterparties"] += 1
+
+        if declarant_id:
+            declaration.declarant_counterparty_id = declarant_id
+            declaration.declarant_ogrn = decl_ogrn
+            if company and company.contact_phone:
+                declaration.declarant_phone = company.contact_phone
+
+        # Графа 8: по умолчанию «СМ. ГРАФУ 14 ДТ» (receiver = declarant)
+        # Исключение: трёхсторонний договор — отдельный получатель
+        if data.buyer_matches_declarant and declarant_id:
+            receiver_id = declarant_id
+        elif data.buyer and data.buyer.name:
             receiver_id = await _find_or_create_counterparty(
                 db, data.buyer, "buyer", current_user.company_id
+            )
+            counters["counterparties"] += 1
+
+        # Графа 9: по умолчанию «СМ. ГРАФУ 14 ДТ» (financial = declarant)
+        # Исключение: трёхсторонний договор — отдельное ответственное лицо
+        financial_id = None
+        if data.responsible_person_matches_declarant and declarant_id:
+            financial_id = declarant_id
+        elif data.responsible_person and data.responsible_person.name:
+            financial_id = await _find_or_create_counterparty(
+                db, data.responsible_person, "financial", current_user.company_id
             )
             counters["counterparties"] += 1
 
@@ -275,6 +342,8 @@ async def apply_parsed_data(
             declaration.sender_counterparty_id = sender_id
         if receiver_id:
             declaration.receiver_counterparty_id = receiver_id
+        if financial_id:
+            declaration.financial_counterparty_id = financial_id
 
         # Конвертация валюты через calc-service (курсы ЦБ)
         exchange_rate = Decimal("1")
@@ -314,11 +383,14 @@ async def apply_parsed_data(
         if data.incoterms:
             declaration.incoterms_code = data.incoterms
         if data.country_origin:
-            declaration.country_origin_code = (data.country_origin or "")[:2] or None
-            declaration.country_dispatch_code = (data.country_origin or "")[:2] or None
-            # Графа 11 — торговая страна = страна происхождения
-            if not declaration.trading_country_code:
-                declaration.trading_country_code = data.country_origin
+            declaration.country_origin_code = data.country_origin or None
+        if data.country_dispatch:
+            declaration.country_dispatch_code = (data.country_dispatch or "")[:2] or None
+        if data.trading_partner_country:
+            declaration.trading_country_code = (data.trading_partner_country or "")[:2] or None
+        if data.container is not None:
+            # Гр. 19: "1" — контейнер, "0" — нет
+            declaration.container_info = "1" if data.container else "0"
         # country_destination: всегда RU если не указан
         declaration.country_destination_code = (data.country_destination or declaration.country_destination_code or "RU")[:2]
         if data.total_packages is not None:
@@ -330,16 +402,21 @@ async def apply_parsed_data(
         if net_dec is not None:
             declaration.total_net_weight = net_dec
         # deal_nature_code: всегда 01 (купля-продажа) если не указан
-        declaration.deal_nature_code = data.deal_nature_code or declaration.deal_nature_code or "01"
+        declaration.deal_nature_code = data.deal_nature_code or declaration.deal_nature_code or "010"
         if data.type_code:
             declaration.type_code = data.type_code
         if data.transport_type:
-            # Маппинг текстовых значений → коды (String(2))
             _TRANSPORT_MAP = {"air": "40", "sea": "10", "auto": "30", "rail": "20", "40": "40", "10": "10", "30": "30", "20": "20"}
             tt = _TRANSPORT_MAP.get(str(data.transport_type).lower().strip(), str(data.transport_type)[:2])
             declaration.transport_type_border = tt
+            # Гр. 26: вид транспорта внутри страны = вид ТС при отправлении (гр. 18)
+            declaration.transport_type_inland = tt
         if data.transport_doc_number:
             declaration.transport_at_border = data.transport_doc_number
+        if data.transport_id:
+            declaration.transport_on_border_id = data.transport_id
+        if data.delivery_place:
+            declaration.delivery_place = data.delivery_place  # Гр. 20: место поставки по Инкотермс
         if data.customs_office_code:
             declaration.customs_office_code = data.customs_office_code[:8]
         if data.goods_location and not declaration.goods_location:
@@ -351,6 +428,10 @@ async def apply_parsed_data(
             declaration.freight_currency = data.freight_currency
 
         declaration.total_items_count = len(data.items) if data.items else 0
+        # Гр. 3: количество листов ДТ = 1 + ceil((items - 1) / 3) при items > 1
+        import math
+        n_items = len(data.items) if data.items else 0
+        declaration.forms_count = 1 + math.ceil((n_items - 1) / 3) if n_items > 1 else (1 if n_items == 1 else 0)
 
         # Fallback totals from item rows if header totals are missing.
         if data.items:
@@ -430,6 +511,16 @@ async def apply_parsed_data(
                 except Exception as e:
                     logger.debug("hs_history_lookup_failed", error=str(e)[:80])
 
+            # Граф 42: фактурная стоимость = line_total (вся позиция), не unit_price (за единицу).
+            # Приоритет: line_total → unit_price × quantity → unit_price
+            graph_42: Optional[Decimal] = None
+            if item_data.line_total:
+                graph_42 = _to_decimal(item_data.line_total)
+            elif item_data.unit_price and item_data.quantity:
+                graph_42 = _to_decimal(item_data.unit_price * item_data.quantity)
+            elif item_data.unit_price:
+                graph_42 = _to_decimal(item_data.unit_price)
+
             item = DeclarationItem(
                 declaration_id=declaration.id,
                 item_no=item_data.line_no,
@@ -439,19 +530,18 @@ async def apply_parsed_data(
                 country_origin_code=(item_data.country_origin_code or data.country_origin or "")[:2] or None,
                 gross_weight=_to_decimal(item_data.gross_weight),
                 net_weight=_to_decimal(item_data.net_weight),
-                unit_price=_to_decimal(item_data.unit_price),
+                unit_price=graph_42,  # гр. 42: фактурная стоимость позиции (не цена за единицу)
                 package_count=item_data.package_count,
                 package_type=item_data.package_type,
                 additional_unit=item_data.unit,
                 additional_unit_qty=_to_decimal(item_data.quantity),
-                mos_method_code="01",
+                mos_method_code="1",  # Метод 1 по умолчанию (по стоимости сделки с ввозимыми товарами)
                 risk_score=data.risk_score or 0,
                 risk_flags=data.risk_flags,
             )
 
-            if item_data.unit_price and item_data.quantity:
-                line_val_currency = Decimal(str(item_data.unit_price * item_data.quantity))
-                item.customs_value_rub = (line_val_currency * exchange_rate).quantize(Decimal("0.01"))
+            if graph_42:
+                item.customs_value_rub = (graph_42 * exchange_rate).quantize(Decimal("0.01"))
 
             db.add(item)
             await db.flush()
@@ -502,8 +592,8 @@ async def apply_parsed_data(
                         "company_id": str(current_user.company_id) if current_user.company_id else "",
                         "counterparty_name": (data.seller.name if data.seller else ""),
                     }, headers=tracing_headers(), timeout=3)
-                except Exception:
-                    pass
+                except Exception as fb_err:
+                    logger.warning("ai_feedback_failed", error=str(fb_err), hs_code=item_data.hs_code)
 
         # --- 4. Привязать документы ---
         for doc_data in data.documents:
@@ -670,11 +760,19 @@ async def _find_or_create_counterparty(
             logger.info("counterparty_updated", id=str(existing.id), name=existing.name)
         return existing.id
 
+    # Собрать tax_number: приоритет отдельным полям inn/kpp, затем tax_number fallback
+    effective_inn = parsed.inn or parsed.tax_number
+    if effective_inn and parsed.kpp:
+        effective_tax = f"{effective_inn} / {parsed.kpp}"
+    else:
+        effective_tax = effective_inn or parsed.tax_number
+
     counterparty = Counterparty(
         type=cp_type,
         name=parsed.name,
         country_code=parsed.country_code,
-        tax_number=parsed.tax_number,
+        tax_number=effective_tax,
+        registration_number=parsed.ogrn,
         address=parsed.address,
         company_id=company_id,
     )

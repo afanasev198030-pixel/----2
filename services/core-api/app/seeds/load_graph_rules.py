@@ -34,10 +34,12 @@ GRAPH_RULES = [
         "graph_name": "Декларация",
         "section": "header",
         "fill_instruction": (
-            "Тип декларации: ИМ (импорт), ЭК (экспорт), ТТ (транзит) и др. "
-            "Три подраздела: таможенная процедура, тип ДТ (ЭД — электронная), страна-член (RU)."
+            "Тип декларации. Три подраздела: "
+            "1) ИМ (импорт) или ЭК (экспорт); "
+            "2) двузначный код таможенной процедуры (по Классификатору видов таможенных процедур); "
+            "3) ЭД — только при подаче ДТ в виде электронного документа."
         ),
-        "fill_format": "Код процедуры: ИМ40, ЭК10 и т.п. Тип ДТ: ЭД. Страна-член: RU.",
+        "fill_format": "Подраздел 1: ИМ/ЭК. Подраздел 2: код процедуры (40, 10...). Подраздел 3: ЭД.",
         "ai_rule": (
             "Заполнять код процедуры в соответствии с выбранным пользователем типом декларации. "
             "Если тип не задан — предложить ИМ40 для импорта с флагом «проверьте»."
@@ -56,24 +58,56 @@ GRAPH_RULES = [
         "graph_name": "Отправитель/Экспортёр",
         "section": "header",
         "fill_instruction": (
-            "Сведения об иностранном отправителе товара: наименование, адрес, страна. "
+            "Сведения об иностранном отправителе/экспортёре товара. "
+            "Заполнить: наименование (полное), ИНН или эквивалентный иностранный налоговый номер "
+            "(VAT, Tax ID и т.п.), КПП (если применимо), ОГРН или эквивалентный регистрационный номер, "
+            "адрес (улица, город, страна). "
             "При наличии нескольких отправителей — делается отметка «Различные»."
         ),
-        "fill_format": "Наименование компании, адрес (улица, город, страна).",
+        "fill_format": "Наименование, ИНН/Tax ID, КПП (если есть), ОГРН/Reg.No., адрес (улица, город, страна).",
         "ai_rule": (
-            "Извлечь из источника: наименование, адрес, код страны (ISO 3166-1 alpha-2). "
-            "Для импорта страна обычно не RU — если RU, поднять warning. "
+            "Приоритет источников: заявка (Application) → транспортный инвойс → инвойс на товары. "
+            "Контракт/договор НЕ является источником для этой графы. "
+            "1. Наименование компании (полное). "
+            "2. ИНН или эквивалент (VAT, Tax ID, ИНН — в зависимости от страны компании). "
+            "3. КПП — если применимо; для иностранных компаний может отсутствовать. "
+            "4. ОГРН или эквивалент (Company Reg. No., Commercial Register No. и т.п.). "
+            "5. Адрес: улица, город, страна. "
+            "6. Код страны (ISO 3166-1 alpha-2). "
+            "Страна обычно не RU при импорте — если RU, поднять warning. "
             "При нескольких отправителях указать «Различные»."
         ),
         "is_required": True,
         "validation_rules": {
             "type": "object",
-            "required_fields": ["name", "address", "country_code"],
+            "required_fields": ["name", "inn", "address", "country_code"],
+            "optional_fields": ["kpp", "ogrn"],
             "country_code": {"type": "iso3166_1_alpha2", "not_eq": "RU"},
-            "note": "обычно не RU при импорте"
+            "note": "обычно не RU при импорте; ИНН/КПП/ОГРН — российские аналоги, для иностранных компаний брать эквиваленты"
         },
-        "source_priority": ["contract", "invoice", "foreign_company_registration"],
-        "confidence_map": {"contract": 0.85, "invoice": 0.8},
+        "source_priority": ["application_statement", "transport_invoice", "invoice"],
+        "source_fields": {
+            "application_statement": {
+                "fields": ["forwarding_agent_name", "forwarding_agent_address", "forwarding_agent_inn", "отправитель"],
+                "notes": (
+                    "Заявка (Application forwarder / Application transport) — поле «Отправитель» / «Forwarding Agent». "
+                    "Приоритетный источник актуальных данных по конкретной отгрузке."
+                ),
+            },
+            "transport_invoice": {
+                "fields": ["shipper_name", "shipper_address"],
+                "notes": "Поле «Shipper» / «Отправитель груза» — резервный источник.",
+            },
+            "invoice": {
+                "fields": ["seller_name", "seller_address", "seller_tax_id"],
+                "notes": "Поле «Seller» — резервный источник если заявка и транспортный инвойс не содержат данных.",
+            },
+        },
+        "confidence_map": {
+            "application_statement": 0.95,
+            "transport_invoice": 0.85,
+            "invoice": 0.75,
+        },
         "target_field": "sender_counterparty_id",
         "target_kind": "core_declaration_relation",
     },
@@ -412,7 +446,7 @@ GRAPH_RULES = [
             "Логика заполнения: "
             "1) если маркировка/документы указывают на ЕС без конкретной страны → «ЕВРОСОЮЗ»; "
             "2) если товары из разных стран ИЛИ страна хотя бы одного товара неизвестна → «РАЗНЫЕ»; "
-            "3) если страна всех товаров неизвестна → оставить пустым, подсветить пользователю (severity: warning); "
+            "3) если страна всех товаров неизвестна → записать «НЕИЗВЕСТНО» и подсветить пользователю (severity: warning); "
             "4) не заполнять при декларировании наличной валюты (банкноты/монеты) на транспорте."
         ),
         "is_required": True,
@@ -540,21 +574,29 @@ GRAPH_RULES = [
         ),
         "fill_format": "Код Инкотермс (3 буквы) + наименование географического пункта.",
         "ai_rule": (
-            "Источник: договор поставки (раздел «Delivery Terms» / «Базис поставки»). "
-            "Извлечь: 1) код Инкотермс (3 буквы); "
-            "2) наименование географического пункта, к которому относится базис. "
-            "Хранить оба значения."
+            "Источники (по приоритету): заявка → договор поставки. "
+            "Извлечь: 1) код Инкотермс (3 буквы: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF); "
+            "2) наименование географического пункта (город/порт/склад), к которому относится базис. "
+            "Хранить оба значения: код и место. "
+            "Если заявка и договор содержат разные условия — приоритет заявки, поднять предупреждение."
         ),
         "is_required": True,
         "validation_rules": {
             "type": "incoterms_2020",
             "valid_codes": ["EXW", "FCA", "CPT", "CIP", "DAP", "DPU", "DDP", "FAS", "FOB", "CFR", "CIF"],
         },
-        "source_priority": ["contract"],
+        "source_priority": ["application_statement", "contract"],
         "source_fields": {
-            "contract": {"fields": ["delivery_terms", "incoterms", "delivery_basis", "basis_of_delivery"], "notes": "Договор поставки — раздел «Delivery Terms» / «Базис поставки»"},
+            "application_statement": {
+                "fields": ["delivery_terms", "incoterms", "delivery_place", "delivery_basis"],
+                "notes": "Заявка — приоритетный источник: условия поставки для данной конкретной отгрузки.",
+            },
+            "contract": {
+                "fields": ["delivery_terms", "incoterms", "delivery_basis", "basis_of_delivery"],
+                "notes": "Договор поставки — раздел «Delivery Terms» / «Базис поставки». Резервный источник.",
+            },
         },
-        "confidence_map": {"contract": 0.95},
+        "confidence_map": {"application_statement": 0.97, "contract": 0.95},
         "target_field": "incoterms_code",
         "target_kind": "core_declaration",
     },
@@ -574,11 +616,15 @@ GRAPH_RULES = [
             "При трубопроводе/ЛЭП — подраздел 2 не заполняется."
         ),
         "ai_rule": (
-            "Источник: транспортные документы AWB / CMR / B/L. "
-            "Подраздел 1 — тип транспорта определяет формат: "
-            "авто — рег. номера ТС; море/река — названия судов; авиа — номера рейсов; "
-            "трубопровод/ЛЭП — способ транспортировки. Формат: [кол-во ТС]:[id1];[id2] без пробелов. "
-            "Подраздел 2 — код страны регистрации ТС: "
+            "Источник: транспортный документ AWB / CMR / B/L (НЕ транспортный инвойс). "
+            "Шаг 1: определить тип транспортного документа. "
+            "Шаг 2: извлечь идентификатор ТС в зависимости от типа: "
+            "AWB → номер рейса (flight number, например CA836); "
+            "CMR → государственный регистрационный номер грузового автомобиля (тягача); "
+            "B/L → название судна (vessel name); "
+            "ж/д — номер поезда. "
+            "Шаг 3: сформировать подраздел 1: [кол-во ТС]:[id1];[id2] без пробелов. "
+            "Подраздел 2 — код страны регистрации ТС (ISO alpha-2): "
             "состав ТС → код страны тягача; "
             "страна неизвестна → «00»; "
             "несколько ТС из разных стран → «99»; "
@@ -587,7 +633,15 @@ GRAPH_RULES = [
         "validation_rules": {"type": "string", "format": "N:id1;id2"},
         "source_priority": ["transport_doc"],
         "source_fields": {
-            "transport_doc": {"fields": ["vehicle_id", "vessel_name", "flight_number", "truck_number"], "notes": "AWB/CMR/B/L — идентификатор ТС на границе"},
+            "transport_doc": {
+                "fields": ["vehicle_id", "flight_number", "truck_plate", "vessel_name", "transport_country_code"],
+                "notes": (
+                    "AWB: vehicle_id = номер рейса (flight number). "
+                    "CMR: vehicle_id = рег. номер грузовика (тягача). "
+                    "B/L: vehicle_id = название судна. "
+                    "НЕ использовать транспортный инвойс для этой графы."
+                ),
+            },
         },
         "confidence_map": {"transport_doc": 0.9},
         "target_field": "transport_on_border_id",
@@ -673,17 +727,20 @@ GRAPH_RULES = [
         "graph_name": "Характер сделки",
         "section": "header",
         "fill_instruction": (
-            "Код характера внешнеторговой сделки (купля-продажа, безвозмездная передача, "
-            "аренда и т.д.) по классификатору."
+            "Три подраздела. "
+            "Подраздел 1: трёхзначный код характера сделки (по Классификатору характера сделки). "
+            "Подраздел 2: двузначный код особенности сделки (по Классификатору особенности сделки). "
+            "Подраздел 3: не заполняется."
         ),
-        "fill_format": "2-значный код: 01 — купля-продажа, 02 — бартер, 03 — безвозмездная.",
-        "ai_rule": "Если не найдено в документах — дефолт 01 с флагом «проверьте».",
-        "default_value": "01",
+        "fill_format": "Подраздел 1: 3-значный код (010, 020, 030). Подраздел 2: 2-значный код (01). Подраздел 3: пусто.",
+        "ai_rule": "Если не найдено в документах — дефолт 010/01 с флагом «проверьте».",
+        "default_value": "010",
         "default_flag": "проверьте характер сделки",
         "validation_rules": {
-            "type": "enum",
-            "values": ["01", "02", "03"],
-            "labels": {"01": "купля-продажа", "02": "бартер", "03": "безвозмездная"},
+            "type": "object",
+            "subsection1": {"type": "string", "length": 3, "examples": ["010", "020", "030"]},
+            "subsection2": {"type": "string", "length": 2, "examples": ["01"]},
+            "labels": {"010": "купля-продажа", "020": "бартер", "030": "безвозмездная"},
         },
         "source_priority": ["contract"],
         "source_fields": {
@@ -725,10 +782,19 @@ GRAPH_RULES = [
         "graph_number": 26,
         "graph_name": "Вид транспорта внутри страны",
         "section": "header",
-        "fill_instruction": "Графа 26 не заполняется.",
-        "skip": True,
-        "ai_rule": "Не заполнять.",
-        "source_priority": [],
+        "fill_instruction": (
+            "Подраздел 1: код вида ТС, сведения о котором указаны в Графе 18 "
+            "(по Классификатору видов транспорта и транспортировки товаров). "
+            "Подраздел 2: не заполняется. "
+            "Не заполняется при отсутствии международной перевозки; в РБ."
+        ),
+        "fill_format": "Код вида транспорта из графы 18. Подраздел 2: пусто.",
+        "ai_rule": (
+            "Код вида транспорта — тот же, что использован во внутренней перевозке (графа 18). "
+            "AWB→40, CMR→30, B/L→10, ж/д→20. "
+            "Не заполняется при отсутствии международной перевозки."
+        ),
+        "source_priority": ["transport_doc"],
         "target_field": "transport_type_inland",
         "target_kind": "core_declaration",
     },
@@ -935,7 +1001,6 @@ GRAPH_RULES = [
             "transport_doc": {"fields": ["gross_weight", "total_weight"], "notes": "AWB/CMR/B/L — если нет PL"},
         },
         "confidence_map": {"packing_list": 0.95, "weighing_certificate": 0.85, "transport_doc": 0.8},
-        "confidence_map": {"packing_list": 0.9, "transport_doc": 0.8},
         "target_field": "gross_weight",
         "target_kind": "core_item",
     },
@@ -1374,20 +1439,6 @@ GRAPH_RULES = [
         "target_field": "payment_deferral",
         "target_kind": "extension",
     },
-    {
-        "graph_number": 49,
-        "graph_name": "Наименование склада (СВХ)",
-        "section": "header",
-        "fill_instruction": (
-            "Наименование, адрес и номер в реестре склада временного хранения (СВХ), "
-            "на котором находится товар."
-        ),
-        "fill_format": "Наименование СВХ + адрес + номер в реестре.",
-        "source_priority": ["warehouse_contract", "svh_registry"],
-        "target_field": "warehouse_name",
-        "target_kind": "core_declaration",
-    },
-
     # ── РАЗДЕЛ: ЗАВЕРШЕНИЕ ────────────────────────────────────────────────────
     {
         "graph_number": 54,
@@ -1435,7 +1486,7 @@ async def run_seed():
             rule_data.setdefault("skip", False)
             rule_data.setdefault("requires_document", False)
             rule_data.setdefault("declaration_type", "IM40")
-            rule_data.setdefault("version", "3.0")
+            rule_data.setdefault("version", "5.0")
             rule_data.setdefault("is_active", True)
 
             result = await session.execute(

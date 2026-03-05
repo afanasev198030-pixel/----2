@@ -16,7 +16,7 @@ from pathlib import Path
 # Add parent directories to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_sessionmaker
@@ -56,6 +56,19 @@ async def load_classifiers(session: AsyncSession) -> dict[str, int]:
         loaded_count = 0
         skipped_count = 0
         
+        # Skip seed loading if EEC portal data already exists for this type
+        eec_check = await session.execute(
+            select(func.count()).select_from(Classifier).where(
+                Classifier.classifier_type == classifier_type,
+                Classifier.source == "eec_portal",
+            )
+        )
+        eec_count = eec_check.scalar() or 0
+        if eec_count > 0:
+            print(f"  {classifier_type}: {eec_count} records from EEC portal exist, skipping seed")
+            summary[classifier_type] = {"loaded": 0, "skipped": len(data)}
+            continue
+
         for item in data:
             code = item.get("code")
             name_ru = item.get("name_ru")
@@ -65,7 +78,6 @@ async def load_classifiers(session: AsyncSession) -> dict[str, int]:
                 print(f"Warning: Skipping item in {filename} - missing 'code'")
                 continue
             
-            # Check if classifier already exists
             result = await session.execute(
                 select(Classifier).where(
                     Classifier.classifier_type == classifier_type,
@@ -78,13 +90,13 @@ async def load_classifiers(session: AsyncSession) -> dict[str, int]:
                 skipped_count += 1
                 continue
             
-            # Create new classifier
             classifier = Classifier(
                 classifier_type=classifier_type,
                 code=code,
                 name_ru=name_ru,
                 name_en=name_en,
-                is_active=True
+                source="seed",
+                is_active=True,
             )
             session.add(classifier)
             loaded_count += 1

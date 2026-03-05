@@ -6,7 +6,7 @@ import structlog
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
-from app.models import Classifier, User, HsRequirement
+from app.models import Classifier, User, HsRequirement, ClassifierSyncLog
 from app.schemas import ClassifierResponse
 
 logger = structlog.get_logger()
@@ -231,3 +231,54 @@ async def hs_codes_stats(
         "sub_positions": total - groups - positions,
         "source": "classifikators.ru / local seed",
     }
+
+
+@router.get("/sync-info")
+async def get_classifier_sync_info(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get last sync timestamp and record count per classifier type."""
+    from app.services.eec_classifier_config import EEC_CLASSIFIERS
+
+    subq = (
+        select(
+            ClassifierSyncLog.classifier_type,
+            func.max(ClassifierSyncLog.last_sync_at).label("max_sync"),
+        )
+        .where(ClassifierSyncLog.status == "success")
+        .group_by(ClassifierSyncLog.classifier_type)
+        .subquery()
+    )
+    query = select(ClassifierSyncLog).join(
+        subq,
+        and_(
+            ClassifierSyncLog.classifier_type == subq.c.classifier_type,
+            ClassifierSyncLog.last_sync_at == subq.c.max_sync,
+        ),
+    )
+    result = await db.execute(query)
+    logs = {log.classifier_type: log for log in result.scalars().all()}
+
+    counts_result = await db.execute(
+        select(
+            Classifier.classifier_type,
+            func.count().label("cnt"),
+        )
+        .where(Classifier.is_active == True)
+        .group_by(Classifier.classifier_type)
+    )
+    counts = {row[0]: row[1] for row in counts_result.all()}
+
+    items = []
+    for ct, cfg in EEC_CLASSIFIERS.items():
+        log = logs.get(ct)
+        items.append({
+            "classifier_type": ct,
+            "title": cfg["title"],
+            "active_records": counts.get(ct, 0),
+            "last_sync_at": log.last_sync_at.isoformat() if log else None,
+            "source": "eec_portal" if log else ("seed" if counts.get(ct, 0) > 0 else "none"),
+        })
+
+    return {"items": items}

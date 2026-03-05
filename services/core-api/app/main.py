@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI, Request, HTTPException, status, Depends
 from app.database import get_db
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,6 +90,28 @@ async def startup_event():
                     logger.info("openai_key_sent_to_ai_service", provider=provider, model=model)
     except Exception as e:
         logger.warning("startup_key_load_failed", error=str(e))
+
+    # Start periodic classifier sync from portal.eaeunion.org
+    if settings.EEC_SYNC_ENABLED:
+        asyncio.create_task(_classifier_sync_loop())
+        logger.info("eec_classifier_sync_scheduler_started",
+                     interval_hours=settings.EEC_SYNC_INTERVAL_HOURS)
+
+
+async def _classifier_sync_loop():
+    """Background loop that syncs EEC classifiers on a schedule."""
+    await asyncio.sleep(60)
+    while True:
+        try:
+            from app.services.classifier_sync import sync_all
+            results = await sync_all(force_full=False)
+            ok = sum(1 for r in results.values() if r.status == "success")
+            err = sum(1 for r in results.values() if r.status == "error")
+            logger.info("eec_scheduled_sync_done", success=ok, errors=err)
+        except Exception as exc:
+            logger.error("eec_scheduled_sync_failed", error=str(exc))
+
+        await asyncio.sleep(settings.EEC_SYNC_INTERVAL_HOURS * 3600)
 
 
 # Add CORS middleware

@@ -656,12 +656,18 @@ class HSCodeClassifier:
             logger.warning("llm_hs_classify_failed", error=str(e))
 
         # Fallback на keyword classifier
-        if keyword_suggestions:
+        # Фильтруем коды с 6+ нулями на конце — они являются только заголовком раздела
+        # (4-значный код, дополненный нулями), не пригодны как конкретный код ТН ВЭД
+        valid_keyword_suggestions = [
+            s for s in (keyword_suggestions or [])
+            if not _pad_hs_code(s["hs_code"]).endswith("000000")
+        ]
+        if valid_keyword_suggestions:
             chosen = {
-                "hs_code": _pad_hs_code(keyword_suggestions[0]["hs_code"]),
-                "name_ru": keyword_suggestions[0]["name_ru"],
+                "hs_code": _pad_hs_code(valid_keyword_suggestions[0]["hs_code"]),
+                "name_ru": valid_keyword_suggestions[0]["name_ru"],
                 "reasoning": "Keyword matching (fallback)",
-                "confidence": keyword_suggestions[0]["confidence"],
+                "confidence": valid_keyword_suggestions[0]["confidence"],
                 "source": "keyword",
             }
             _log_classify({
