@@ -19,6 +19,7 @@ from app.middleware.auth import get_current_user
 from app.models import (
     Declaration, DeclarationStatus, DeclarationItem,
     Counterparty, Document, DeclarationLog, User, Company,
+    Classifier,
 )
 from app.schemas.declaration import DeclarationResponse
 
@@ -87,6 +88,29 @@ def _build_declarant_inn_kpp(company: Optional[Company], parsed_value: Optional[
         return f"{inn}/{kpp}"
     if inn:
         return inn
+    return None
+
+
+async def _get_exchange_rate(currency: str) -> Optional[Decimal]:
+    """Получить курс ЦБ для валюты из calc-service. Возвращает None при ошибке."""
+    if not currency or currency.upper() == "RUB":
+        return Decimal("1")
+    try:
+        from app.middleware.logging_middleware import tracing_headers
+        async with httpx.AsyncClient(timeout=10) as http:
+            resp = await http.get(
+                "http://calc-service:8005/api/v1/calc/exchange-rates/latest",
+                headers=tracing_headers(),
+            )
+            resp.raise_for_status()
+            rates = resp.json().get("rates", {})
+            rate_value = rates.get(currency.upper())
+            if rate_value and float(rate_value) > 0:
+                return Decimal(str(rate_value))
+            logger.warning("currency_rate_not_found", currency=currency,
+                           available=list(rates.keys())[:10])
+    except Exception as e:
+        logger.warning("calc_service_rate_failed", error=str(e), currency=currency)
     return None
 
 
@@ -351,39 +375,33 @@ async def apply_parsed_data(
         if data.currency:
             declaration.currency_code = data.currency
 
-        # Всегда подтягивать курс ЦБ для не-рублёвых валют
         if currency and currency.upper() != "RUB":
-            try:
-                from app.middleware.logging_middleware import tracing_headers
-                async with httpx.AsyncClient(timeout=10) as http:
-                    resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest", headers=tracing_headers())
-                    resp.raise_for_status()
-                    rates = resp.json().get("rates", {})
-                    rate_value = rates.get(currency.upper())
-                    if rate_value and float(rate_value) > 0:
-                        exchange_rate = Decimal(str(rate_value))
-                    else:
-                        logger.warning("currency_rate_not_found", currency=currency, available=list(rates.keys())[:10])
-            except Exception as conv_err:
-                logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
-
+            rate = await _get_exchange_rate(currency)
+            if rate:
+                exchange_rate = rate
             declaration.exchange_rate = exchange_rate
             logger.info("exchange_rate_fetched", currency=currency, rate=float(exchange_rate))
+        else:
+            declaration.exchange_rate = Decimal("1")
+
+        # Курс USD — для расчёта статистической стоимости (Гр.46)
+        usd_rate = Decimal("1")
+        if currency and currency.upper() == "USD":
+            usd_rate = exchange_rate
+        else:
+            r = await _get_exchange_rate("USD")
+            if r:
+                usd_rate = r
 
         if data.total_amount is not None:
             declaration.total_invoice_value = Decimal(str(data.total_amount))
-            if exchange_rate > 0 and exchange_rate != Decimal("1"):
-                total_rub = Decimal(str(data.total_amount)) * exchange_rate
-            else:
-                total_rub = Decimal(str(data.total_amount))
-            declaration.total_customs_value = total_rub.quantize(Decimal("0.01"))
-            logger.info("currency_converted",
+            logger.info("invoice_value_set",
                 currency=currency, amount=data.total_amount,
-                rate=float(exchange_rate), rub=float(total_rub))
+                rate=float(exchange_rate))
         if data.incoterms:
             declaration.incoterms_code = data.incoterms
         if data.country_origin:
-            declaration.country_origin_code = data.country_origin or None
+            declaration.country_origin_name = data.country_origin or None
         if data.country_dispatch:
             declaration.country_dispatch_code = (data.country_dispatch or "")[:2] or None
         if data.trading_partner_country:
@@ -421,11 +439,6 @@ async def apply_parsed_data(
             declaration.customs_office_code = data.customs_office_code[:8]
         if data.goods_location and not declaration.goods_location:
             declaration.goods_location = data.goods_location.strip()
-        freight_dec = _to_decimal(data.freight_amount)
-        if freight_dec is not None:
-            declaration.freight_amount = freight_dec
-        if data.freight_currency:
-            declaration.freight_currency = data.freight_currency
 
         declaration.total_items_count = len(data.items) if data.items else 0
         # Гр. 3: количество листов ДТ = 1 + ceil((items - 1) / 3) при items > 1
@@ -482,6 +495,8 @@ async def apply_parsed_data(
         from app.models.hs_code_history import HsCodeHistory
         from sqlalchemy import func as sa_func
 
+        created_items: list[DeclarationItem] = []
+
         for item_data in data.items:
             hs_code = item_data.hs_code or ""
             hs_source = "ai"
@@ -521,10 +536,33 @@ async def apply_parsed_data(
             elif item_data.unit_price:
                 graph_42 = _to_decimal(item_data.unit_price)
 
+            # Гр.31: юридическое наименование из ТН ВЭД + техническое описание
+            full_description = item_data.description or ""
+            if hs_code and len(hs_code) >= 4:
+                try:
+                    hs_result = await db.execute(
+                        select(Classifier).where(
+                            Classifier.classifier_type == "tn_ved",
+                            Classifier.code == hs_code,
+                            Classifier.is_active == True,
+                        )
+                    )
+                    hs_cls = hs_result.scalar_one_or_none()
+                    if hs_cls and hs_cls.name_ru:
+                        legal_name = hs_cls.name_ru.strip()
+                        if full_description:
+                            full_description = f"{legal_name}. {full_description}"
+                        else:
+                            full_description = legal_name
+                        logger.info("hs_legal_name_added", hs_code=hs_code,
+                                    name=legal_name[:60])
+                except Exception as e:
+                    logger.debug("hs_legal_name_lookup_failed", error=str(e)[:80])
+
             item = DeclarationItem(
                 declaration_id=declaration.id,
                 item_no=item_data.line_no,
-                description=item_data.description,
+                description=full_description,
                 commercial_name=item_data.commercial_name or item_data.description,
                 hs_code=hs_code,
                 country_origin_code=(item_data.country_origin_code or data.country_origin or "")[:2] or None,
@@ -545,6 +583,7 @@ async def apply_parsed_data(
 
             db.add(item)
             await db.flush()
+            created_items.append(item)
             counters["items"] += 1
 
             if hs_code and desc_norm and current_user.company_id:
@@ -595,6 +634,44 @@ async def apply_parsed_data(
                 except Exception as fb_err:
                     logger.warning("ai_feedback_failed", error=str(fb_err), hs_code=item_data.hs_code)
 
+        # --- 3b. Распределить фрахт по позициям (Гр.45) и рассчитать Гр.46 ---
+        freight_dec = _to_decimal(data.freight_amount)
+        if freight_dec and freight_dec > 0 and created_items:
+            freight_rate = Decimal("1")
+            if data.freight_currency and data.freight_currency.upper() != "RUB":
+                fr = await _get_exchange_rate(data.freight_currency)
+                if fr:
+                    freight_rate = fr
+            freight_rub = (freight_dec * freight_rate).quantize(Decimal("0.01"))
+            declaration.freight_amount = freight_dec
+            declaration.freight_currency = data.freight_currency
+
+            total_gross = declaration.total_gross_weight or Decimal("0")
+            if total_gross > 0:
+                for item in created_items:
+                    item_gross = item.gross_weight or Decimal("0")
+                    item_freight = (freight_rub * item_gross / total_gross).quantize(Decimal("0.01"))
+                    item.customs_value_rub = (item.customs_value_rub or Decimal("0")) + item_freight
+                logger.info("freight_distributed",
+                            freight_rub=float(freight_rub), items=len(created_items),
+                            freight_currency=data.freight_currency, freight_rate=float(freight_rate))
+
+        # Гр.46: статистическая стоимость в USD
+        for item in created_items:
+            if item.customs_value_rub and usd_rate and usd_rate > 0:
+                item.statistical_value_usd = (item.customs_value_rub / usd_rate).quantize(Decimal("0.01"))
+
+        # Гр.12: общая таможенная стоимость = сумма Гр.45 по всем позициям
+        if created_items:
+            total_cv = sum(
+                (it.customs_value_rub or Decimal("0")) for it in created_items
+            )
+            if total_cv > 0:
+                declaration.total_customs_value = total_cv.quantize(Decimal("0.01"))
+                logger.info("total_customs_value_calculated",
+                            value=float(declaration.total_customs_value),
+                            items=len(created_items))
+
         # --- 4. Привязать документы ---
         for doc_data in data.documents:
             doc = Document(
@@ -610,7 +687,15 @@ async def apply_parsed_data(
             db.add(doc)
             counters["documents"] += 1
 
-        # --- 5. Логирование ---
+        # --- 5. Сохранить evidence_map и ai_confidence ---
+        if data.evidence_map:
+            declaration.evidence_map = data.evidence_map
+        if data.confidence is not None:
+            declaration.ai_confidence = Decimal(str(data.confidence))
+        if data.issues:
+            declaration.ai_issues = data.issues
+
+        # --- 6. Логирование ---
         parsed_issues = data.issues or []
         error_issues = [i for i in parsed_issues if i.get("severity") == "error"]
         warning_issues = [i for i in parsed_issues if i.get("severity") == "warning"]

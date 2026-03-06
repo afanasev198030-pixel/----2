@@ -109,7 +109,10 @@ async def create_item(
         package_type=data.package_type,
         commercial_name=data.commercial_name,
         hs_code=data.hs_code,
+        hs_code_letters=data.hs_code_letters,
+        hs_code_extra=data.hs_code_extra,
         country_origin_code=data.country_origin_code,
+        country_origin_pref_code=data.country_origin_pref_code,
         gross_weight=data.gross_weight,
         preference_code=data.preference_code,
         procedure_code=data.procedure_code,
@@ -121,6 +124,8 @@ async def create_item(
         unit_price=data.unit_price,
         mos_method_code=data.mos_method_code,
         customs_value_rub=data.customs_value_rub,
+        statistical_value_usd=data.statistical_value_usd,
+        documents_json=data.documents_json,
     )
     
     db.add(item)

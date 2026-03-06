@@ -570,9 +570,23 @@ def _extract_items(text: str) -> list[InvoiceItemParsed]:
 
             # Extract numbers after the HS code: "73043990 L03-02-010 ... m 148,62 1367,37 203218,53"
             after_hs = full_line[full_line.find(hs) + len(hs):]
-            # Find all numbers in the rest of the line
-            nums_raw = re.findall(r'([\d]+[,.][\d]+)', after_hs)
+            nums_raw = re.findall(r'([\d][\d\s]*[,.][\d]+|\b\d{2,}\b)', after_hs)
             nums = [_parse_number(n) for n in nums_raw if _parse_number(n) is not None and _parse_number(n) > 0]
+
+            # Многострочный fallback: если на строке с HS-кодом нашлось <2 чисел,
+            # проверяем 2 строки ниже (таблица может быть multi-line).
+            if len(nums) < 2:
+                next_lines_start = line_end + 1
+                next_lines_end = invoice_section.find('\n', next_lines_start)
+                if next_lines_end < 0:
+                    next_lines_end = len(invoice_section)
+                next_block = invoice_section[next_lines_start:next_lines_end]
+                second_end = invoice_section.find('\n', next_lines_end + 1)
+                if second_end > 0:
+                    next_block += ' ' + invoice_section[next_lines_end + 1:second_end]
+                extra = re.findall(r'([\d][\d\s]*[,.][\d]+|\b\d{2,}\b)', next_block)
+                extra_nums = [_parse_number(n) for n in extra if _parse_number(n) is not None and _parse_number(n) > 0]
+                nums.extend(extra_nums)
 
             unit = None
             qty = None
@@ -605,17 +619,50 @@ def _extract_items(text: str) -> list[InvoiceItemParsed]:
 
             # Find proper description
             item_desc = desc  # from _find_item_description (may be None for garbled PDFs)
-            # Extract description from the HS code line: "73043990 ... Труба бесш. / PIPE SMLS 18"..."
             if full_line and hs in full_line:
-                after_hs_text = full_line[full_line.find(hs) + len(hs):]
-                # Look for Russian text followed by optional English
+                hs_pos = full_line.find(hs)
+                after_hs_text = full_line[hs_pos + len(hs):]
+                before_hs_text = full_line[:hs_pos]
+
+                # 1) Russian text after HS code: "73043990 Труба бесш. / PIPE SMLS"
                 ru_desc = re.search(r'([А-Яа-я][\wА-Яа-я\s\.\"]+(?:/\s*[A-Z][\w\s"\'\.]+)?)', after_hs_text)
                 if ru_desc:
-                    clean = ru_desc.group(1).strip()
-                    # Remove trailing numbers (qty, price, etc.)
-                    clean = re.sub(r'\s+[\d,]+\s*$', '', clean).strip()
+                    clean = re.sub(r'\s+[\d,]+\s*$', '', ru_desc.group(1)).strip()
                     if len(clean) > 5:
                         item_desc = clean
+
+                # 2) English text after HS code: "73043990 Steel pipe seamless"
+                if not item_desc or len(item_desc) < 5:
+                    en_desc = re.search(r'([A-Z][a-zA-Z][a-zA-Z\s\.\-,/]{3,})', after_hs_text)
+                    if en_desc:
+                        clean = re.sub(r'\s+[\d,.]+\s*$', '', en_desc.group(1)).strip()
+                        if len(clean) > 5:
+                            item_desc = clean
+
+                # 3) Text BEFORE HS code: "Steel pipe 73043990 100 5.50"
+                if not item_desc or len(item_desc) < 5:
+                    before = re.sub(r'^\s*\d+[\.\)\-]*\s*', '', before_hs_text).strip()
+                    before = re.sub(r'\s+[\d,.]+\s*$', '', before).strip()
+                    if len(before) > 5 and sum(1 for c in before if c.isalpha()) >= 4:
+                        item_desc = before
+
+                # 4) Look at lines above HS code line for description
+                if not item_desc or len(item_desc) < 5:
+                    above_text = invoice_section[:line_start].rstrip()
+                    if above_text:
+                        for prev_line in reversed(above_text.split('\n')[-3:]):
+                            pl = prev_line.strip()
+                            if not pl or len(pl) < 5:
+                                continue
+                            if re.match(r'^[\d\s.,/:]+$', pl):
+                                continue
+                            if re.match(r'^(Item|No|Pos|#|Total|Итого)', pl, re.IGNORECASE) and len(pl) < 15:
+                                continue
+                            alpha = sum(1 for c in pl if c.isalpha())
+                            if alpha >= 4:
+                                item_desc = re.sub(r'\s+[\d,.]+\s*$', '', pl).strip()[:200]
+                                break
+
             if not item_desc or len(item_desc) < 5:
                 item_desc = f"Item {len(items) + 1}"
 
@@ -638,6 +685,16 @@ def _extract_items(text: str) -> list[InvoiceItemParsed]:
         'кабель', 'провод', 'лампа', 'компрессор', 'генератор', 'pipe',
         'motor', 'pump', 'valve', 'cable', 'transformer', 'compressor',
         'модуль', 'блок', 'устройство', 'деталь', 'узел', 'аппарат',
+        'steel', 'stainless', 'bearing', 'fitting', 'flange', 'bolt',
+        'nut', 'washer', 'gasket', 'seal', 'ring', 'shaft', 'gear',
+        'sensor', 'switch', 'relay', 'connector', 'adapter', 'filter',
+        'element', 'plate', 'sheet', 'bar', 'rod', 'wire', 'tube',
+        'сталь', 'подшипник', 'фланец', 'болт', 'гайк', 'шайб',
+        'прокладк', 'уплотн', 'кольц', 'вал', 'шестерн', 'датчик',
+        'фильтр', 'пластин', 'лист', 'пруток', 'проволок',
+        'машин', 'оборудован', 'станок', 'агрегат', 'механизм',
+        'machine', 'equipment', 'device', 'unit', 'assembly', 'component',
+        'part', 'spare', 'material', 'product', 'goods', 'cargo',
     ]
     lines = text.split('\n')
     seen_desc = set()
@@ -702,23 +759,41 @@ def _extract_items(text: str) -> list[InvoiceItemParsed]:
     return items
 
 
+_DESC_SECTION_KEYWORDS = [
+    'Название груза', 'Наименование товара', 'Описание товара',
+    'Item description', 'Description of cargo', 'Description of goods',
+    'Product name', 'Product description', 'Name of goods',
+    'Goods description', 'Commodity', 'Наименование',
+]
+
+_DESC_SKIP_LINE = re.compile(
+    r'^(Item\s+description|Название\s+(груза|товар)|Description\s+(of|$)|'
+    r'Product\s+(name|desc)|Goods\s+desc|Commodity|'
+    r'COUNTRY|INCOTERMS|PACKING|PAYMENT|OKBM|'
+    r'Qty|Quantity|Amount|Price|Total|Unit|Currency|'
+    r'HS\s*Code|Code|Код)',
+    re.IGNORECASE,
+)
+
+
 def _find_item_description(text: str, hs_code: str) -> Optional[str]:
     """Find item description near HS code or in 'Item description' section."""
-    # Look in "Item description / Название груза" section
-    desc_section = _find_near_keyword(text, ['Название груза', 'Item description', 'Description of cargo'], 500)
+    # Look in labelled description sections
+    desc_section = _find_near_keyword(text, _DESC_SECTION_KEYWORDS, 500)
     if desc_section:
-        # Take the first non-empty line after the keyword that looks like a product name
         lines = desc_section.split('\n')
         for line in lines:
             line = line.strip()
-            # Skip the keyword line itself and metadata lines
             if not line or len(line) < 5:
                 continue
-            if re.match(r'^(Item\s+description|Название\s+груза|Description|COUNTRY|INCOTERMS|PACKING|PAYMENT|OKBM)', line, re.IGNORECASE):
+            if _DESC_SKIP_LINE.match(line):
                 continue
-            # Good candidate: contains product-like content
-            if re.search(r'[А-Яа-я]', line) or re.search(r'(?:PIPE|MOTOR|PUMP|CABLE|VALVE)', line, re.IGNORECASE):
-                return line[:200]
+            # Accept any line with enough word characters (not just numbers/codes)
+            alpha_chars = sum(1 for c in line if c.isalpha())
+            if alpha_chars >= 4:
+                clean = re.sub(r'\s+[\d,.]+\s*$', '', line).strip()
+                if len(clean) >= 5:
+                    return clean[:200]
 
     # Look for description in the line containing the HS code
     if hs_code:
@@ -730,12 +805,26 @@ def _find_item_description(text: str, hs_code: str) -> Optional[str]:
                 line_end = len(text)
             full_line = text[line_start:line_end]
 
-            # Look for Russian+English description like "Труба бесш. / PIPE SMLS..."
+            # Russian+English: "Труба бесш. / PIPE SMLS..."
             desc_match = re.search(r'([А-Яа-я][\wА-Яа-я\s\.]+(?:/\s*[A-Z][\w\s"\'\.]+)?)', full_line)
             if desc_match:
                 d = desc_match.group(1).strip()
                 if len(d) > 5:
                     return d[:200]
+
+            # English-only: "Steel pipe seamless" or "Electronic module XYZ-100"
+            en_match = re.search(r'([A-Z][a-zA-Z][a-zA-Z\s\.\-,/]{3,})', full_line)
+            if en_match:
+                d = re.sub(r'\s+[\d,.]+\s*$', '', en_match.group(1)).strip()
+                if len(d) > 5:
+                    return d[:200]
+
+            # Text before HS code: "Steel pipe 73043990 100 pcs..."
+            before_hs = full_line[:full_line.find(hs_code)]
+            before_clean = re.sub(r'^\s*\d+[\.\)]*\s*', '', before_hs).strip()
+            before_clean = re.sub(r'\s+[\d,.]+\s*$', '', before_clean).strip()
+            if len(before_clean) > 5 and sum(1 for c in before_clean if c.isalpha()) >= 4:
+                return before_clean[:200]
 
     return None
 
@@ -813,6 +902,10 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
             _is_placeholder_desc(it.get("description_raw", ""))
             for it in items
         )
+        has_no_prices = bool(items) and any(
+            not it.get("unit_price") and not it.get("line_total")
+            for it in items
+        )
 
         missing = []
         if not result.get("invoice_number"):
@@ -828,16 +921,18 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         if not result.get("buyer_name"):
             missing.append("buyer_name")
 
-        if not missing and not has_bad_items:
+        if not missing and not has_bad_items and not has_no_prices:
             logger.debug("llm_enrich_skip_nothing_missing")
             return {}
 
-        logger.info("llm_enrich_start", missing=missing, has_bad_items=has_bad_items, items_count=len(items))
+        logger.info("llm_enrich_start", missing=missing, has_bad_items=has_bad_items,
+                     has_no_prices=has_no_prices, items_count=len(items))
 
+        need_items_from_llm = has_bad_items or has_no_prices
         item_prompt = """Also extract ALL items (ONLY physical goods, NOT freight/shipping/insurance/handling fees).
 Return items as JSON array: [{"description": "full product name in original language", "quantity": 100, "unit": "pcs", "unit_price": 5.50, "line_total": 550.00, "country_origin": "CN"}]
 CRITICAL: "description" must be the REAL product name from the document, NOT generic labels like "Item 1".
-IMPORTANT: quantity is REQUIRED. Look for columns: Qty, Количество, Кол-во, Amount, pcs, шт. Calculate: quantity = line_total / unit_price if needed.""" if has_bad_items else ""
+IMPORTANT: quantity, unit_price, line_total are ALL REQUIRED. Look for columns: Qty, Количество, Кол-во, Price, Unit Price, Цена, Amount, Total, Сумма. Calculate: quantity = line_total / unit_price if needed.""" if need_items_from_llm else ""
 
         resp = client.chat.completions.create(
             model=get_model(),
@@ -880,14 +975,20 @@ Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items el
         return {}
 
 
+_PLACEHOLDER_RE = re.compile(
+    r'^(item|товар|product|goods?|позиция|pos|position|line)\s*\d*$',
+    re.IGNORECASE,
+)
+
+
 def _is_placeholder_desc(desc: str) -> bool:
-    """Check if description is a placeholder like 'Item 1', 'Item 2', empty, etc."""
+    """Check if description is a placeholder like 'Item 1', 'Товар 2', 'Product 3', empty, etc."""
     if not desc:
         return True
-    d = desc.strip().lower()
-    if d.startswith("item ") and len(d) < 10:
+    d = desc.strip()
+    if len(d) < 3:
         return True
-    if re.match(r'^item\s*\d+$', d, re.IGNORECASE):
+    if _PLACEHOLDER_RE.match(d):
         return True
     return False
 
@@ -962,7 +1063,7 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
                     total_amount = llm_amt
                     logger.info("total_amount_from_llm", amount=total_amount)
 
-            # Replace items if LLM returned better ones
+            # Replace items if LLM returned better ones, or merge prices
             llm_items = llm_data.get("items", [])
             if llm_items and isinstance(llm_items, list):
                 has_bad = any(_is_placeholder_desc(it.description_raw) for it in items) or len(items) == 0
@@ -990,6 +1091,32 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
                                     descs=[it.description_raw[:40] for it in new_items])
                     else:
                         logger.warning("llm_items_all_bad", raw_items=len(llm_items))
+                elif items and any(not it.unit_price and not it.line_total for it in items):
+                    # Описания хорошие, но цены пустые — мержим цены из LLM-позиций.
+                    # Сопоставляем по индексу (порядку): LLM обычно возвращает
+                    # позиции в том же порядке, что и в документе.
+                    merged = 0
+                    for idx, item in enumerate(items):
+                        if item.unit_price or item.line_total:
+                            continue
+                        if idx < len(llm_items) and isinstance(llm_items[idx], dict):
+                            li = llm_items[idx]
+                            lp = _safe_float(li.get("unit_price"))
+                            lt = _safe_float(li.get("line_total"))
+                            lq = _safe_float(li.get("quantity"))
+                            if lt and lt > 0:
+                                item.line_total = lt
+                                item.unit_price = lp
+                                if not item.quantity and lq:
+                                    item.quantity = lq
+                                merged += 1
+                            elif lp and lp > 0:
+                                item.unit_price = lp
+                                if not item.quantity and lq:
+                                    item.quantity = lq
+                                merged += 1
+                    if merged:
+                        logger.info("llm_prices_merged", merged=merged, total_items=len(items))
 
         # Confidence
         fields_found = sum([

@@ -153,6 +153,8 @@ export interface ParseSmartResult {
   risk_score?: number;
   risk_flags?: any;
   confidence?: number;
+  evidence_map?: Record<string, { value_preview?: string; source?: string; confidence?: number; graph?: number; note?: string }>;
+  issues?: Array<{ id?: string; severity?: string; graph?: number; field?: string; message?: string }>;
   request_id?: string;
 }
 

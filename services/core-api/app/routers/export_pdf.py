@@ -85,7 +85,7 @@ b {{ font-weight: bold; }}
     <td colspan="2"><b>12</b> Стоимость: {num(decl.total_customs_value or (items[0].customs_value_rub if items else 0))}</td></tr>
 <tr><td colspan="4"><b>14</b> Декларант</td>
     <td colspan="1"><b>15</b> {f(decl.country_dispatch_code)}</td>
-    <td colspan="1"><b>16</b> {f(decl.country_origin_code)}</td>
+    <td colspan="1"><b>16</b> {f(decl.country_origin_name)}</td>
     <td colspan="2"><b>17</b> {f(decl.country_destination_code)}</td></tr>
 <tr><td colspan="3"><b>18</b> Транспорт: {f(decl.transport_at_border)}</td>
     <td colspan="1"><b>19</b></td>

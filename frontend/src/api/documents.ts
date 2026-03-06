@@ -3,7 +3,7 @@ import { Document, PaginatedResponse } from '../types';
 
 export interface GetDocumentsParams {
   page?: number;
-  page_size?: number;
+  per_page?: number;
   declaration_id?: string;
   item_id?: string;
   doc_type?: string;

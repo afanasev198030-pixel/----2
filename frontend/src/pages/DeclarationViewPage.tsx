@@ -96,7 +96,7 @@ const DeclarationViewPage = () => {
             {sender ? (<>{sender.name}<br/><small>{sender.country_code} {sender.address || ''}</small></>) : 'Не указан'}
           </Cell>
           <Cell w="25%" border="right"><Lbl>3</Lbl> Формы: {f(decl.forms_count) || '1'}<br/><Lbl>4</Lbl> Отгр.спец: {f(decl.specifications_count)}</Cell>
-          <Cell w="25%"><Lbl>5</Lbl> Всего т-ов: <b>{f(decl.total_items_count)}</b><br/><Lbl>6</Lbl> Всего мест: <b>{f(decl.total_packages_count)}</b><br/><Lbl>7</Lbl> Справ.номер</Cell>
+          <Cell w="25%"><Lbl>5</Lbl> Всего т-ов: <b>{f(decl.total_items_count)}</b><br/><Lbl>6</Lbl> Всего мест: <b>{f(decl.total_packages_count)}</b><br/><Lbl>7</Lbl> Справ.номер <b>{f(decl.special_ref_code)}</b></Cell>
         </Row>
 
         <Row>
@@ -116,7 +116,7 @@ const DeclarationViewPage = () => {
           </Cell>
           <Cell w="15%" border="right"><Lbl>15</Lbl> Страна отпр.<br/><b>{f(decl.country_dispatch_code)}</b></Cell>
           <Cell w="10%" border="right"><Lbl>11</Lbl> Торг.стр.<br/><b>{f(decl.trading_country_code)}</b></Cell>
-          <Cell w="15%" border="right"><Lbl>16</Lbl> Происхожд.<br/><b>{f(decl.country_origin_code)}</b></Cell>
+          <Cell w="15%" border="right"><Lbl>16</Lbl> Происхожд.<br/><b>{f(decl.country_origin_name)}</b></Cell>
           <Cell w="10%" border="right"><Lbl>17</Lbl> Назнач.<br/><b>{f(decl.country_destination_code)}</b></Cell>
           <Cell w="15%"><Lbl>12</Lbl> Общ.тамож.ст.<br/><b>{num(totals?.total_customs_value || item.customs_value_rub)}</b></Cell>
         </Row>
@@ -131,7 +131,7 @@ const DeclarationViewPage = () => {
         <Row>
           <Cell w="30%" label="22" border="right">Валюта: <b>{f(decl.currency_code)}</b> Сумма: <b>{num(decl.total_invoice_value)}</b></Cell>
           <Cell w="15%" label="23" border="right">Курс: {payments ? num(payments.exchange_rate, 4) : num(decl.exchange_rate, 4)}</Cell>
-          <Cell w="15%" label="24" border="right">Хар.сделки: <b>{f(decl.deal_nature_code)}</b></Cell>
+          <Cell w="15%" label="24" border="right">Хар.сделки:<br/><b>{f(decl.deal_nature_code)}{decl.deal_specifics_code ? '/' + decl.deal_specifics_code : ''}</b></Cell>
           <Cell w="15%" label="25" border="right">Трансп: <b>{f(decl.transport_type_border)}</b></Cell>
           <Cell w="25%"><Lbl>29</Lbl> Орган въезда: <b>{f(decl.entry_customs_code)}</b></Cell>
         </Row>
@@ -151,7 +151,7 @@ const DeclarationViewPage = () => {
                   <b>Грузовые места и описание товаров</b><br/>{f(itm.description || itm.commercial_name)}<br/>
                   <small>{itm.additional_unit_qty ? `${itm.additional_unit_qty} / ${itm.additional_unit || 'ШТ'}` : ''}</small>
                 </Cell>
-                <Cell w="30%"><Lbl>32</Lbl> Товар №{itm.item_no}<br/><Lbl>33</Lbl> Код товара: <b style={{ fontSize: 14 }}>{f(itm.hs_code)}</b><br/><Lbl>34</Lbl> Код страны: <b>{f(itm.country_origin_code)}</b></Cell>
+                <Cell w="30%"><Lbl>32</Lbl> Товар №{itm.item_no}<br/><Lbl>33</Lbl> Код товара: <b style={{ fontSize: 14 }}>{f(itm.hs_code)}</b>{itm.hs_code_letters && <><br/><small>33.2: {itm.hs_code_letters}</small></>}{itm.hs_code_extra && <><small> 33.3: {itm.hs_code_extra}</small></>}<br/><Lbl>34</Lbl> Код страны: <b>{f(itm.country_origin_code)}</b>{itm.country_origin_pref_code && <small> ({itm.country_origin_pref_code})</small>}</Cell>
               </Row>
               <Row>
                 <Cell w="25%" label="35" border="right">Вес брутто: <b>{num(itm.gross_weight, 3)}</b> кг</Cell>
@@ -165,6 +165,10 @@ const DeclarationViewPage = () => {
                 <Cell w="25%" label="43" border="right">Код МОС: {f(itm.mos_method_code)}</Cell>
                 <Cell w="25%" label="45">Тамож.стоимость:<br/><b style={{ fontSize: 13 }}>{num(pi?.customs_value_rub || itm.customs_value_rub)}</b></Cell>
               </Row>
+              {itm.statistical_value_usd && <Row>
+                <Cell w="75%" label="44" border="right"><small>Доп. информация / Документы</small></Cell>
+                <Cell w="25%" label="46">Стат.стоимость (USD):<br/><b>{num(itm.statistical_value_usd)}</b></Cell>
+              </Row>}
             </Box>
           );
         })}
@@ -216,6 +220,16 @@ const DeclarationViewPage = () => {
             </Cell>
           </Row>
         </Box>
+
+        {(decl.payment_deferral || decl.warehouse_requisites) && <Row>
+          <Cell w="50%" label="48" border="right">Отсрочка платежей: {f(decl.payment_deferral)}</Cell>
+          <Cell w="50%" label="49">Реквизиты склада: {f(decl.warehouse_requisites)}</Cell>
+        </Row>}
+
+        {(decl.transit_offices || decl.destination_office_code) && <Row>
+          <Cell w="50%" label="51" border="right">Органы транзита: {f(decl.transit_offices)}</Cell>
+          <Cell w="50%" label="53">Орган назначения: {f(decl.destination_office_code)}</Cell>
+        </Row>}
 
         {/* Footer */}
         <Row>

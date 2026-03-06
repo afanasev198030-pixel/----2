@@ -32,7 +32,7 @@ const FIELD_LABELS: Record<string, string> = {
   total_invoice_value: 'Сумма инвойса',
   total_customs_value: 'Тамож. стоимость',
   exchange_rate: 'Курс',
-  country_origin_code: 'Страна происх.',
+  country_origin_name: 'Страна происх.',
   country_dispatch_code: 'Страна отправл.',
   country_destination_code: 'Страна назнач.',
   incoterms_code: 'Incoterms',

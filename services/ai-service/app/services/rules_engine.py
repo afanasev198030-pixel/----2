@@ -337,7 +337,7 @@ def validate_declaration(result: dict, evidence_map: dict | None = None) -> list
         prefix = f"Позиция #{item_no}"
 
         desc = item.get("description") or item.get("commercial_name") or ""
-        if not desc or len(desc.strip()) < 3 or re.match(r"^(item|товар|product|goods?)\s*\d*$", desc.strip(), re.I):
+        if not desc or len(desc.strip()) < 3 or re.match(r"^(item|товар|product|goods?|позиция|pos|position|line)\s*\d*$", desc.strip(), re.I):
             _issue("bad_item_description", "error",
                    f"{prefix}, графа 31: описание товара отсутствует или шаблонное",
                    graph=31, field=f"items[{idx}].description")

@@ -12,7 +12,10 @@ class DeclarationItemCreate(BaseModel):
     package_type: Optional[str] = None
     commercial_name: Optional[str] = None
     hs_code: Optional[str] = None
+    hs_code_letters: Optional[str] = None
+    hs_code_extra: Optional[str] = None
     country_origin_code: Optional[str] = None
+    country_origin_pref_code: Optional[str] = None
     gross_weight: Optional[Decimal] = None
     preference_code: Optional[str] = None
     procedure_code: Optional[str] = None
@@ -24,6 +27,8 @@ class DeclarationItemCreate(BaseModel):
     unit_price: Optional[Decimal] = None
     mos_method_code: Optional[str] = None
     customs_value_rub: Optional[Decimal] = None
+    statistical_value_usd: Optional[Decimal] = None
+    documents_json: Optional[list] = None
 
 
 class DeclarationItemUpdate(BaseModel):
@@ -33,7 +38,10 @@ class DeclarationItemUpdate(BaseModel):
     package_type: Optional[str] = None
     commercial_name: Optional[str] = None
     hs_code: Optional[str] = None
+    hs_code_letters: Optional[str] = None
+    hs_code_extra: Optional[str] = None
     country_origin_code: Optional[str] = None
+    country_origin_pref_code: Optional[str] = None
     gross_weight: Optional[Decimal] = None
     preference_code: Optional[str] = None
     procedure_code: Optional[str] = None
@@ -45,6 +53,8 @@ class DeclarationItemUpdate(BaseModel):
     unit_price: Optional[Decimal] = None
     mos_method_code: Optional[str] = None
     customs_value_rub: Optional[Decimal] = None
+    statistical_value_usd: Optional[Decimal] = None
+    documents_json: Optional[list] = None
 
 
 class DeclarationItemResponse(BaseModel):
@@ -58,7 +68,10 @@ class DeclarationItemResponse(BaseModel):
     package_type: Optional[str]
     commercial_name: Optional[str]
     hs_code: Optional[str]
+    hs_code_letters: Optional[str] = None
+    hs_code_extra: Optional[str] = None
     country_origin_code: Optional[str]
+    country_origin_pref_code: Optional[str] = None
     gross_weight: Optional[Decimal]
     preference_code: Optional[str]
     procedure_code: Optional[str]
@@ -70,6 +83,8 @@ class DeclarationItemResponse(BaseModel):
     unit_price: Optional[Decimal]
     mos_method_code: Optional[str]
     customs_value_rub: Optional[Decimal]
+    statistical_value_usd: Optional[Decimal] = None
+    documents_json: Optional[list] = None
     risk_score: int
     risk_flags: Optional[dict]
     created_at: Optional[datetime]

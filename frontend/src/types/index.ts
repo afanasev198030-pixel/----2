@@ -58,8 +58,9 @@ export interface Declaration {
   receiver_counterparty_id?: string;
   financial_counterparty_id?: string;
   declarant_counterparty_id?: string;
+  special_ref_code?: string;
   country_dispatch_code?: string;
-  country_origin_code?: string;
+  country_origin_name?: string;
   country_destination_code?: string;
   transport_at_border?: string;
   container_info?: string;
@@ -69,6 +70,7 @@ export interface Declaration {
   total_invoice_value?: number;
   exchange_rate?: number;
   deal_nature_code?: string;
+  deal_specifics_code?: string;
   transport_type_border?: string;
   transport_type_inland?: string;
   loading_place?: string;
@@ -90,15 +92,29 @@ export interface Declaration {
   transport_on_border_id?: string;
   entry_customs_code?: string;
   goods_location?: string;
+  payment_deferral?: string;
+  warehouse_requisites?: string;
+  transit_offices?: string;
+  destination_office_code?: string;
   spot_required?: boolean;
   spot_status?: 'none' | 'required' | 'created' | 'paid' | 'qr_received';
   spot_qr_file_key?: string;
   spot_amount?: number;
   submitted_at?: string;
   place_and_date?: string;
+  evidence_map?: Record<string, FieldEvidence>;
+  ai_confidence?: number;
   created_by?: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface FieldEvidence {
+  value_preview?: string;
+  source?: string;
+  confidence?: number;
+  graph?: number;
+  note?: string;
 }
 
 export interface DeclarationItem {
@@ -110,7 +126,10 @@ export interface DeclarationItem {
   package_type?: string;
   commercial_name?: string;
   hs_code?: string;
+  hs_code_letters?: string;
+  hs_code_extra?: string;
   country_origin_code?: string;
+  country_origin_pref_code?: string;
   gross_weight?: number;
   preference_code?: string;
   procedure_code?: string;
@@ -122,6 +141,8 @@ export interface DeclarationItem {
   unit_price?: number;
   mos_method_code?: string;
   customs_value_rub?: number;
+  statistical_value_usd?: number;
+  documents_json?: Array<{code: string; marker: string; number: string; date: string}>;
   risk_score?: number;
   risk_flags?: Record<string, unknown>;
   created_at: string;
@@ -173,7 +194,7 @@ export interface PaginatedResponse<T> {
   items: T[];
   total: number;
   page: number;
-  page_size: number;
+  per_page: number;
   pages: number;
 }
 

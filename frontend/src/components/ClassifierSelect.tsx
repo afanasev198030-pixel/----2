@@ -7,7 +7,7 @@ interface ClassifierSelectProps {
   classifierType: string;
   value: string;
   onChange: (code: string, item?: Classifier) => void;
-  label: string;
+  label: React.ReactNode;
   size?: 'small' | 'medium';
   required?: boolean;
   disabled?: boolean;

@@ -67,10 +67,10 @@ class Declaration(Base):
         UUID(as_uuid=True), ForeignKey("core.counterparties.id"), nullable=True
     )
     country_dispatch_code: Mapped[Optional[str]] = mapped_column(String(2))
-    country_origin_code: Mapped[Optional[str]] = mapped_column(String(20))
+    country_origin_name: Mapped[Optional[str]] = mapped_column(String(60))
     country_destination_code: Mapped[Optional[str]] = mapped_column(String(2))
     transport_at_border: Mapped[Optional[str]] = mapped_column(String(100))
-    container_info: Mapped[Optional[str]] = mapped_column(String(200))
+    container_info: Mapped[Optional[str]] = mapped_column(String(1))
     incoterms_code: Mapped[Optional[str]] = mapped_column(String(3))
     transport_on_border: Mapped[Optional[str]] = mapped_column(String(100))
     currency_code: Mapped[Optional[str]] = mapped_column(String(3))
@@ -99,8 +99,9 @@ class Declaration(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.users.id")
     )
-    # Новые графы ДТ
-    trading_country_code: Mapped[Optional[str]] = mapped_column(String(2))  # Графа 11
+    # Графы ДТ по офиц. форме (Решение КТС No 257)
+    special_ref_code: Mapped[Optional[str]] = mapped_column(String(20))       # Графа 7
+    trading_country_code: Mapped[Optional[str]] = mapped_column(String(2))    # Графа 11
     declarant_inn_kpp: Mapped[Optional[str]] = mapped_column(String(30))    # Графа 14 ИНН/КПП
     declarant_ogrn: Mapped[Optional[str]] = mapped_column(String(15))       # Графа 14 ОГРН
     declarant_phone: Mapped[Optional[str]] = mapped_column(String(20))      # Графа 14 телефон
@@ -108,8 +109,13 @@ class Declaration(Base):
     transport_on_border_id: Mapped[Optional[str]] = mapped_column(String(100))  # Графа 21 рейс
     entry_customs_code: Mapped[Optional[str]] = mapped_column(String(8))    # Графа 29
     goods_location: Mapped[Optional[str]] = mapped_column(Text)             # Графа 30
-    freight_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))   # Транспортные расходы
-    freight_currency: Mapped[Optional[str]] = mapped_column(String(3))          # Валюта фрахта
+    deal_specifics_code: Mapped[Optional[str]] = mapped_column(String(2))     # Графа 24 подр.2
+    payment_deferral: Mapped[Optional[str]] = mapped_column(String(500))      # Графа 48
+    warehouse_requisites: Mapped[Optional[str]] = mapped_column(String(500))  # Графа 49
+    transit_offices: Mapped[Optional[str]] = mapped_column(Text)              # Графа 51
+    destination_office_code: Mapped[Optional[str]] = mapped_column(String(100))  # Графа 53
+    freight_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
+    freight_currency: Mapped[Optional[str]] = mapped_column(String(3))
 
     evidence_map: Mapped[Optional[dict]] = mapped_column(
         JSONB, nullable=True,

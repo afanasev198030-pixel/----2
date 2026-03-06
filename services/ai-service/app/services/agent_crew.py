@@ -764,12 +764,26 @@ JSON:"""},
             file_hash = _hashlib.md5(file_bytes).hexdigest()[:12]
             cached = _parse_cache.get(file_hash)
             if cached:
-                logger.info("parse_cache_hit", filename=filename, doc_type=doc_type)
+                cache_ok = True
+                # Не использовать кеш инвойса, если в нём нет цен —
+                # при предыдущем парсинге мог упасть LLM.
                 if cached.get("_cache_type") == "invoice":
-                    parsed_docs["invoice"] = cached
-                elif cached.get("_cache_type") == "packing":
-                    parsed_docs["packing"] = cached
-                continue
+                    cached_items = cached.get("items", [])
+                    has_any_price = any(
+                        it.get("unit_price") or it.get("line_total")
+                        for it in cached_items
+                    ) if cached_items else False
+                    if cached_items and not has_any_price:
+                        cache_ok = False
+                        logger.info("parse_cache_skip_no_prices",
+                                    filename=filename, items=len(cached_items))
+                if cache_ok:
+                    logger.info("parse_cache_hit", filename=filename, doc_type=doc_type)
+                    if cached.get("_cache_type") == "invoice":
+                        parsed_docs["invoice"] = cached
+                    elif cached.get("_cache_type") == "packing":
+                        parsed_docs["packing"] = cached
+                    continue
 
             if doc_type == "invoice":
                 self._progress("parsing", f"[{i+1}/{total_files}] AI: инвойс...", pct)
@@ -1046,20 +1060,30 @@ JSON:"""},
                         result["ogrn"] = p["ogrn"]
             return result
 
-        # Графа 2 (Отправитель) — приоритет по правилам:
-        # 1. Транспортный документ (AWB/CMR/B/L) — поле Shipper/Consignor
-        # 2. Заявка (Application) — forwarding_agent / shipper
-        # 3. Транспортный инвойс — shipper (fallback)
-        # 4. Инвойс на товары — seller
-        # 5. Контракт — seller (только для дополнения address/country/inn)
+        # Графа 2 (Отправитель) — ТОЛЬКО транспортные источники:
+        # 1. Транспортный документ (AWB/CMR/B/L) — Shipper/Consignor
+        # 2. Заявка на ПЕРЕВОЗКУ (Application) — Отправитель/Shipper
+        # 3. Транспортный инвойс — Shipper
+        # Товарный инвойс (seller) и контракт (seller) НЕ используются —
+        # это стороны сделки (Гр.11), а не физический грузоотправитель.
         transport_shipper = {"name": transport.get("shipper_name"),
                              "address": transport.get("shipper_address")} if transport.get("shipper_name") else None
         app_forwarder = application.get("forwarding_agent") or application.get("shipper")
         transp_inv_shipper = {"name": transport_inv.get("shipper_name"),
                               "address": transport_inv.get("shipper_address")} if transport_inv.get("shipper_name") else None
-        contract_seller = contract.get("seller")
 
-        seller = _extract_party([transport_shipper, app_forwarder, transp_inv_shipper, inv.get("seller"), contract_seller], "seller")
+        sender = _extract_party([transport_shipper, app_forwarder, transp_inv_shipper], "seller")
+
+        # Fallback: если ни один транспортный документ не дал отправителя —
+        # берём продавца из товарного инвойса/контракта с предупреждением.
+        # Это НЕ правильный источник для Гр.2, но лучше чем пустое поле.
+        if not sender:
+            sender = _extract_party([inv.get("seller"), contract.get("seller")], "seller")
+            if sender:
+                logger.warning("sender_fallback_to_invoice_seller",
+                               name=sender.get("name"),
+                               msg="Гр.2: отправитель не найден в транспортных документах. "
+                                   "Использован продавец из инвойса/контракта — ТРЕБУЕТ ПРОВЕРКИ.")
 
         buyer = _extract_party([contract.get("buyer"), inv.get("buyer")], "buyer")
         if not buyer and contract.get("buyer_name"):
@@ -1176,7 +1200,10 @@ JSON:"""},
                 logger.info("skip_non_goods_item", description=desc[:60])
                 continue
             hs_from_doc = _normalize_hs_code(item_data.get("hs_code"))
-            if hs_from_doc and (not desc or str(desc).strip().lower().startswith("item ")):
+            if hs_from_doc and (not desc or _re.match(
+                r'^(item|товар|product|goods?|позиция|pos)\s*\d*$',
+                str(desc).strip(), _re.IGNORECASE,
+            )):
                 logger.info("drop_untrusted_doc_hs", hs_code=hs_from_doc, description=(desc or "")[:40])
                 hs_from_doc = ""
             qty = _safe_float(item_data.get("quantity"))
@@ -1512,17 +1539,36 @@ JSON:"""},
             )
 
         # ── Evidence tracking ──
-        seller_src = "transport_doc" if transport_shipper else ("application" if app_forwarder else ("transport_invoice" if transp_inv_shipper else "invoice"))
-        ev.record("seller", seller, seller_src, confidence=0.9 if seller_src == "transport_doc" else 0.8, graph=2)
+        sender_src = "transport_doc" if transport_shipper else ("application" if app_forwarder else "transport_invoice")
+        ev.record("seller", sender, sender_src, confidence=0.9 if sender_src == "transport_doc" else 0.8, graph=2)
         buyer_src = "contract" if contract.get("buyer") or contract.get("buyer_name") else "invoice"
         ev.record("buyer", buyer, buyer_src, confidence=0.85 if buyer_src == "contract" else 0.8, graph=8)
         ev.record("currency", currency, "contract", confidence=0.97 if currency else 0.3, graph=22)
         ev.record("total_amount", total_amount, "invoice", confidence=0.85, graph=22)
-        # Графа 20: Инкотермс — 1) Заявка, 2) Контракт (инвойс НЕ является источником)
+        # Графа 20: Инкотермс — 1) Заявка на перевозку, 2) Контракт.
+        # Товарный инвойс НЕ является источником условий поставки.
         inco_val = application.get("incoterms") or contract.get("incoterms")
         delivery_place_val = application.get("delivery_place") or contract.get("delivery_place")
         inco_src = "application" if application.get("incoterms") else "contract"
         ev.record("incoterms", inco_val, inco_src, confidence=0.85, graph=20)
+
+        # Предупреждение при расхождении условий поставки между документами
+        app_inco = application.get("incoterms")
+        app_place = application.get("delivery_place")
+        inv_inco = inv.get("incoterms")
+        contract_inco = contract.get("incoterms")
+        if app_inco and inv_inco and app_inco.upper() != inv_inco.upper():
+            logger.warning("incoterms_conflict_app_vs_invoice",
+                           application=f"{app_inco} {app_place or ''}".strip(),
+                           invoice=inv_inco,
+                           msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ инвойс ({inv_inco}). "
+                               f"Используются условия из заявки на перевозку.")
+        if app_inco and contract_inco and app_inco.upper() != contract_inco.upper():
+            logger.warning("incoterms_conflict_app_vs_contract",
+                           application=f"{app_inco} {app_place or ''}".strip(),
+                           contract=contract_inco,
+                           msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ контракт ({contract_inco}). "
+                               f"Используются условия из заявки на перевозку.")
         # Графа 16: агрегация страны происхождения из всех позиций
         _EU_COUNTRIES = {"AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"}
         unique_origins = set()
@@ -1561,19 +1607,24 @@ JSON:"""},
                   "contract" if contract.get("buyer") else "invoice", confidence=0.8, graph=14)
 
         # Гр. 11, 15, 19: страна контрагента, страна отправления, контейнер
-        # Гр. 11: страна торгового партнёра (контрагента по контракту = продавца)
-        seller_cc = seller.get("country_code") if seller and isinstance(seller, dict) else None
+
+        # Гр. 11: страна торгового партнёра = страна ПРОДАВЦА ПО КОНТРАКТУ.
+        # НЕ путать с sender (отправитель из транспортного документа, Гр.2).
+        # Пример: продавец ZED Group (HK) ≠ грузоотправитель HK SAN GENSHIN (CN).
+        contract_seller = contract.get("seller") or {}
+        contract_seller_cc = contract_seller.get("country_code") if isinstance(contract_seller, dict) else None
         trading_partner = (
             contract.get("seller_country")
+            or contract_seller_cc
             or inv.get("seller_country")
-            or seller_cc
         )
 
-        # Гр. 15: страна отправления — страна откуда отправлен груз
+        # Гр. 15: страна отправления — откуда физически отправлен груз.
+        # Источники: заявка на перевозку, транспортные документы, sender (Гр.2).
+        sender_cc = sender.get("country_code") if sender and isinstance(sender, dict) else None
         country_dispatch_val = (
             application.get("country_dispatch")
-            or inv.get("country_dispatch")
-            or seller_cc
+            or sender_cc
         )
 
         # Гр. 19: контейнерная перевозка
@@ -1584,7 +1635,7 @@ JSON:"""},
         result = {
             "invoice_number": inv.get("invoice_number"),
             "invoice_date": inv.get("invoice_date"),
-            "seller": seller,
+            "seller": sender,
             "buyer": buyer,
             "buyer_matches_declarant": buyer_matches_declarant,
             "currency": currency,
@@ -1626,9 +1677,9 @@ JSON:"""},
         ev.record("responsible_person",
                   responsible_person_data.get("name") if responsible_person_data else "СМ. ГРАФУ 14 ДТ",
                   rp_src, confidence=0.95, graph=9)
-        tp_src = "contract" if contract.get("seller_country") else ("invoice" if inv.get("seller_country") else "seller")
+        tp_src = "contract" if (contract.get("seller_country") or contract_seller_cc) else "invoice"
         ev.record("trading_partner_country", trading_partner, tp_src, confidence=0.85, graph=11)
-        cd_src = "application" if application.get("country_dispatch") else ("invoice" if inv.get("country_dispatch") else "seller")
+        cd_src = "application" if application.get("country_dispatch") else "sender"
         ev.record("country_dispatch", country_dispatch_val, cd_src, confidence=0.75, graph=15)
         ev.record("container", container_val, "transport_type" if transport_type else "unknown", confidence=0.6, graph=19)
 
@@ -1641,55 +1692,57 @@ JSON:"""},
 
     @staticmethod
     def _build_documents_list(parsed_docs: dict, inv: dict, contract: dict, awb_number: str | None) -> list[dict]:
-        """Графа 44: перечень документов с кодами классификатора, номерами и датами."""
-        _DOC_TYPE_CODES = {
-            "invoice": "04021",
-            "contract": "03011",
-            "packing": "04024",
-            "specification": "04099",
-            "transport_invoice": "04025",
-            "transport": "02011",
-            "application_statement": "09999",
-            "tech_description": "04099",
-        }
+        """Графа 44: перечень документов с кодами классификатора, номерами и датами.
+
+        Коды по Классификатору видов документов и сведений (КТС № 378).
+        presentation_flag: 0 — не представлен, 1 — представлен, 2 — ранее представлен к другой ДТ.
+        """
         docs: list[dict] = []
+
+        def _add(code: str, number: str, date=None, name: str = "", flag: str = "0"):
+            docs.append({
+                "doc_code": code,
+                "presentation_flag": flag,
+                "doc_number": number,
+                "doc_date": date,
+                "doc_type_name": name,
+            })
+
         if inv.get("invoice_number"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["invoice"],
-                "doc_number": inv["invoice_number"],
-                "doc_date": inv.get("invoice_date"),
-                "doc_type_name": "Инвойс (счёт-фактура)",
-            })
+            _add("04021", inv["invoice_number"], inv.get("invoice_date"),
+                 "Коммерческий инвойс", "1")
+
         if contract.get("contract_number"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["contract"],
-                "doc_number": contract["contract_number"],
-                "doc_date": contract.get("contract_date"),
-                "doc_type_name": "Контракт (договор)",
-            })
+            _add("03011", contract["contract_number"], contract.get("contract_date"),
+                 "Контракт (договор)", "1")
+
         if awb_number:
-            docs.append({
-                "doc_code": "02011",
-                "doc_number": awb_number,
-                "doc_date": None,
-                "doc_type_name": "Авиационная накладная (AWB)",
-            })
+            _add("02017", awb_number, None, "Авиационная накладная (AWB)", "1")
+
         packing_data = parsed_docs.get("packing") or {}
         if isinstance(packing_data, dict) and packing_data.get("items"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["packing"],
-                "doc_number": packing_data.get("packing_list_number", "б/н"),
-                "doc_date": packing_data.get("packing_list_date"),
-                "doc_type_name": "Упаковочный лист",
-            })
+            _add("04024", packing_data.get("packing_list_number", "б/н"),
+                 packing_data.get("packing_list_date"), "Упаковочный лист", "1")
+
         transport_inv_data = parsed_docs.get("transport_invoice") or {}
         if isinstance(transport_inv_data, dict) and transport_inv_data.get("freight_amount"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["transport_invoice"],
-                "doc_number": transport_inv_data.get("invoice_number", "б/н"),
-                "doc_date": transport_inv_data.get("invoice_date"),
-                "doc_type_name": "Транспортный инвойс (фрахт)",
-            })
+            _add("04031", transport_inv_data.get("invoice_number", "б/н"),
+                 transport_inv_data.get("invoice_date"), "Транспортный инвойс (фрахт)", "1")
+
+        spec_data = parsed_docs.get("specification") or {}
+        if isinstance(spec_data, dict) and spec_data.get("items"):
+            _add("09023", spec_data.get("spec_number", "б/н"),
+                 spec_data.get("spec_date"), "Спецификация (заказ)", "1")
+
+        app_data = parsed_docs.get("application_statement") or {}
+        if isinstance(app_data, dict) and (app_data.get("incoterms") or app_data.get("forwarding_agent")):
+            _add("09023", app_data.get("application_number", "б/н"),
+                 app_data.get("application_date"), "Заявка на перевозку", "1")
+
+        tech_data = parsed_docs.get("tech_descriptions") or []
+        if tech_data and isinstance(tech_data, list) and len(tech_data) > 0:
+            _add("05999", "б/н", None, "Техническое описание товара", "1")
+
         return docs
 
     def _compile_by_rules(self, parsed_docs: dict, base_result: dict) -> dict:
@@ -1783,7 +1836,7 @@ JSON:"""},
 Верни JSON со следующими полями (null если нет данных):
 {{
   "type_code": "код типа декларации (гр.1), обычно ИМ 40",
-  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.2: Приоритет: 1) transport_doc_parsed.shipper, 2) application_statement.forwarding_agent, 3) transport_invoice.shipper, 4) invoice.seller. Контракт НЕ источник.
+  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.2 ОТПРАВИТЕЛЬ: ТОЛЬКО транспортные источники: 1) transport_doc.shipper, 2) application_statement.shipper, 3) transport_invoice.shipper. Товарный инвойс и контракт НЕ источники.
   "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
   "responsible_person": "гр.9: 'СМ. ГРАФУ 14 ДТ' по умолчанию. Заполнять данными ТОЛЬКО при трёхстороннем договоре (is_trilateral=true).",
   "trading_partner_country": "гр.11: ISO2 страна контрагента",
