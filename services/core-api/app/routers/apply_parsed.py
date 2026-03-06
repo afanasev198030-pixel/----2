@@ -56,6 +56,16 @@ def _normalize_digits(value: Optional[str]) -> str:
     return re.sub(r"\D", "", value or "")
 
 
+def _normalize_deal_nature_code(value: Optional[str]) -> Optional[str]:
+    """Store deal nature in the current 2-digit app format (01, 02, 03...)."""
+    digits = _normalize_digits(value)
+    if not digits:
+        return None
+    if len(digits) >= 2:
+        return digits[:2]
+    return digits
+
+
 def _parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     raw = (raw_value or "").strip()
     if not raw:
@@ -201,7 +211,7 @@ class ApplyParsedRequest(BaseModel):
     responsible_person_matches_declarant: Optional[bool] = True
 
     # Общие
-    deal_nature_code: Optional[str] = "010"  # купля-продажа (трёхзначный код по Классификатору характера сделки)
+    deal_nature_code: Optional[str] = "01"  # купля-продажа (2-значный app-format код)
     type_code: Optional[str] = "IM40"  # импорт по умолчанию
 
     # Транспортные расходы (графа 17)
@@ -401,8 +411,12 @@ async def apply_parsed_data(
             declaration.total_gross_weight = gross_dec
         if net_dec is not None:
             declaration.total_net_weight = net_dec
-        # deal_nature_code: всегда 01 (купля-продажа) если не указан
-        declaration.deal_nature_code = data.deal_nature_code or declaration.deal_nature_code or "010"
+        # deal_nature_code: app-format uses 2-digit code (01, 02, 03...)
+        declaration.deal_nature_code = (
+            _normalize_deal_nature_code(data.deal_nature_code)
+            or _normalize_deal_nature_code(declaration.deal_nature_code)
+            or "01"
+        )
         if data.type_code:
             declaration.type_code = data.type_code
         if data.transport_type:
@@ -459,7 +473,7 @@ async def apply_parsed_data(
         for _tf, _tl in [
             ("country_dispatch_code", 2), ("country_origin_code", 2), ("country_destination_code", 2),
             ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
-            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
+            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
             ("freight_currency", 3), ("customs_office_code", 8), ("type_code", 10),
         ]:
             _tv = getattr(declaration, _tf, None)
@@ -651,7 +665,7 @@ async def apply_parsed_data(
         for _f2, _l2 in [
             ("country_dispatch_code", 2), ("country_origin_code", 2), ("country_destination_code", 2),
             ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
-            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
+            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
             ("customs_office_code", 8), ("type_code", 10),
         ]:
             _v2 = getattr(declaration, _f2, None)

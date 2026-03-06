@@ -249,7 +249,7 @@ const DeclarationEditPage = () => {
         contract_number: parsed.contract_number, contract_date: parsed.contract_date,
         total_packages: parsed.total_packages,
         total_gross_weight: parsed.total_gross_weight, total_net_weight: parsed.total_net_weight,
-        transport_type: parsed.transport_type || '40', deal_nature_code: parsed.deal_nature_code || '010', type_code: parsed.type_code || 'IM40',
+        transport_type: parsed.transport_type || '40', deal_nature_code: parsed.deal_nature_code || '01', type_code: parsed.type_code || 'IM40',
         customs_office_code: parsed.customs_office_code,
         goods_location: parsed.goods_location,
         declarant_inn_kpp: parsed.declarant_inn_kpp,

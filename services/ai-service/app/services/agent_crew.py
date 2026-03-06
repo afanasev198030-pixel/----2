@@ -1552,7 +1552,7 @@ JSON:"""},
         ev.record("total_gross_weight", total_gross, weight_src, confidence=0.85, graph=35)
         ev.record("total_net_weight", total_net, weight_src, confidence=0.85, graph=38)
         ev.record("type_code", "IM40", "default", confidence=0.3, graph=1)
-        ev.record("deal_nature_code", "010", "default", confidence=0.3, graph=24)
+        ev.record("deal_nature_code", "01", "default", confidence=0.3, graph=24)
         ev.record("items", f"{len(items)} позиций", items_source, confidence=0.85, graph=31)
         contract_num = inv.get("contract_number") or contract.get("contract_number")
         ev.record("contract_number", contract_num,
@@ -1608,7 +1608,7 @@ JSON:"""},
             "delivery_place": delivery_place_val,
             "customs_office_code": customs_office_code,
             "goods_location": goods_location,
-            "deal_nature_code": "010",
+            "deal_nature_code": "01",
             "type_code": "IM40",
             "declarant_inn_kpp": declarant_inn_kpp,
             "responsible_person": responsible_person_data,
