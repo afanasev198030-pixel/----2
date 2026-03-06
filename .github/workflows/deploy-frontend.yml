@@ -30,6 +30,6 @@ jobs:
             set -e
             cd /home/2/----2
             git fetch origin && git reset --hard origin/main
-            docker-compose -f docker-compose.prod.yml build frontend --no-cache
-            docker-compose -f docker-compose.prod.yml up -d frontend
+            docker compose -f docker-compose.prod.yml build frontend --no-cache
+            docker compose -f docker-compose.prod.yml up -d frontend
             echo "Done. Open http://82.148.28.122/ and Ctrl+F5"

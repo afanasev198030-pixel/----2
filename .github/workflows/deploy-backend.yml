@@ -1,5 +1,5 @@
 # Деплой бэкенда на сервер по SSH при пуше в main.
-# Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service.
+# Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service, integration-service.
 # Секреты в GitHub: Settings → Secrets and variables → Actions:
 #   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
 #   SERVER_HOST     — хост (напр. 82.148.28.122)
@@ -35,19 +35,22 @@ jobs:
             echo "==> [1/5] Pulling latest code from main..."
             git fetch origin && git reset --hard origin/main
 
-            echo "==> [2/5] Running DB migrations..."
-            docker-compose -f docker-compose.prod.yml exec -T core-api alembic upgrade head
+            echo "==> [2/6] Ensuring infrastructure and backend base services are up..."
+            docker compose -f docker-compose.prod.yml up -d postgres redis minio chromadb core-api
 
-            echo "==> [3/5] Loading graph rules into DB (upsert — safe to run always)..."
-            docker-compose -f docker-compose.prod.yml exec -T core-api \
+            echo "==> [3/6] Running DB migrations..."
+            docker compose -f docker-compose.prod.yml exec -T core-api alembic upgrade head
+
+            echo "==> [4/6] Loading graph rules into DB (upsert — safe to run always)..."
+            docker compose -f docker-compose.prod.yml exec -T core-api \
               python -m app.seeds.load_graph_rules || echo "Seed skipped (non-critical)"
 
-            echo "==> [4/5] Rebuilding backend images..."
-            docker-compose -f docker-compose.prod.yml build \
-              core-api ai-service file-service calc-service --no-cache
+            echo "==> [5/6] Rebuilding backend images..."
+            docker compose -f docker-compose.prod.yml build \
+              core-api ai-service file-service calc-service integration-service --no-cache
 
-            echo "==> [5/5] Restarting backend containers..."
-            docker-compose -f docker-compose.prod.yml up -d \
-              core-api ai-service file-service calc-service
+            echo "==> [6/6] Restarting backend containers..."
+            docker compose -f docker-compose.prod.yml up -d \
+              core-api ai-service file-service calc-service integration-service
 
             echo "==> Done. Backend deployed successfully."
