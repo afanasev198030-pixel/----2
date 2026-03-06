@@ -18,6 +18,7 @@ from .knowledge import KnowledgeArticle, Checklist
 from .graph_rule import DeclarationGraphRule
 from .ai_strategy import AiStrategy
 from .hs_code_history import HsCodeHistory
+from .ai_usage_log import AiUsageLog
 
 __all__ = [
     "Base",
@@ -48,4 +49,5 @@ __all__ = [
     "DeclarationGraphRule",
     "AiStrategy",
     "HsCodeHistory",
+    "AiUsageLog",
 ]

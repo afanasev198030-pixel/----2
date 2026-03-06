@@ -195,6 +195,43 @@ async def internal_create_parse_issue(data: dict, db=Depends(get_db)):
     return {"status": "created", "id": str(issue.id)}
 
 
+@app.post("/api/v1/internal/ai-usage", status_code=201)
+async def internal_ai_usage(data: dict, db=Depends(get_db)):
+    """Приём данных о использовании AI-токенов от ai-service."""
+    from app.models.ai_usage_log import AiUsageLog
+    import uuid as _uuid
+    from decimal import Decimal
+
+    company_id = None
+    declaration_id = None
+    if data.get("company_id"):
+        try:
+            company_id = _uuid.UUID(data["company_id"])
+        except (ValueError, TypeError):
+            pass
+    if data.get("declaration_id"):
+        try:
+            declaration_id = _uuid.UUID(data["declaration_id"])
+        except (ValueError, TypeError):
+            pass
+
+    log = AiUsageLog(
+        company_id=company_id,
+        declaration_id=declaration_id,
+        operation=data.get("operation", "unknown"),
+        model=data.get("model", "unknown"),
+        provider=data.get("provider", "unknown"),
+        input_tokens=data.get("input_tokens", 0),
+        output_tokens=data.get("output_tokens", 0),
+        total_tokens=data.get("total_tokens", 0),
+        cost_usd=Decimal(str(data.get("cost_usd", 0))) if data.get("cost_usd") else None,
+        duration_ms=data.get("duration_ms"),
+    )
+    db.add(log)
+    await db.commit()
+    return {"status": "created"}
+
+
 # Include routers
 app.include_router(auth.router)
 app.include_router(declarations.router)

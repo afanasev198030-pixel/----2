@@ -13,6 +13,7 @@ import structlog
 from app.database import get_db
 from app.middleware.auth import require_role
 from app.models import User, UserRole, ClassifierSyncLog
+from app.models.ai_usage_log import AiUsageLog
 from app.models.audit_log import AuditLog
 
 logger = structlog.get_logger()
@@ -275,4 +276,81 @@ async def get_classifier_sync_log(
         "total": total,
         "page": page,
         "per_page": per_page,
+    }
+
+
+@router.get("/ai-costs")
+async def get_ai_costs(
+    days: int = Query(30, le=365),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Дашборд unit-экономики AI (Phase 4.3)."""
+    from datetime import timedelta
+
+    since = datetime.utcnow() - timedelta(days=days)
+
+    totals = await db.execute(
+        select(
+            func.count(AiUsageLog.id).label("total_calls"),
+            func.coalesce(func.sum(AiUsageLog.input_tokens), 0).label("total_input"),
+            func.coalesce(func.sum(AiUsageLog.output_tokens), 0).label("total_output"),
+            func.coalesce(func.sum(AiUsageLog.total_tokens), 0).label("total_tokens"),
+            func.coalesce(func.sum(AiUsageLog.cost_usd), 0).label("total_cost"),
+            func.coalesce(func.avg(AiUsageLog.duration_ms), 0).label("avg_duration_ms"),
+        ).where(AiUsageLog.created_at >= since)
+    )
+    row = totals.one()
+
+    by_operation = await db.execute(
+        select(
+            AiUsageLog.operation,
+            func.count(AiUsageLog.id).label("calls"),
+            func.coalesce(func.sum(AiUsageLog.total_tokens), 0).label("tokens"),
+            func.coalesce(func.sum(AiUsageLog.cost_usd), 0).label("cost"),
+        ).where(AiUsageLog.created_at >= since)
+        .group_by(AiUsageLog.operation)
+        .order_by(func.sum(AiUsageLog.cost_usd).desc())
+    )
+
+    by_model = await db.execute(
+        select(
+            AiUsageLog.model,
+            func.count(AiUsageLog.id).label("calls"),
+            func.coalesce(func.sum(AiUsageLog.total_tokens), 0).label("tokens"),
+            func.coalesce(func.sum(AiUsageLog.cost_usd), 0).label("cost"),
+        ).where(AiUsageLog.created_at >= since)
+        .group_by(AiUsageLog.model)
+        .order_by(func.sum(AiUsageLog.cost_usd).desc())
+    )
+
+    decl_count = await db.execute(
+        select(func.count(func.distinct(AiUsageLog.declaration_id)))
+        .where(AiUsageLog.created_at >= since, AiUsageLog.declaration_id.isnot(None))
+    )
+    unique_decls = decl_count.scalar() or 0
+    cost_per_decl = float(row.total_cost) / unique_decls if unique_decls > 0 else 0
+
+    return {
+        "period_days": days,
+        "totals": {
+            "calls": row.total_calls,
+            "input_tokens": row.total_input,
+            "output_tokens": row.total_output,
+            "total_tokens": row.total_tokens,
+            "cost_usd": round(float(row.total_cost), 4),
+            "avg_duration_ms": round(float(row.avg_duration_ms)),
+        },
+        "unit_economics": {
+            "declarations_processed": unique_decls,
+            "cost_per_declaration_usd": round(cost_per_decl, 4),
+        },
+        "by_operation": [
+            {"operation": r.operation, "calls": r.calls, "tokens": r.tokens, "cost_usd": round(float(r.cost), 4)}
+            for r in by_operation
+        ],
+        "by_model": [
+            {"model": r.model, "calls": r.calls, "tokens": r.tokens, "cost_usd": round(float(r.cost), 4)}
+            for r in by_model
+        ],
     }

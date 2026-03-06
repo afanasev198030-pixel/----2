@@ -30,6 +30,7 @@ import RiskPanel from '../components/RiskPanel';
 import DeclarationChecklist from '../components/DeclarationChecklist';
 import HistoryPanel from '../components/HistoryPanel';
 import CounterpartyLookup from '../components/CounterpartyLookup';
+import AiExplainPanel from '../components/AiExplainPanel';
 import { Declaration, DeclarationItem, Document as DocType } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
@@ -493,6 +494,7 @@ const DeclarationEditPage = () => {
 
             {/* Right panel */}
             <Grid item xs={12} md={4}>
+              <AiExplainPanel declaration={decl} items={items} />
               {(riskScore > 0 || riskFlags) && <Box sx={{ mb: 2 }}><RiskPanel riskScore={riskScore} risks={riskFlags?.risks || []} source={riskFlags?.source} /></Box>}
               <DeclarationChecklist declaration={decl} items={items} formValues={watchedValues} />
               {id && <HistoryPanel declarationId={id} />}
