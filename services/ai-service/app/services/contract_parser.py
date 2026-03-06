@@ -244,7 +244,7 @@ def _llm_enrich_contract(raw_text: str, result: ContractParsed) -> ContractParse
 
         import json as _json
         from app.services.llm_client import get_llm_client, get_model
-        client = get_llm_client()
+        client = get_llm_client(operation="contract_llm_enrich")
 
         resp = client.chat.completions.create(
             model=get_model(),

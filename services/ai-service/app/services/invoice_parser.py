@@ -805,7 +805,7 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
             return {}
         from app.services.llm_client import get_llm_client, get_model
         import json as _json
-        client = get_llm_client()
+        client = get_llm_client(operation="invoice_llm_enrich")
 
         items = result.get("items", [])
         has_no_items = len(items) == 0

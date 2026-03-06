@@ -111,7 +111,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
 
     try {
       // Start parse (this returns immediately with request_id or blocks)
-      const parsePromise = parseSmartDocument(selectedFiles);
+      const parsePromise = parseSmartDocument(selectedFiles, declarationId);
 
       // Poll progress every 2 seconds
       let requestId = '';
@@ -183,7 +183,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
       clearInterval(timer);
       setIsProcessing(false);
     }
-  }, [selectedFiles]);
+  }, [selectedFiles, declarationId]);
 
   const handleApply = useCallback(async () => {
     const payload = editableResult || result;
@@ -223,7 +223,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
       if (!description || description.length < 3) return;
       setHsOptionsLoading((prev) => ({ ...prev, [index]: true }));
       try {
-        const suggestions = await classifyHS(description, editableResult?.country_origin);
+        const suggestions = await classifyHS(description, editableResult?.country_origin, undefined, declarationId);
         setHsOptions((prev) => ({ ...prev, [index]: suggestions.slice(0, 8) }));
         setExpandedHsRows((prev) => ({ ...prev, [index]: true }));
       } catch (e: any) {
@@ -233,7 +233,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
         setHsOptionsLoading((prev) => ({ ...prev, [index]: false }));
       }
     },
-    [editableResult?.country_origin]
+    [editableResult?.country_origin, declarationId]
   );
 
   const selectHsCode = useCallback((index: number, option: HSSuggestion) => {

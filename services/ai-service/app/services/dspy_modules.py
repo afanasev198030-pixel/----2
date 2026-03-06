@@ -523,10 +523,15 @@ class HSCodeClassifier:
         global _dspy_auth_failed
         if self._dspy_module and rag_text and not _dspy_auth_failed:
             try:
-                dspy_result = self._dspy_module(
-                    description=description,
-                    rag_results=rag_text,
-                )
+                from app.services.usage_tracker import set_usage_context, reset_usage_context
+                ctx_tokens = set_usage_context(operation="hs_classify_dspy")
+                try:
+                    dspy_result = self._dspy_module(
+                        description=description,
+                        rag_results=rag_text,
+                    )
+                finally:
+                    reset_usage_context(ctx_tokens)
                 code = _normalize_hs_code(dspy_result.hs_code, strict=True)
                 conf = _safe_float(dspy_result.confidence) or 0.8
                 if not code:
@@ -564,7 +569,7 @@ class HSCodeClassifier:
             settings = get_settings()
             if settings.has_llm:
                 from app.services.llm_client import get_llm_client, get_model
-                llm = get_llm_client()
+                llm = get_llm_client(operation="hs_classify_llm")
                 context_block = f"\n\nКонтекст декларации (другие позиции):\n{context}" if context else ""
                 kind_hint = {
                     "component": "Тип товара: компонент БПЛА/FPV (электронный модуль или часть).",
@@ -701,10 +706,15 @@ class RiskAnalyzer:
     def analyze(self, declaration_data: dict, relevant_rules: list[dict]) -> dict:
         if self._dspy_module and relevant_rules and not _dspy_auth_failed:
             try:
-                result = self._dspy_module(
-                    declaration_data=json.dumps(declaration_data, ensure_ascii=False, default=str),
-                    relevant_rules=json.dumps(relevant_rules, ensure_ascii=False),
-                )
+                from app.services.usage_tracker import set_usage_context, reset_usage_context
+                ctx_tokens = set_usage_context(operation="risk_analyze_dspy")
+                try:
+                    result = self._dspy_module(
+                        declaration_data=json.dumps(declaration_data, ensure_ascii=False, default=str),
+                        relevant_rules=json.dumps(relevant_rules, ensure_ascii=False),
+                    )
+                finally:
+                    reset_usage_context(ctx_tokens)
                 risks = _safe_json_parse(result.risks_json, [])
                 return {
                     "risk_score": _safe_int(result.risk_score) or 0,
@@ -810,8 +820,10 @@ def configure_dspy(api_key: str = None, model: str = None, base_url: str = None)
         mdl = model or settings.effective_model
         url = base_url or settings.effective_base_url
 
+        from app.services.usage_tracker import DSPYUsageBridge
+
         lm = dspy.LM(f"openai/{mdl}", api_key=key, api_base=url)
-        dspy.configure(lm=lm)
+        dspy.configure(lm=lm, usage_tracker=DSPYUsageBridge())
         logger.info("dspy_configured", model=mdl, provider=settings.LLM_PROVIDER, base_url=url)
     except Exception as e:
         logger.error("dspy_configure_failed", error=str(e))

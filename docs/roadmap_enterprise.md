@@ -161,7 +161,7 @@
 - **(СДЕЛАНО)** API `GET /api/v1/hs-history/suggest?description=...` — подсказки hs_code из истории компании.
 - **(СДЕЛАНО)** Улучшенный поиск контрагентов: приоритет tax_number > exact name > ilike, обновление недостающих полей, tenant isolation.
 - **(СДЕЛАНО)** Feedback в ai-service теперь включает `company_id` и `counterparty_name`.
-- **(В ОЧЕРЕДИ)** UI объяснимости: "код предложен на основе N прошлых деклараций клиента".
+- **(СДЕЛАНО)** UI-панель `AiExplainPanel` в `DeclarationEditPage`: история кодов ТН ВЭД компании, частота использования, источник `history`.
 - **(В ОЧЕРЕДИ)** Контроль drift: предупреждение если новый код конфликтует с устойчивой историей.
 
 #### 1.6 Контракт результата AI (`evidence_map` + `issues[]`) - *СДЕЛАНО*
@@ -171,7 +171,7 @@
 - **(СДЕЛАНО)** `ai_issues` формат: `[{"code": "MISSING_FIELD", "severity": "error", "field": "hs_code", "blocking": true, "message": "...", "source": "ai"}]`.
 - **(СДЕЛАНО)** Расширение `ParseIssue`: поля `code`, `field`, `blocking`, `source` + индексы (миграция 012).
 - **(СДЕЛАНО)** `issue_reporter.py` для отправки проблем из ai-service в core-api.
-- **(В ОЧЕРЕДИ)** UI объяснимости: показывать `evidence_map` и `issues[]` в DeclarationEditPage.
+- **(СДЕЛАНО)** UI-панель `AiExplainPanel` в `DeclarationEditPage`: confidence AI, блокирующие/неблокирующие `issues[]`, источники полей из `evidence_map`.
 
 #### 1.7 Pre-send hard gate (перед отправкой) - *СДЕЛАНО*
 
@@ -313,11 +313,14 @@
 - Генерировать XML/JSON в формате EnterpriseData (1С:ERP / 1С:Бухгалтерия).
 - Передавать данные по выпущенным товарам в учетные системы клиента.
 
-### 4.3 Cost Governance (биллинг AI)
+### 4.3 Cost Governance (биллинг AI) - *СДЕЛАНО*
 
-- Считать input/output токены по каждой декларации.
-- Сохранять стоимость обработки в БД.
-- Добавить админ-дашборд unit-экономики (стоимость обработки 1 декларации).
+- **(СДЕЛАНО)** Таблица `core.ai_usage_log` (миграция 016) — лог input/output/total tokens, cost_usd, model, operation, declaration_id.
+- **(СДЕЛАНО)** `usage_tracker.py` в ai-service — общий трекинг затрат через tracked OpenAI client.
+- **(СДЕЛАНО)** DSPy usage bridge — вызовы через `dspy.LM` тоже пишутся в `ai_usage_log`.
+- **(СДЕЛАНО)** Привязка к `declaration_id` для `parse-smart` и `classify-hs-rag`, чтобы считать стоимость 1 декларации.
+- **(СДЕЛАНО)** Admin API `GET /admin/ai-costs` — totals, unit economics, breakdown by operation/model.
+- **(СДЕЛАНО)** UI страница `/admin/ai-costs` — карточки затрат, токенов, стоимости 1 декларации и таблицы разбивки.
 
 ### 4.4 Telegram-бот для клиентов
 

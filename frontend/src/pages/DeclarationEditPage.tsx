@@ -452,7 +452,7 @@ const DeclarationEditPage = () => {
                         inputProps={{ style: { fontFamily: 'monospace', fontWeight: 700, fontSize: 16 } }}
                         error={!item.hs_code || (item.hs_code?.length || 0) < 10}
                         onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); client.put(`/declarations/${id}/items/${item.id}`, { hs_code: v }).then(() => refetchItems()); }} />
-                      <HSCodeSuggestions description={item.description || item.commercial_name || ''} currentCode={item.hs_code || ''}
+                      <HSCodeSuggestions description={item.description || item.commercial_name || ''} currentCode={item.hs_code || ''} declarationId={id}
                         onSelect={(code, name) => { client.put(`/declarations/${id}/items/${item.id}`, { hs_code: code }).then(() => { refetchItems(); setSnackMsg(`ТН ВЭД: ${code}`); }); }} />
                     </Box>
                     {item.hs_code && item.hs_code.length >= 4 && (

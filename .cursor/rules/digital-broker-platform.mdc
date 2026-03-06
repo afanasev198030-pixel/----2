@@ -51,6 +51,7 @@ Act as a Senior Software Engineer and Architect for the Digital Broker platform 
 - **Incremental Delivery:** Implement in small, deployable increments. Each increment must not break existing functionality.
 - **No Shortcut Engineering:** Architectural integrity and long-term impact over speed. No "quick and dirty" solutions.
 - **Sustainable Development:** All code must be maintainable by the team 6+ months from now.
+- **Finish End-to-End:** Do not leave features half-integrated. If a task introduces UI, backend, migrations, metrics, or runtime checks, complete the full working path and verify it with a real request before closing the task.
 
 ## 3. Quality Protocol
 

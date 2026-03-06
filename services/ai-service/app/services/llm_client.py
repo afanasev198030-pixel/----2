@@ -6,12 +6,21 @@ All use the same openai Python SDK — just different base_url.
 import openai
 import structlog
 
+from app.services.usage_tracker import TrackedOpenAIClient
+
 logger = structlog.get_logger()
 
 
-def get_llm_client(api_key: str = None, base_url: str = None) -> openai.OpenAI:
-    """Create OpenAI-compatible client for any provider (DeepSeek, OpenAI, etc.)."""
+def get_llm_client(
+    api_key: str = None,
+    base_url: str = None,
+    operation: str = "chat",
+    declaration_id: str = "",
+    company_id: str = "",
+):
+    """Create tracked OpenAI-compatible client for any provider."""
     from app.config import get_settings
+
     settings = get_settings()
 
     key = api_key or settings.effective_api_key
@@ -20,9 +29,14 @@ def get_llm_client(api_key: str = None, base_url: str = None) -> openai.OpenAI:
     if not key:
         raise ValueError("No LLM API key configured. Set LLM_API_KEY or OPENAI_API_KEY.")
 
-    client = openai.OpenAI(api_key=key, base_url=url)
-    logger.debug("llm_client_created", provider=settings.LLM_PROVIDER, base_url=url)
-    return client
+    raw_client = openai.OpenAI(api_key=key, base_url=url)
+    logger.debug("llm_client_created", provider=settings.LLM_PROVIDER, base_url=url, operation=operation)
+    return TrackedOpenAIClient(
+        raw_client,
+        operation=operation,
+        declaration_id=declaration_id,
+        company_id=company_id,
+    )
 
 
 def get_model() -> str:

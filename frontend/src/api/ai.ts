@@ -28,13 +28,19 @@ export interface RiskAssessment {
   risks: RiskItem[];
 }
 
-export const classifyHS = async (description: string, countryOrigin?: string, unitPrice?: number): Promise<HSSuggestion[]> => {
+export const classifyHS = async (
+  description: string,
+  countryOrigin?: string,
+  unitPrice?: number,
+  declarationId?: string,
+): Promise<HSSuggestion[]> => {
   // Use RAG+GPT-4o endpoint (falls back to keyword if AI unavailable)
   try {
     const response = await aiClient.post<{ suggestions: any[]; rag_candidates?: any[] }>('/classify-hs-rag', {
       description,
       country_origin: countryOrigin || null,
       unit_price: unitPrice || null,
+      declaration_id: declarationId || null,
     });
     // Merge suggestions + model candidates + rag_candidates
     const suggestions = (response.data.suggestions || []).map((s: any) => ({
@@ -156,11 +162,14 @@ export interface ParseSmartResult {
   request_id?: string;
 }
 
-export const parseSmartDocument = async (files: File[]): Promise<ParseSmartResult> => {
+export const parseSmartDocument = async (files: File[], declarationId?: string): Promise<ParseSmartResult> => {
   const formData = new FormData();
   files.forEach((file) => {
     formData.append('files', file);
   });
+  if (declarationId) {
+    formData.append('declaration_id', declarationId);
+  }
   const response = await aiClient.post<ParseSmartResult>('/parse-smart', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 600000, // 10 min timeout for LLM processing (DSPy + multiple files)

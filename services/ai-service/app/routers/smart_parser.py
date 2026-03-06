@@ -7,7 +7,7 @@ POST /api/v1/ai/check-risks-rag — RAG проверка рисков
 """
 import json
 import asyncio
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -16,6 +16,7 @@ import structlog
 from app.services.agent_crew import DeclarationCrew
 from app.services.index_manager import get_index_manager
 from app.services.dspy_modules import HSCodeClassifier, RiskAnalyzer
+from app.services.usage_tracker import set_usage_context, reset_usage_context
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/ai", tags=["smart-parser"])
@@ -41,7 +42,10 @@ async def get_parse_progress(request_id: str):
 
 
 @router.post("/parse-smart")
-async def parse_smart(files: list[UploadFile] = File(...)):
+async def parse_smart(
+    files: list[UploadFile] = File(...),
+    declaration_id: Optional[str] = Form(None),
+):
     """
     Мультизагрузка PDF файлов → автопарсинг → данные для декларации.
     """
@@ -57,6 +61,7 @@ async def parse_smart(files: list[UploadFile] = File(...)):
     filenames = [f.filename for f in files]
     logger.info("parse_smart_start", files_count=len(files), filenames=filenames, request_id=request_id)
 
+    context_tokens = set_usage_context(declaration_id=declaration_id or "", operation="parse_smart_dspy")
     try:
         # Step 1: Reading files
         _send_event(request_id, "reading", f"Чтение {len(files)} файлов...", 5)
@@ -150,12 +155,15 @@ async def parse_smart(files: list[UploadFile] = File(...)):
         _send_event(request_id, "error", f"Ошибка: {str(e)}", -1)
         logger.error("parse_smart_failed", error=str(e), exc_info=True, request_id=request_id)
         raise HTTPException(status_code=500, detail=f"Failed to parse documents: {str(e)}")
+    finally:
+        reset_usage_context(context_tokens)
 
 
 class ClassifyHSRequest(BaseModel):
     description: str
     country_origin: Optional[str] = None
     unit_price: Optional[float] = None
+    declaration_id: Optional[str] = None
 
 
 @router.post("/classify-hs-rag")
@@ -167,6 +175,7 @@ async def classify_hs_rag(request: ClassifyHSRequest):
     if not request.description:
         raise HTTPException(status_code=400, detail="Description is required")
 
+    context_tokens = set_usage_context(declaration_id=request.declaration_id or "", operation="hs_classify_dspy")
     try:
         # RAG поиск по ChromaDB
         index_manager = get_index_manager()
@@ -209,6 +218,8 @@ async def classify_hs_rag(request: ClassifyHSRequest):
     except Exception as e:
         logger.error("classify_hs_rag_failed", error=str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to classify HS code: {str(e)}")
+    finally:
+        reset_usage_context(context_tokens)
 
 
 class RiskCheckRequest(BaseModel):
@@ -506,7 +517,7 @@ async def train_from_gtd(files: list[UploadFile] = File(...)):
     import json as _json
 
     idx = get_index_manager()
-    client = get_llm_client()
+    client = get_llm_client(operation="train_from_gtd")
     total_saved = 0
     total_files = len(files)
 

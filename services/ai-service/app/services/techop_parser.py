@@ -30,7 +30,7 @@ def parse(file_bytes: bytes, filename: str) -> dict:
             return result
 
         from app.services.llm_client import get_llm_client, get_model
-        client = get_llm_client()
+        client = get_llm_client(operation="techop_llm_parse")
 
         resp = client.chat.completions.create(
             model=get_model(),

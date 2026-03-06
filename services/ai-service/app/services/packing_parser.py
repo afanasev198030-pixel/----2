@@ -147,7 +147,7 @@ def _llm_parse_pl(raw_text: str) -> dict:
             return {}
         from app.services.llm_client import get_llm_client, get_model
         import json
-        client = get_llm_client()
+        client = get_llm_client(operation="packing_list_llm_parse")
         resp = client.chat.completions.create(
             model=get_model(),
             messages=[

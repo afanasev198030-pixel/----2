@@ -9,9 +9,10 @@ interface HSCodeSuggestionsProps {
   onSelect: (code: string, name: string) => void;
   countryOrigin?: string;
   unitPrice?: number;
+  declarationId?: string;
 }
 
-const HSCodeSuggestions = ({ description, currentCode, onSelect, countryOrigin, unitPrice }: HSCodeSuggestionsProps) => {
+const HSCodeSuggestions = ({ description, currentCode, onSelect, countryOrigin, unitPrice, declarationId }: HSCodeSuggestionsProps) => {
   const [suggestions, setSuggestions] = useState<HSSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -19,7 +20,7 @@ const HSCodeSuggestions = ({ description, currentCode, onSelect, countryOrigin, 
     if (!description || description.length < 3) return;
     setLoading(true);
     try {
-      const result = await classifyHS(description, countryOrigin, unitPrice);
+      const result = await classifyHS(description, countryOrigin, unitPrice, declarationId);
       setSuggestions(result);
     } catch (e) {
       console.error('HS classify error:', e);

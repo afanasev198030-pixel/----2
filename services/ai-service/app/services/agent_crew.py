@@ -316,7 +316,7 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
             return result
         import json as _json
         from app.services.llm_client import get_llm_client, get_model
-        client = get_llm_client()
+        client = get_llm_client(operation="transport_match_llm")
         resp = client.chat.completions.create(
             model=get_model(),
             messages=[
@@ -478,7 +478,7 @@ class DeclarationCrew:
                 for i, tp in enumerate(tech_products)
             ])
 
-            client = get_llm_client()
+            client = get_llm_client(operation="techop_item_match_llm")
             resp = client.chat.completions.create(
                 model=get_model(),
                 messages=[
@@ -586,7 +586,7 @@ JSON: {{"matches": [...]}}"""},
             if _strategies_hint:
                 system_prompt += f"\n\n{_strategies_hint}"
 
-            client = get_llm_client()
+            client = get_llm_client(operation="batch_secondary_parse_llm")
             resp = client.chat.completions.create(
                 model=get_model(),
                 messages=[
@@ -1808,7 +1808,7 @@ JSON:"""},
 JSON:"""
 
         try:
-            client = get_llm_client()
+            client = get_llm_client(operation="compile_by_rules_llm")
             resp = client.chat.completions.create(
                 model=get_model(),
                 messages=[
