@@ -349,7 +349,7 @@ async def apply_parsed_data(
         exchange_rate = Decimal("1")
         currency = data.currency or declaration.currency_code
         if data.currency:
-            declaration.currency_code = data.currency
+            declaration.currency_code = (data.currency or "")[:3] or None
 
         # Всегда подтягивать курс ЦБ для не-рублёвых валют
         if currency and currency.upper() != "RUB":
@@ -381,9 +381,9 @@ async def apply_parsed_data(
                 currency=currency, amount=data.total_amount,
                 rate=float(exchange_rate), rub=float(total_rub))
         if data.incoterms:
-            declaration.incoterms_code = data.incoterms
+            declaration.incoterms_code = (data.incoterms or "")[:3] or None
         if data.country_origin:
-            declaration.country_origin_code = data.country_origin or None
+            declaration.country_origin_code = (data.country_origin or "")[:2] or None
         if data.country_dispatch:
             declaration.country_dispatch_code = (data.country_dispatch or "")[:2] or None
         if data.trading_partner_country:
