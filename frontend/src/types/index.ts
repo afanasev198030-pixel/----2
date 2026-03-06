@@ -96,6 +96,8 @@ export interface Declaration {
   warehouse_requisites?: string;
   transit_offices?: string;
   destination_office_code?: string;
+  country_first_destination_code?: string;
+  guarantee_info?: string;
   spot_required?: boolean;
   spot_status?: 'none' | 'required' | 'created' | 'paid' | 'qr_received';
   spot_qr_file_key?: string;

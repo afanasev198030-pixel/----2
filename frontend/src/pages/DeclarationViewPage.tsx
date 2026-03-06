@@ -1,10 +1,250 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { Print as PrintIcon, Edit as EditIcon, PictureAsPdf, ArrowBack } from '@mui/icons-material';
+import { Print as PrintIcon, Edit as EditIcon, PictureAsPdf } from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
 import client from '../api/client';
 import { calculatePayments, PaymentResult } from '../api/calc';
+
+const f = (v: any) => v ?? '';
+const num = (v: any, d = 2) =>
+  v ? Number(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }) : '';
+
+const FORM: React.CSSProperties = {
+  fontFamily: '"Courier New", monospace',
+  fontSize: 10,
+  lineHeight: 1.2,
+  border: '2px solid #000',
+  background: '#fff',
+  width: '100%',
+  maxWidth: 1000,
+  margin: '0 auto',
+  boxSizing: 'border-box',
+  textTransform: 'uppercase',
+};
+
+const bR = '1px solid #000';
+const bB = '1px solid #000';
+const bT = '2px solid #000';
+
+interface CellProps {
+  w: string;
+  h?: number;
+  label?: string;
+  br?: boolean;
+  bb?: boolean;
+  bt?: boolean;
+  bold?: boolean;
+  center?: boolean;
+  children?: React.ReactNode;
+  style?: React.CSSProperties;
+}
+
+const G = ({ w, h, label, br, bb, bt, bold, center, children, style }: CellProps) => (
+  <div
+    style={{
+      width: w,
+      minHeight: h || 20,
+      padding: '1px 3px',
+      borderRight: br ? bR : undefined,
+      borderBottom: bb ? bB : undefined,
+      borderTop: bt ? bT : undefined,
+      fontWeight: bold ? 700 : 400,
+      textAlign: center ? 'center' : 'left',
+      fontSize: 10,
+      lineHeight: 1.2,
+      overflow: 'hidden',
+      boxSizing: 'border-box',
+      ...style,
+    }}
+  >
+    {label && <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>{label} </span>}
+    {children}
+  </div>
+);
+
+const Row = ({ children, thick, h }: { children: React.ReactNode; thick?: boolean; h?: number }) => (
+  <div style={{ display: 'flex', borderBottom: thick ? bT : bB, minHeight: h || 20 }}>{children}</div>
+);
+
+const ItemBlock = ({ itm, pi }: { itm: any; pi: any }) => (
+  <>
+    <div style={{ display: 'flex', borderBottom: bB }}>
+      <div style={{ width: '57%', borderRight: bR, minHeight: 140, padding: '1px 3px', fontSize: 10 }}>
+        <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>31 </span>
+        Грузовые места и описание товаров<br />
+        Маркировка и количество — Номера контейнеров — Количество и отличительные особенности
+        <br />
+        {f(itm.description || itm.commercial_name)}
+        <br />
+        {itm.package_count != null && (
+          <>
+            {itm.package_count} {f(itm.package_type)}
+            <br />
+          </>
+        )}
+        {itm.additional_unit_qty != null && (
+          <>
+            {num(itm.additional_unit_qty, 0)} {f(itm.additional_unit) || 'ШТ'}
+          </>
+        )}
+      </div>
+      <div style={{ width: '43%', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', borderBottom: bB }}>
+          <G w="35%" label="32" br>
+            Товар
+            <br />
+            <b>№{f(itm.item_no)}</b>
+          </G>
+          <G w="65%" label="33">
+            Код товара
+            <br />
+            <b style={{ fontSize: 12 }}>{f(itm.hs_code)}</b>
+          </G>
+        </div>
+        <div style={{ display: 'flex', borderBottom: bB }}>
+          <G w="35%" label="34" br>
+            Код страны происх.
+            <br />
+            <span style={{ fontSize: 7 }}>a</span> <b>{f(itm.country_origin_code)}</b>{' '}
+            <span style={{ fontSize: 7 }}>b</span> {f(itm.country_origin_pref_code)}
+          </G>
+          <G w="40%" label="35" br>
+            Вес брутто (кг)
+            <br />
+            <b>{num(itm.gross_weight, 3)}</b>
+          </G>
+          <G w="25%" label="36">
+            Преференция
+            <br />
+            {f(itm.preference_code)}
+          </G>
+        </div>
+        <div style={{ display: 'flex', borderBottom: bB }}>
+          <G w="35%" label="37" br>
+            ПРОЦЕДУРА
+            <br />
+            <b>{f(itm.procedure_code)}</b>
+          </G>
+          <G w="40%" label="38" br>
+            Вес нетто (кг)
+            <br />
+            <b>{num(itm.net_weight, 3)}</b>
+          </G>
+          <G w="25%" label="39">
+            Квота
+            <br />
+            {f(itm.quota_info)}
+          </G>
+        </div>
+        <div style={{ borderBottom: bB }}>
+          <G w="100%" label="40">
+            Общая декларация/Предшествующий документ
+            <br />
+            {f(itm.prev_doc_ref)}
+          </G>
+        </div>
+        <div style={{ display: 'flex' }}>
+          <G w="35%" label="41" br>
+            Дополнит. единицы
+            <br />
+            {itm.additional_unit_qty
+              ? `${num(itm.additional_unit_qty, 0)} ${f(itm.additional_unit) || 'ШТ'}`
+              : ''}
+          </G>
+          <G w="40%" label="42" br>
+            Цена товара
+            <br />
+            <b>{num(itm.unit_price, 4)}</b>
+          </G>
+          <G w="25%" label="43">
+            Код МОС
+            <br />
+            {f(itm.mos_method_code)}
+          </G>
+        </div>
+      </div>
+    </div>
+    <div style={{ display: 'flex', borderBottom: bB }}>
+      <div style={{ width: '57%', borderRight: bR, minHeight: 36, padding: '1px 3px', fontSize: 10 }}>
+        <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>44 </span>
+        Дополнит. информация / Представл. документы
+        <br />
+        {itm.documents_json?.map((doc: any, i: number) => (
+          <span key={i}>
+            {doc.code}/{doc.marker} {doc.number} {doc.date}
+            <br />
+          </span>
+        ))}
+      </div>
+      <div style={{ width: '43%', display: 'flex', flexDirection: 'column' }}>
+        <G w="100%" label="45" bb>
+          Таможенная стоимость
+          <br />
+          <b style={{ fontSize: 12 }}>{num(pi?.customs_value_rub || itm.customs_value_rub)}</b>
+        </G>
+        <G w="100%" label="46">
+          Статистическая стоимость
+          <br />
+          <b>{num(itm.statistical_value_usd)}</b>
+        </G>
+      </div>
+    </div>
+  </>
+);
+
+const payTh: React.CSSProperties = { border: '1px solid #999', padding: '1px 2px', textAlign: 'left', fontSize: 9 };
+const payTd: React.CSSProperties = { border: '1px solid #999', padding: '1px 2px', fontSize: 9 };
+
+const PaymentRows = ({
+  totals,
+  paymentItems,
+}: {
+  totals: PaymentResult['totals'] | undefined;
+  paymentItems: PaymentResult['items'] | undefined;
+}) => (
+  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <thead>
+      <tr>
+        <th style={payTh}>Вид</th>
+        <th style={{ ...payTh, textAlign: 'right' }}>Основа начисления</th>
+        <th style={{ ...payTh, textAlign: 'center' }}>Ставка</th>
+        <th style={{ ...payTh, textAlign: 'right' }}>Сумма</th>
+        <th style={payTh}>СП</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style={payTd}>1010</td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(totals?.total_customs_value)}</td>
+        <td style={{ ...payTd, textAlign: 'center' }}>—</td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(totals?.customs_fee)}</td>
+        <td style={payTd}>ИУ</td>
+      </tr>
+      <tr>
+        <td style={payTd}>2010</td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(totals?.total_customs_value)}</td>
+        <td style={{ ...payTd, textAlign: 'center' }}>{paymentItems?.[0]?.duty?.rate || 0}%</td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(totals?.total_duty)}</td>
+        <td style={payTd}>ИУ</td>
+      </tr>
+      <tr>
+        <td style={payTd}>5010</td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(paymentItems?.[0]?.vat?.base)}</td>
+        <td style={{ ...payTd, textAlign: 'center' }}>{paymentItems?.[0]?.vat?.rate || 20}%</td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(totals?.total_vat)}</td>
+        <td style={payTd}>ИУ</td>
+      </tr>
+      <tr style={{ fontWeight: 700, borderTop: bT }}>
+        <td style={payTd} colSpan={3}>
+          Всего:
+        </td>
+        <td style={{ ...payTd, textAlign: 'right' }}>{num(totals?.grand_total)}</td>
+        <td style={payTd} />
+      </tr>
+    </tbody>
+  </table>
+);
 
 const DeclarationViewPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -13,6 +253,8 @@ const DeclarationViewPage = () => {
   const [items, setItems] = useState<any[]>([]);
   const [sender, setSender] = useState<any>(null);
   const [receiver, setReceiver] = useState<any>(null);
+  const [declarant, setDeclarant] = useState<any>(null);
+  const [financial, setFinancial] = useState<any>(null);
   const [payments, setPayments] = useState<PaymentResult | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,236 +270,573 @@ const DeclarationViewPage = () => {
         setDecl(d);
         setItems(its);
 
-        // Load counterparty names
-        if (d.sender_counterparty_id) {
-          try { const r = await client.get(`/counterparties/${d.sender_counterparty_id}`); setSender(r.data); } catch {}
-        }
-        if (d.receiver_counterparty_id) {
-          try { const r = await client.get(`/counterparties/${d.receiver_counterparty_id}`); setReceiver(r.data); } catch {}
-        }
+        const loadCp = async (cpId: string) => {
+          try {
+            return (await client.get(`/counterparties/${cpId}`)).data;
+          } catch {
+            return null;
+          }
+        };
+        if (d.sender_counterparty_id) setSender(await loadCp(d.sender_counterparty_id));
+        if (d.receiver_counterparty_id) setReceiver(await loadCp(d.receiver_counterparty_id));
+        if (d.declarant_counterparty_id) setDeclarant(await loadCp(d.declarant_counterparty_id));
+        if (d.financial_counterparty_id) setFinancial(await loadCp(d.financial_counterparty_id));
 
-        // Calculate payments
         if (its.length > 0) {
           try {
             const payItems = its.map((i: any) => ({
-              item_no: i.item_no, hs_code: i.hs_code || '',
+              item_no: i.item_no,
+              hs_code: i.hs_code || '',
               unit_price: i.unit_price ? Number(i.unit_price) : 0,
               quantity: i.additional_unit_qty ? Number(i.additional_unit_qty) : 1,
               customs_value_rub: i.customs_value_rub ? Number(i.customs_value_rub) : 0,
             }));
-            const p = await calculatePayments(payItems, d.currency_code || 'USD', d.exchange_rate ? Number(d.exchange_rate) : undefined);
+            const p = await calculatePayments(
+              payItems,
+              d.currency_code || 'USD',
+              d.exchange_rate ? Number(d.exchange_rate) : undefined,
+            );
             setPayments(p);
-          } catch (e) { console.error('Payment calc error:', e); }
+          } catch (e) {
+            console.error('Payment calc error:', e);
+          }
         }
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
     };
     if (id) load();
   }, [id]);
 
-  if (loading) return <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}><Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box></AppLayout>;
-  if (!decl) return <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}><Typography sx={{ py: 4 }}>Не найдена</Typography></AppLayout>;
+  if (loading)
+    return (
+      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
+        <Box sx={{ textAlign: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      </AppLayout>
+    );
+  if (!decl)
+    return (
+      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
+        <Typography sx={{ py: 4 }}>Не найдена</Typography>
+      </AppLayout>
+    );
 
-  const f = (v: any) => v || '';
-  const num = (v: any, d = 2) => v ? Number(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }) : '';
-  const item = items[0] || {};
   const totals = payments?.totals;
+  const firstItem = items[0] || {};
+  const firstPi = payments?.items?.[0];
+
+  const dt2Sheets: any[][] = [];
+  for (let i = 1; i < items.length; i += 3) {
+    dt2Sheets.push(items.slice(i, i + 3));
+  }
+  const totalForms = 1 + dt2Sheets.length;
+
+  const cpLine = (cp: any) =>
+    cp ? `${cp.name || ''} ${cp.country_code || ''} ${cp.address || ''}` : 'НЕ УКАЗАН';
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }} className="no-print">
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button variant="outlined" startIcon={<EditIcon />} onClick={() => navigate(`/declarations/${id}/edit`)}>Редактировать</Button>
-          <Button variant="outlined" startIcon={<PictureAsPdf />} onClick={async () => {
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2, gap: 1 }} className="no-print">
+        <Button
+          variant="outlined"
+          startIcon={<EditIcon />}
+          onClick={() => navigate(`/declarations/${id}/edit`)}
+        >
+          Редактировать
+        </Button>
+        <Button
+          variant="outlined"
+          startIcon={<PictureAsPdf />}
+          onClick={async () => {
             try {
               const resp = await client.get(`/declarations/${id}/export-pdf`, { responseType: 'blob' });
               const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-              const a = document.createElement('a'); a.href = url; a.download = `DT_${(id || '').slice(0,8)}.pdf`; a.click();
-            } catch (e) { console.error(e); }
-          }}>PDF</Button>
-          <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>Печать</Button>
-        </Box>
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `DT_${(id || '').slice(0, 8)}.pdf`;
+              a.click();
+            } catch (e) {
+              console.error(e);
+            }
+          }}
+        >
+          PDF
+        </Button>
+        <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>
+          Печать
+        </Button>
       </Box>
 
-      <Box className="dt-form" sx={{ fontFamily: '"Courier New", monospace', fontSize: 11, border: '2px solid #000', bgcolor: '#fff' }}>
-        <Box sx={{ display: 'flex', borderBottom: '2px solid #000' }}>
-          <Cell w="70%" h={24} bold center border="right">ДЕКЛАРАЦИЯ НА ТОВАРЫ</Cell>
-          <Cell w="30%" h={24} center><small>GOODS DECLARATION</small></Cell>
-        </Box>
-
-        <Row>
-          <Cell w="50%" label="1" border="right"><b>{f(decl.type_code)}</b></Cell>
-          <Cell w="50%" label="A" />
+      {/* ═══════════════════ ДТ1 — ОСНОВНОЙ ЛИСТ ═══════════════════ */}
+      <div className="dt-sheet" style={FORM}>
+        {/* ── Заголовок ── */}
+        <Row thick>
+          <G w="58%" bold center br>
+            ДЕКЛАРАЦИЯ НА ТОВАРЫ
+          </G>
+          <G w="27%" label="1" br>
+            <b>{f(decl.type_code)}</b>
+          </G>
+          <G w="15%" label="А" center />
         </Row>
 
-        <Row>
-          <Cell w="50%" label="2" h={50} border="right">
-            <b>Отправитель/Экспортер</b><br/>
-            {sender ? (<>{sender.name}<br/><small>{sender.country_code} {sender.address || ''}</small></>) : 'Не указан'}
-          </Cell>
-          <Cell w="25%" border="right"><Lbl>3</Lbl> Формы: {f(decl.forms_count) || '1'}<br/><Lbl>4</Lbl> Отгр.спец: {f(decl.specifications_count)}</Cell>
-          <Cell w="25%"><Lbl>5</Lbl> Всего т-ов: <b>{f(decl.total_items_count)}</b><br/><Lbl>6</Lbl> Всего мест: <b>{f(decl.total_packages_count)}</b><br/><Lbl>7</Lbl> Справ.номер <b>{f(decl.special_ref_code)}</b></Cell>
+        {/* ── Графа 2 / 3-4 / 5-7 ── */}
+        <Row h={60}>
+          <G w="50%" label="2" h={60} br>
+            Отправитель/Экспортер
+            <br />
+            <b>{cpLine(sender)}</b>
+          </G>
+          <div style={{ width: '25%', borderRight: bR, display: 'flex', flexDirection: 'column' }}>
+            <G w="100%" label="3" bb>
+              Формы
+              <br />
+              <b>{f(decl.forms_count) || totalForms}</b>
+            </G>
+            <G w="100%" label="4">
+              Отгр.спец.
+              <br />
+              {f(decl.specifications_count)}
+            </G>
+          </div>
+          <div style={{ width: '25%', display: 'flex', flexDirection: 'column' }}>
+            <G w="100%" label="5" bb>
+              Всего т-ов
+              <br />
+              <b>{f(decl.total_items_count) || items.length}</b>
+            </G>
+            <G w="100%" label="6" bb>
+              Всего мест
+              <br />
+              <b>{f(decl.total_packages_count)}</b>
+            </G>
+            <G w="100%" label="7">
+              Справочный номер
+              <br />
+              {f(decl.special_ref_code)}
+            </G>
+          </div>
         </Row>
 
-        <Row>
-          <Cell w="50%" label="8" h={50} border="right">
-            <b>Получатель</b><br/>
-            {receiver ? (<>{receiver.name}<br/><small>{receiver.country_code} {receiver.address || ''}</small></>) : 'Не указан'}
-          </Cell>
-          <Cell w="25%" label="9" border="right">Лицо, отв. за фин. урегулирование</Cell>
-          <Cell w="25%"><Lbl>12</Lbl> Общая тамож. стоимость<br/><b>{num(totals?.total_customs_value || item.customs_value_rub)}</b></Cell>
+        {/* ── Графа 8 / 9 ── */}
+        <Row h={60}>
+          <G w="50%" label="8" h={60} br>
+            Получатель
+            <br />
+            <b>{cpLine(receiver)}</b>
+          </G>
+          <G w="25%" label="9" br>
+            Лицо, ответственное за финансовое урегулирование
+            <br />
+            {financial ? cpLine(financial) : ''}
+          </G>
+          <div style={{ width: '25%' }} />
         </Row>
 
+        {/* ── Графы 10 / 11 / 12 / 13 ── */}
         <Row>
-          <Cell w="35%" label="14" h={40} border="right">
-            <b>Декларант</b><br/>
-            {receiver ? receiver.name : ''}<br/>
-            <small>{f(decl.declarant_inn_kpp)} {f(decl.declarant_phone)}</small>
-          </Cell>
-          <Cell w="15%" border="right"><Lbl>15</Lbl> Страна отпр.<br/><b>{f(decl.country_dispatch_code)}</b></Cell>
-          <Cell w="10%" border="right"><Lbl>11</Lbl> Торг.стр.<br/><b>{f(decl.trading_country_code)}</b></Cell>
-          <Cell w="15%" border="right"><Lbl>16</Lbl> Происхожд.<br/><b>{f(decl.country_origin_name)}</b></Cell>
-          <Cell w="10%" border="right"><Lbl>17</Lbl> Назнач.<br/><b>{f(decl.country_destination_code)}</b></Cell>
-          <Cell w="15%"><Lbl>12</Lbl> Общ.тамож.ст.<br/><b>{num(totals?.total_customs_value || item.customs_value_rub)}</b></Cell>
+          <G w="50%" br style={{ visibility: 'hidden', minHeight: 0, padding: 0, height: 0 }} />
+          <G w="12%" label="10" br>
+            Страна перв. назн./посл. отпр.
+            <br />
+            {f(decl.country_first_destination_code)}
+          </G>
+          <G w="13%" label="11" br>
+            Торг. страна
+            <br />
+            <b>{f(decl.trading_country_code)}</b>
+          </G>
+          <G w="18%" label="12" br>
+            Общая таможенная стоимость
+            <br />
+            <b>{num(totals?.total_customs_value || decl.total_customs_value)}</b>
+          </G>
+          <G w="7%" label="13" />
         </Row>
 
-        <Row>
-          <Cell w="35%" label="18" border="right">Идент. трансп.средства<br/>{f(decl.transport_at_border)}</Cell>
-          <Cell w="10%" label="19" border="right">{f(decl.container_info) || '0'}</Cell>
-          <Cell w="25%" label="20">Условия: <b>{f(decl.incoterms_code)} {f(decl.delivery_place)}</b></Cell>
-          <Cell w="30%" label="21">Трансп. на границе:<br/><b>{f(decl.transport_on_border_id)}</b></Cell>
+        {/* ── Графа 14 / 15 / 15a-b / 17a-b ── */}
+        <Row h={44}>
+          <G w="50%" label="14" h={44} br>
+            Декларант
+            <br />
+            <b>{declarant ? cpLine(declarant) : cpLine(receiver)}</b>
+            <br />
+            {f(decl.declarant_inn_kpp)} {f(decl.declarant_ogrn)} {f(decl.declarant_phone)}
+          </G>
+          <G w="14%" label="15" br>
+            Страна отправления
+            <br />
+            <b>{f(decl.country_dispatch_code)}</b>
+          </G>
+          <div style={{ width: '11%', borderRight: bR, display: 'flex', flexDirection: 'column' }}>
+            <G w="100%" bb>
+              <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>15 </span>
+              Код страны отпр.
+            </G>
+            <div style={{ display: 'flex' }}>
+              <G w="50%" br>
+                <span style={{ fontSize: 7 }}>a</span>
+                <br />
+                {f(decl.country_dispatch_code)}
+              </G>
+              <G w="50%">
+                <span style={{ fontSize: 7 }}>b</span>
+              </G>
+            </div>
+          </div>
+          <div style={{ width: '11%', borderRight: bR, display: 'flex', flexDirection: 'column' }}>
+            <G w="100%" bb>
+              <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>17 </span>
+              Код страны назнач.
+            </G>
+            <div style={{ display: 'flex' }}>
+              <G w="50%" br>
+                <span style={{ fontSize: 7 }}>a</span>
+                <br />
+                {f(decl.country_destination_code)}
+              </G>
+              <G w="50%">
+                <span style={{ fontSize: 7 }}>b</span>
+              </G>
+            </div>
+          </div>
+          <G w="14%" />
         </Row>
 
+        {/* ── Графы 16 / 17 ── */}
         <Row>
-          <Cell w="30%" label="22" border="right">Валюта: <b>{f(decl.currency_code)}</b> Сумма: <b>{num(decl.total_invoice_value)}</b></Cell>
-          <Cell w="15%" label="23" border="right">Курс: {payments ? num(payments.exchange_rate, 4) : num(decl.exchange_rate, 4)}</Cell>
-          <Cell w="15%" label="24" border="right">Хар.сделки:<br/><b>{f(decl.deal_nature_code)}{decl.deal_specifics_code ? '/' + decl.deal_specifics_code : ''}</b></Cell>
-          <Cell w="15%" label="25" border="right">Трансп: <b>{f(decl.transport_type_border)}</b></Cell>
-          <Cell w="25%"><Lbl>29</Lbl> Орган въезда: <b>{f(decl.entry_customs_code)}</b></Cell>
+          <G w="50%" br style={{ visibility: 'hidden', minHeight: 0, padding: 0, height: 0 }} />
+          <G w="25%" label="16" br>
+            Страна происхождения
+            <br />
+            <b>{f(decl.country_origin_name)}</b>
+          </G>
+          <G w="25%" label="17">
+            Страна назначения
+            <br />
+            <b>{f(decl.country_destination_code)}</b>
+          </G>
         </Row>
 
-        {decl.goods_location && <Row>
-          <Cell w="100%" label="30">Местонахождение товаров: {decl.goods_location}</Cell>
-        </Row>}
-
-        {/* Items */}
-        {items.map((itm: any, idx: number) => {
-          const pi = payments?.items?.[idx];
-          return (
-            <Box key={itm.id || idx}>
-              <Box sx={{ borderTop: '2px solid #000', bgcolor: '#f0f0f0', px: 1, py: 0.3 }}><b>Товар № {itm.item_no || idx + 1}</b></Box>
-              <Row>
-                <Cell w="70%" label="31" h={60} border="right">
-                  <b>Грузовые места и описание товаров</b><br/>{f(itm.description || itm.commercial_name)}<br/>
-                  <small>{itm.additional_unit_qty ? `${itm.additional_unit_qty} / ${itm.additional_unit || 'ШТ'}` : ''}</small>
-                </Cell>
-                <Cell w="30%"><Lbl>32</Lbl> Товар №{itm.item_no}<br/><Lbl>33</Lbl> Код товара: <b style={{ fontSize: 14 }}>{f(itm.hs_code)}</b>{itm.hs_code_letters && <><br/><small>33.2: {itm.hs_code_letters}</small></>}{itm.hs_code_extra && <><small> 33.3: {itm.hs_code_extra}</small></>}<br/><Lbl>34</Lbl> Код страны: <b>{f(itm.country_origin_code)}</b>{itm.country_origin_pref_code && <small> ({itm.country_origin_pref_code})</small>}</Cell>
-              </Row>
-              <Row>
-                <Cell w="25%" label="35" border="right">Вес брутто: <b>{num(itm.gross_weight, 3)}</b> кг</Cell>
-                <Cell w="25%" label="36" border="right">Преференция: {f(itm.preference_code)}</Cell>
-                <Cell w="25%" label="37" border="right">Процедура: {f(itm.procedure_code)}</Cell>
-                <Cell w="25%" label="38">Вес нетто: <b>{num(itm.net_weight, 3)}</b> кг</Cell>
-              </Row>
-              <Row>
-                <Cell w="25%" label="41" border="right">Доп.ед: {itm.additional_unit_qty ? `${num(itm.additional_unit_qty, 0)} ${itm.additional_unit || 'ШТ'}` : ''}</Cell>
-                <Cell w="25%" label="42" border="right">Цена: <b>{num(itm.unit_price, 4)}</b></Cell>
-                <Cell w="25%" label="43" border="right">Код МОС: {f(itm.mos_method_code)}</Cell>
-                <Cell w="25%" label="45">Тамож.стоимость:<br/><b style={{ fontSize: 13 }}>{num(pi?.customs_value_rub || itm.customs_value_rub)}</b></Cell>
-              </Row>
-              {itm.statistical_value_usd && <Row>
-                <Cell w="75%" label="44" border="right"><small>Доп. информация / Документы</small></Cell>
-                <Cell w="25%" label="46">Стат.стоимость (USD):<br/><b>{num(itm.statistical_value_usd)}</b></Cell>
-              </Row>}
-            </Box>
-          );
-        })}
-
-        {/* Payments - from calc-service */}
-        <Box sx={{ borderTop: '2px solid #000' }}>
-          <Row>
-            <Cell w="100%" label="47" h={80}>
-              <b>Исчисление платежей</b><br/>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Вид</th>
-                    <th style={{...thStyle, textAlign: 'right'}}>Основа начисления</th>
-                    <th style={{...thStyle, textAlign: 'center'}}>Ставка</th>
-                    <th style={{...thStyle, textAlign: 'right'}}>Сумма</th>
-                    <th style={thStyle}>СП</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={tdStyle}>1010 — Сборы</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(totals?.total_customs_value)}</td>
-                    <td style={{...tdStyle, textAlign: 'center'}}>—</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(totals?.customs_fee)}</td>
-                    <td style={tdStyle}>ИУ</td>
-                  </tr>
-                  <tr>
-                    <td style={tdStyle}>2010 — Пошлина</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(totals?.total_customs_value)}</td>
-                    <td style={{...tdStyle, textAlign: 'center'}}>{payments?.items?.[0]?.duty?.rate || 0}%</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(totals?.total_duty)}</td>
-                    <td style={tdStyle}>ИУ</td>
-                  </tr>
-                  <tr>
-                    <td style={tdStyle}>5010 — НДС</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(payments?.items?.[0]?.vat?.base)}</td>
-                    <td style={{...tdStyle, textAlign: 'center'}}>{payments?.items?.[0]?.vat?.rate || 20}%</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(totals?.total_vat)}</td>
-                    <td style={tdStyle}>ИУ</td>
-                  </tr>
-                  <tr style={{ fontWeight: 700, borderTop: '2px solid #000' }}>
-                    <td style={tdStyle} colSpan={3}>ИТОГО</td>
-                    <td style={{...tdStyle, textAlign: 'right'}}>{num(totals?.grand_total)}</td>
-                    <td style={tdStyle}>РУБ</td>
-                  </tr>
-                </tbody>
-              </table>
-            </Cell>
-          </Row>
-        </Box>
-
-        {(decl.payment_deferral || decl.warehouse_requisites) && <Row>
-          <Cell w="50%" label="48" border="right">Отсрочка платежей: {f(decl.payment_deferral)}</Cell>
-          <Cell w="50%" label="49">Реквизиты склада: {f(decl.warehouse_requisites)}</Cell>
-        </Row>}
-
-        {(decl.transit_offices || decl.destination_office_code) && <Row>
-          <Cell w="50%" label="51" border="right">Органы транзита: {f(decl.transit_offices)}</Cell>
-          <Cell w="50%" label="53">Орган назначения: {f(decl.destination_office_code)}</Cell>
-        </Row>}
-
-        {/* Footer */}
-        <Row>
-          <Cell w="50%" label="54" h={36} border="right"><b>Место и дата</b><br/>{f(decl.place_and_date)}</Cell>
-          <Cell w="50%"><b>Таможенный орган:</b> {f(decl.customs_office_code)}<br/><b>СВХ:</b> {f(decl.warehouse_name)}</Cell>
+        {/* ── Графы 18 / 19 / 20 ── */}
+        <Row h={30}>
+          <G w="42%" label="18" h={30} br>
+            Идентификация и страна регистрации трансп. средства при отправлении/прибытии
+            <br />
+            <b>{f(decl.transport_at_border)}</b>
+          </G>
+          <G w="8%" label="19" br>
+            Конт.
+            <br />
+            <b>{f(decl.container_info) || '0'}</b>
+          </G>
+          <G w="50%" label="20">
+            Условия поставки
+            <br />
+            <b>
+              {f(decl.incoterms_code)} {f(decl.delivery_place)}
+            </b>
+          </G>
         </Row>
 
-        <Box sx={{ borderTop: '2px solid #000', p: 1, textAlign: 'center', bgcolor: '#e8f5e9' }}>
-          <b style={{ fontSize: 14 }}>{decl.number_internal || 'ЧЕРНОВИК'}</b>
-          <span style={{ marginLeft: 20 }}>Статус: {decl.status}</span>
-        </Box>
-      </Box>
+        {/* ── Графы 21 / 22 / 23 / 24 ── */}
+        <Row h={30}>
+          <G w="50%" label="21" h={30} br>
+            Идентификация и страна регистрации активного транспортного средства на границе
+            <br />
+            <b>{f(decl.transport_on_border_id)}</b>
+          </G>
+          <G w="22%" label="22" br>
+            Валюта и общая сумма по счету
+            <br />
+            <b>
+              {f(decl.currency_code)} {num(decl.total_invoice_value)}
+            </b>
+          </G>
+          <G w="14%" label="23" br>
+            Курс валюты
+            <br />
+            <b>{payments ? num(payments.exchange_rate, 4) : num(decl.exchange_rate, 4)}</b>
+          </G>
+          <G w="14%" label="24">
+            Характер сделки
+            <br />
+            <b>
+              {f(decl.deal_nature_code)}
+              {decl.deal_specifics_code ? '/' + decl.deal_specifics_code : ''}
+            </b>
+          </G>
+        </Row>
+
+        {/* ── Графы 25 / 26 / 27 / 28 ── */}
+        <Row h={30}>
+          <G w="12%" label="25" br>
+            Вид транспорта на границе
+            <br />
+            <b>{f(decl.transport_type_border)}</b>
+          </G>
+          <G w="12%" label="26" br>
+            Вид транспорта внутри страны
+            <br />
+            <b>{f(decl.transport_type_inland)}</b>
+          </G>
+          <G w="26%" label="27" br>
+            Место погрузки/разгрузки
+            <br />
+            {f(decl.loading_place)}
+          </G>
+          <G w="50%" label="28">
+            Финансовые и банковские сведения
+            <br />
+            {f(decl.financial_info)}
+          </G>
+        </Row>
+
+        {/* ── Графы 29 / 30 ── */}
+        <Row h={30}>
+          <G w="25%" label="29" br>
+            Орган въезда/выезда
+            <br />
+            <b>{f(decl.entry_customs_code)}</b>
+          </G>
+          <G w="75%" label="30">
+            Местонахождение товаров
+            <br />
+            {f(decl.goods_location)}
+          </G>
+        </Row>
+
+        {/* ── БЛОК ТОВАРА №1 (графы 31-46) ── */}
+        <ItemBlock itm={firstItem} pi={firstPi} />
+
+        {/* ── Графа 47: Исчисление платежей / 48 / 49 ── */}
+        <div style={{ display: 'flex', borderBottom: bB }}>
+          <div style={{ width: '50%', borderRight: bR, padding: '1px 3px', minHeight: 100, fontSize: 10 }}>
+            <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>47 </span>
+            Исчисление платежей
+            <PaymentRows totals={totals} paymentItems={payments?.items} />
+          </div>
+          <div style={{ width: '50%', display: 'flex', flexDirection: 'column' }}>
+            <G w="100%" label="48" bb h={30}>
+              Отсрочка платежей
+              <br />
+              {f(decl.payment_deferral)}
+            </G>
+            <G w="100%" label="49" bb h={30}>
+              Реквизиты склада
+              <br />
+              {f(decl.warehouse_requisites)}
+            </G>
+            <G w="100%" label="В" h={40}>
+              ПОДРОБНОСТИ ПОДСЧЕТА
+            </G>
+          </div>
+        </div>
+
+        {/* ── Секция С ── */}
+        <Row>
+          <G w="100%" label="С" center h={24} />
+        </Row>
+
+        {/* ── Графы 51 / 52 / 53 ── */}
+        <Row h={50}>
+          <G w="33%" label="51" h={50} br>
+            Предполагаемые таможенные органы (и страна) транзита
+            <br />
+            {f(decl.transit_offices)}
+          </G>
+          <G w="33%" label="52" h={50} br>
+            Гарантия недействительна для
+            <br />
+            {f(decl.guarantee_info)}
+          </G>
+          <G w="34%" label="53" h={50}>
+            Таможенный орган назначения (и страна)
+            <br />
+            <b>{f(decl.destination_office_code)}</b>
+          </G>
+        </Row>
+
+        {/* ── Секция D / 54 ── */}
+        <div style={{ display: 'flex', borderBottom: bB }}>
+          <div style={{ width: '50%', borderRight: bR, padding: '1px 3px', fontSize: 10, minHeight: 80 }}>
+            <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>D </span>
+            <br />
+            Результат:
+            <br />
+            Наложенные пломбы:
+            <br />
+            Номер:
+            <br />
+            Срок доставки (дата):
+            <br />
+            Подпись:
+          </div>
+          <G w="50%" label="54" h={80}>
+            Место и дата
+            <br />
+            <b>{f(decl.place_and_date)}</b>
+            <br />
+            <br />
+            Подпись и печать декларанта
+          </G>
+        </div>
+
+        {/* ── Служебная строка ── */}
+        <div
+          style={{
+            padding: '3px 6px',
+            textAlign: 'center',
+            background: '#e8f5e9',
+            fontSize: 12,
+            fontWeight: 700,
+          }}
+        >
+          {decl.number_internal || 'ЧЕРНОВИК'} — Статус: {decl.status}
+          {decl.customs_office_code && <> | Таможенный орган: {decl.customs_office_code}</>}
+        </div>
+      </div>
+
+      {/* ═══════════════════ ДТ2 — ДОБАВОЧНЫЕ ЛИСТЫ ═══════════════════ */}
+      {dt2Sheets.map((sheetItems, sheetIdx) => {
+        const sheetNumber = sheetIdx + 2;
+        const startItemIdx = 1 + sheetIdx * 3;
+        return (
+          <div key={sheetIdx} className="dt-sheet dt-additional" style={{ ...FORM, marginTop: 20 }}>
+            {/* ── Заголовок ДТ2 ── */}
+            <Row thick>
+              <G w="58%" bold center br>
+                ДОБАВОЧНЫЙ ЛИСТ К ДЕКЛАРАЦИИ НА ТОВАРЫ
+              </G>
+              <G w="27%" label="1" br>
+                <b>{f(decl.type_code)}</b>
+              </G>
+              <G w="15%" label="А" center />
+            </Row>
+
+            {/* ── Графы 2 / 8 / 3 ── */}
+            <Row h={36}>
+              <G w="40%" label="2" h={36} br>
+                Отправитель/Экспортер
+                <br />
+                <b>{sender?.name || 'НЕ УКАЗАН'}</b>
+              </G>
+              <G w="40%" label="8" h={36} br>
+                Получатель
+                <br />
+                <b>{receiver?.name || 'НЕ УКАЗАН'}</b>
+              </G>
+              <G w="20%" label="3">
+                Формы
+                <br />
+                <b>
+                  {sheetNumber}/{totalForms}
+                </b>
+              </G>
+            </Row>
+
+            {/* ── Три блока товаров ── */}
+            {[0, 1, 2].map((slotIdx) => {
+              const itm = sheetItems[slotIdx];
+              const globalIdx = startItemIdx + slotIdx;
+              const pi = payments?.items?.[globalIdx];
+              if (!itm) {
+                return (
+                  <div key={slotIdx}>
+                    <div
+                      style={{
+                        borderBottom: bB,
+                        borderTop: slotIdx === 0 ? bT : undefined,
+                        minHeight: 100,
+                        position: 'relative',
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '50%',
+                          left: '5%',
+                          right: '5%',
+                          borderTop: '2px solid #000',
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={slotIdx} style={{ borderTop: slotIdx === 0 ? bT : undefined }}>
+                  <ItemBlock itm={itm} pi={pi} />
+                </div>
+              );
+            })}
+
+            {/* ── Графа 47: Исчисление платежей (по 3 товарам) ── */}
+            <div style={{ display: 'flex', borderBottom: bB, borderTop: bT }}>
+              <div style={{ width: '50%', borderRight: bR, padding: '1px 3px', minHeight: 80, fontSize: 10 }}>
+                <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>47 </span>
+                Исчисление платежей
+                {sheetItems.map((itm: any, si: number) => {
+                  const gi = startItemIdx + si;
+                  const pi = payments?.items?.[gi];
+                  if (!pi) return null;
+                  return (
+                    <div key={si} style={{ marginTop: 2 }}>
+                      <div style={{ fontSize: 8, fontWeight: 700 }}>Товар №{itm.item_no}:</div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <tbody>
+                          <tr>
+                            <td style={payTd}>2010</td>
+                            <td style={{ ...payTd, textAlign: 'right' }}>{num(pi.customs_value_rub)}</td>
+                            <td style={{ ...payTd, textAlign: 'center' }}>{pi.duty?.rate || 0}%</td>
+                            <td style={{ ...payTd, textAlign: 'right' }}>{num(pi.duty?.amount)}</td>
+                            <td style={payTd}>ИУ</td>
+                          </tr>
+                          <tr>
+                            <td style={payTd}>5010</td>
+                            <td style={{ ...payTd, textAlign: 'right' }}>{num(pi.vat?.base)}</td>
+                            <td style={{ ...payTd, textAlign: 'center' }}>{pi.vat?.rate || 20}%</td>
+                            <td style={{ ...payTd, textAlign: 'right' }}>{num(pi.vat?.amount)}</td>
+                            <td style={payTd}>ИУ</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ width: '50%', display: 'flex', flexDirection: 'column' }}>
+                <G w="100%" label="ВСЕГО" bold center h={24} bb>
+                  {num(
+                    sheetItems.reduce((sum: number, _: any, si: number) => {
+                      const gi = startItemIdx + si;
+                      const pi = payments?.items?.[gi];
+                      return sum + (pi ? (pi.duty?.amount || 0) + (pi.vat?.amount || 0) : 0);
+                    }, 0),
+                  )}
+                </G>
+                <G w="100%" label="С" center />
+              </div>
+            </div>
+          </div>
+        );
+      })}
 
       <style>{`
-        @media print { .no-print { display: none !important; } body { margin: 0; padding: 0; } }
+        @media print {
+          .no-print { display: none !important; }
+          body { margin: 0; padding: 0; }
+          .dt-sheet { page-break-after: always; border-width: 1px !important; }
+          .dt-sheet:last-child { page-break-after: auto; }
+        }
+        @page { size: A4 portrait; margin: 8mm; }
       `}</style>
     </AppLayout>
   );
 };
-
-const thStyle: React.CSSProperties = { border: '1px solid #999', padding: 2, textAlign: 'left' };
-const tdStyle: React.CSSProperties = { border: '1px solid #999', padding: 2 };
-const Row = ({ children }: { children: React.ReactNode }) => (<Box sx={{ display: 'flex', borderBottom: '1px solid #000', minHeight: 24 }}>{children}</Box>);
-const Cell = ({ w, h, label, border, bold, center, children }: { w: string; h?: number; label?: string; border?: string; bold?: boolean; center?: boolean; children?: React.ReactNode }) => (
-  <Box sx={{ width: w, minHeight: h || 24, p: '2px 4px', position: 'relative', borderRight: border === 'right' ? '1px solid #000' : 'none', fontWeight: bold ? 700 : 400, textAlign: center ? 'center' : 'left', fontSize: 11, lineHeight: 1.3, overflow: 'hidden' }}>
-    {label && <Lbl>{label}</Lbl>}{children}
-  </Box>
-);
-const Lbl = ({ children }: { children: React.ReactNode }) => (<span style={{ fontSize: 9, color: '#666', fontWeight: 700 }}>{children} </span>);
 
 export default DeclarationViewPage;

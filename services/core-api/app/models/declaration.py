@@ -114,6 +114,8 @@ class Declaration(Base):
     warehouse_requisites: Mapped[Optional[str]] = mapped_column(String(500))  # Графа 49
     transit_offices: Mapped[Optional[str]] = mapped_column(Text)              # Графа 51
     destination_office_code: Mapped[Optional[str]] = mapped_column(String(100))  # Графа 53
+    country_first_destination_code: Mapped[Optional[str]] = mapped_column(String(2))  # Графа 10
+    guarantee_info: Mapped[Optional[str]] = mapped_column(String(500))              # Графа 52
     freight_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
     freight_currency: Mapped[Optional[str]] = mapped_column(String(3))
 
