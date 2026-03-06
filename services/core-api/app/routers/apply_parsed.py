@@ -636,6 +636,17 @@ async def apply_parsed_data(
         )
         db.add(log_entry)
 
+        for _f2, _l2 in [
+            ("country_dispatch_code", 2), ("country_origin_code", 2), ("country_destination_code", 2),
+            ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
+            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
+            ("customs_office_code", 8), ("type_code", 10),
+        ]:
+            _v2 = getattr(declaration, _f2, None)
+            if _v2 and len(str(_v2)) > _l2:
+                setattr(declaration, _f2, str(_v2)[:_l2])
+                logger.warning("field_truncated", field=_f2, original=str(_v2)[:30], max_len=_l2)
+
         await db.commit()
 
         logger.info(
