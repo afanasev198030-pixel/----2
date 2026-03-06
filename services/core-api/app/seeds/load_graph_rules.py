@@ -11,12 +11,10 @@ import asyncio
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy import select, text
-import os
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/customs_db"
-)
+from app.config import settings
+
+DATABASE_URL = settings.database_url
 
 # ── Данные правил ─────────────────────────────────────────────────────────────
 # fill_instruction — официальное описание из нормативной инструкции
