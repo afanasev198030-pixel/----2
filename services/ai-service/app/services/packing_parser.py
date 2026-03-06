@@ -206,7 +206,7 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
         llm_gross = _to_float(llm.get("total_gross_weight")) if llm else None
         llm_net = _to_float(llm.get("total_net_weight")) if llm else None
         llm_packages = _to_int(llm.get("total_packages")) if llm else None
-        if llm and (llm_gross is not None or llm_net is not None):
+        if llm and (llm.get("items") or llm_gross is not None or llm_net is not None):
             logger.info("pl_parsed_by_llm", gross=llm_gross, net=llm_net, packages=llm_packages)
             items = []
             for it in llm.get("items", []):
@@ -310,19 +310,11 @@ def parse(file_bytes: bytes, filename: str) -> PackingListParsed:
                     packages=total_packages,
                 )
         
-        # Parse items (simplified - just extract lines that look like items)
+        # Per-item data (descriptions, weights per item) are only reliable from
+        # the LLM path above. Regex cannot safely distinguish product rows from
+        # headers, address lines and service text, so we return an empty list
+        # here. agent_crew will distribute total weights proportionally.
         items = []
-        lines = raw_text.split('\n')
-        for line in lines:
-            line = line.strip()
-            if len(line) > 10 and re.search(r'\d+', line):
-                # Basic item extraction
-                item = {"description": line}
-                # Try to extract quantities/weights
-                numbers = re.findall(r'\d+[.,]?\d*', line)
-                if numbers:
-                    item["quantity"] = numbers[0]
-                items.append(item)
         
         # Calculate confidence
         fields_found = sum([

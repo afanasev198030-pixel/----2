@@ -526,7 +526,7 @@ def _extract_items(text: str) -> list[InvoiceItemParsed]:
         idx = text.upper().find(marker.upper())
         if idx > 0 and idx < pl_start:
             pl_start = idx
-    invoice_section = text[:min(pl_start, 3000)]
+    invoice_section = text[:min(pl_start, 8000)]
 
     # Find unique HS codes in invoice section
     hs_codes_in_inv = re.findall(r'\b(\d{8,10})\b', invoice_section)
@@ -679,83 +679,9 @@ def _extract_items(text: str) -> list[InvoiceItemParsed]:
         if items:
             return items
 
-    # Strategy 3: Keyword-based product detection (deduplicated)
-    product_keywords = [
-        'труб', 'мотор', 'двигатель', 'насос', 'клапан', 'трансформатор',
-        'кабель', 'провод', 'лампа', 'компрессор', 'генератор', 'pipe',
-        'motor', 'pump', 'valve', 'cable', 'transformer', 'compressor',
-        'модуль', 'блок', 'устройство', 'деталь', 'узел', 'аппарат',
-        'steel', 'stainless', 'bearing', 'fitting', 'flange', 'bolt',
-        'nut', 'washer', 'gasket', 'seal', 'ring', 'shaft', 'gear',
-        'sensor', 'switch', 'relay', 'connector', 'adapter', 'filter',
-        'element', 'plate', 'sheet', 'bar', 'rod', 'wire', 'tube',
-        'сталь', 'подшипник', 'фланец', 'болт', 'гайк', 'шайб',
-        'прокладк', 'уплотн', 'кольц', 'вал', 'шестерн', 'датчик',
-        'фильтр', 'пластин', 'лист', 'пруток', 'проволок',
-        'машин', 'оборудован', 'станок', 'агрегат', 'механизм',
-        'machine', 'equipment', 'device', 'unit', 'assembly', 'component',
-        'part', 'spare', 'material', 'product', 'goods', 'cargo',
-    ]
-    lines = text.split('\n')
-    seen_desc = set()
-    for i, line in enumerate(lines):
-        lower = line.lower().strip()
-        if any(kw in lower for kw in product_keywords):
-            desc = line.strip()
-            # Clean: remove leading numbers/codes
-            desc = re.sub(r'^\d+\s+', '', desc).strip()
-            if len(desc) < 3:
-                continue
-
-            # Deduplicate by normalized description
-            norm = re.sub(r'\s+', ' ', desc.lower())[:80]
-            if norm in seen_desc:
-                continue
-            seen_desc.add(norm)
-
-            # Look for HS code in nearby text
-            context = '\n'.join(lines[max(0, i - 3):i + 5])
-            hs_matches = re.findall(r'\b(\d{8,10})\b', context)
-            # Filter out dates
-            real_hs = [c for c in hs_matches if not re.match(r'^(19|20)\d{6}$', c)]
-            hs_code = real_hs[0] if real_hs else None
-
-            # Look for qty/price/total in the invoice section (first 2000 chars)
-            inv_section = text[:2000]
-            # Find "Total qty XXX" pattern
-            qty_match = re.search(r'Total\s+qty\s+([\d][\d\s]*[,.]?\d*)', inv_section, re.IGNORECASE)
-            qty = _parse_number(qty_match.group(1)) if qty_match else None
-
-            # Find unit price from table row
-            price_match = re.search(r'(?:' + re.escape(hs_code or '73043990') + r')\s+\S+\s+\w+\s+[\d,.\s]+\s+([\d,.\s]+)\s+([\d,.\s]+)', inv_section) if hs_code else None
-            price = None
-            total = None
-            if price_match:
-                price = _parse_number(price_match.group(1))
-                total = _parse_number(price_match.group(2))
-            else:
-                # Fallback: look for price near the description
-                nearby_nums = re.findall(r'([\d]+[,.][\d]+)', context)
-                parsed = [_parse_number(n) for n in nearby_nums if _parse_number(n) is not None and _parse_number(n) > 0]
-                if len(parsed) >= 3:
-                    qty = qty or parsed[0]
-                    price = parsed[1]
-                    total = parsed[2]
-
-            items.append(InvoiceItemParsed(
-                line_no=len(items) + 1,
-                description_raw=desc[:200],
-                quantity=qty,
-                unit_price=price,
-                line_total=total,
-                hs_code=hs_code,
-                confidence=0.6,
-            ))
-
-            # For this document type (single product), stop after first unique match
-            if len(items) >= 1:
-                break
-
+    # Strategy 1 found no items and LLM is unavailable — return empty list.
+    # _llm_enrich will be called in parse() and is the proper fallback for
+    # item extraction when regex cannot find structured table data.
     return items
 
 
@@ -899,7 +825,7 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         items = result.get("items", [])
         has_no_items = len(items) == 0
         has_bad_items = has_no_items or any(
-            _is_placeholder_desc(it.get("description_raw", ""))
+            _is_garbage_desc(it.get("description_raw", ""))
             for it in items
         )
         has_no_prices = bool(items) and any(
@@ -993,6 +919,35 @@ def _is_placeholder_desc(desc: str) -> bool:
     return False
 
 
+_GARBAGE_RE = re.compile(
+    r'^(payment|terms?|condition|total|subtotal|amount|invoice\s*no|'
+    r'contract|address|tel:|fax:|email|www\.|http|bank|swift|iban|'
+    r'оплата|условия|итого|адрес|банк|счет|счёт|подпись|signature|'
+    r'no\.\s|number|date|дата|from:|to:|unit\s*price|qty\b|'
+    r'description\s*$|наименование\s+товара|item\s+description)',
+    re.IGNORECASE,
+)
+
+
+def _is_garbage_desc(desc: str) -> bool:
+    """Check if description is garbage: placeholder, header row, service line, code without text."""
+    if _is_placeholder_desc(desc):
+        return True
+    d = desc.strip()
+    # Too few alphabetic characters — likely an article code or raw numbers
+    alpha_count = sum(1 for c in d if c.isalpha())
+    if alpha_count < 5:
+        return True
+    # More than 65% non-alpha non-space characters — mostly digits/symbols
+    non_alpha = sum(1 for c in d if not c.isalpha() and c != ' ')
+    if len(d) > 5 and non_alpha > len(d) * 0.65:
+        return True
+    # Known garbage patterns: headers, service lines, payment conditions, etc.
+    if _GARBAGE_RE.match(d):
+        return True
+    return False
+
+
 # ── Main Parse Function ──────────────────────────────────────
 def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
     """Parse invoice/packing list PDF and extract structured data."""
@@ -1063,34 +1018,40 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
                     total_amount = llm_amt
                     logger.info("total_amount_from_llm", amount=total_amount)
 
-            # Replace items if LLM returned better ones, or merge prices
+            # Replace items if LLM returned better ones, or merge prices.
+            # LLM is the preferred source: replace regex items whenever LLM
+            # returns an equal or greater number of valid (non-garbage) items.
             llm_items = llm_data.get("items", [])
             if llm_items and isinstance(llm_items, list):
-                has_bad = any(_is_placeholder_desc(it.description_raw) for it in items) or len(items) == 0
-                if has_bad:
-                    new_items = []
-                    for idx, li in enumerate(llm_items):
-                        if not isinstance(li, dict):
-                            continue
-                        desc = li.get("description", "") or li.get("description_raw", "") or li.get("name", "")
-                        if _is_placeholder_desc(desc):
-                            continue
-                        new_items.append(InvoiceItemParsed(
-                            line_no=idx + 1,
-                            description_raw=str(desc)[:200],
-                            quantity=li.get("quantity"),
-                            unit=li.get("unit", "pcs"),
-                            unit_price=li.get("unit_price"),
-                            line_total=li.get("line_total"),
-                            country_origin=li.get("country_origin"),
-                            confidence=0.85,
-                        ))
-                    if new_items:
-                        items = new_items
-                        logger.info("llm_replaced_items", count=len(new_items),
-                                    descs=[it.description_raw[:40] for it in new_items])
-                    else:
-                        logger.warning("llm_items_all_bad", raw_items=len(llm_items))
+                # Build a clean list from LLM output, skipping garbage/placeholders
+                llm_good: list[InvoiceItemParsed] = []
+                for idx, li in enumerate(llm_items):
+                    if not isinstance(li, dict):
+                        continue
+                    desc = li.get("description", "") or li.get("description_raw", "") or li.get("name", "")
+                    if _is_garbage_desc(desc):
+                        continue
+                    llm_good.append(InvoiceItemParsed(
+                        line_no=idx + 1,
+                        description_raw=str(desc)[:200],
+                        quantity=li.get("quantity"),
+                        unit=li.get("unit", "pcs"),
+                        unit_price=li.get("unit_price"),
+                        line_total=li.get("line_total"),
+                        country_origin=li.get("country_origin"),
+                        confidence=0.85,
+                    ))
+
+                current_good = sum(1 for it in items if not _is_garbage_desc(it.description_raw))
+                has_bad = (len(items) == 0) or (current_good < len(items))
+
+                if llm_good and (has_bad or len(llm_good) >= current_good):
+                    # LLM returned at least as many clean items — prefer it
+                    items = llm_good
+                    logger.info("llm_replaced_items", count=len(llm_good),
+                                descs=[it.description_raw[:40] for it in llm_good])
+                elif not llm_good:
+                    logger.warning("llm_items_all_bad", raw_items=len(llm_items))
                 elif items and any(not it.unit_price and not it.line_total for it in items):
                     # Описания хорошие, но цены пустые — мержим цены из LLM-позиций.
                     # Сопоставляем по индексу (порядку): LLM обычно возвращает
