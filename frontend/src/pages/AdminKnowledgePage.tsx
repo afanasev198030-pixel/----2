@@ -97,6 +97,12 @@ const AdminKnowledgePage = () => {
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Новая статья</Button>
         </Box>
 
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Статьи базы знаний помогают AI точнее классифицировать товары. Напишите экспертные заметки, например:
+          «Электронные платы для кондиционеров классифицируются в 8537, а не в 8415» — и AI будет учитывать
+          это при подборе кодов ТН ВЭД. Привяжите коды ТН ВЭД к статье для точного попадания.
+        </Alert>
+
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid item xs={8}>
             <TextField size="small" fullWidth placeholder="Поиск по статьям..." value={search}

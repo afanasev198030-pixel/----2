@@ -104,6 +104,12 @@ const AdminChecklistPage = () => {
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Новый чек-лист</Button>
         </Box>
 
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Чек-листы — шаблоны проверок перед отправкой декларации. Декларант видит список пунктов и отмечает выполненные.
+          Пример пунктов: «Проверить соответствие веса в инвойсе и packing list», «Убедиться что сертификат происхождения приложен».
+          Критичные пункты блокируют отправку если не отмечены.
+        </Alert>
+
         {isLoading ? (
           <Grid container spacing={2}>{[1,2].map(i => <Grid item xs={12} md={6} key={i}><Skeleton variant="rectangular" height={200} /></Grid>)}</Grid>
         ) : checklists.length === 0 ? (
