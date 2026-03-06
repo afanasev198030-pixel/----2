@@ -478,6 +478,18 @@ async def apply_parsed_data(
                 else:
                     logger.warning("goods_location_post_not_found", code=office_code)
 
+        # Truncate all short varchar fields before any flush/query triggers UPDATE
+        for _tf, _tl in [
+            ("country_dispatch_code", 2), ("country_origin_code", 2), ("country_destination_code", 2),
+            ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
+            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
+            ("freight_currency", 3), ("customs_office_code", 8), ("type_code", 10),
+        ]:
+            _tv = getattr(declaration, _tf, None)
+            if _tv and isinstance(_tv, str) and len(_tv) > _tl:
+                setattr(declaration, _tf, _tv[:_tl])
+                logger.warning("field_truncated", field=_tf, original=_tv[:30], max_len=_tl)
+
         # --- 3. Создать товарные позиции ---
         from app.models.hs_code_history import HsCodeHistory
         from sqlalchemy import func as sa_func
