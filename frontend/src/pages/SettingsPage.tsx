@@ -805,6 +805,7 @@ const SettingsPage = () => {
         <List disablePadding>
           {[
             { label: 'AI-стратегии', desc: 'Бизнес-правила для AI-заполнения деклараций', icon: <AiIcon />, path: '/admin/strategies' },
+            { label: 'AI-затраты', desc: 'Unit-экономика: токены, стоимость, затраты на декларацию', icon: <AiIcon />, path: '/admin/ai-costs' },
             { label: 'Пользователи', desc: 'Управление пользователями и ролями', icon: <PeopleIcon />, path: '/admin/users' },
             { label: 'Аудит-лог', desc: 'История действий в системе', icon: <AuditIcon />, path: '/admin/audit' },
             { label: 'База знаний', desc: 'Статьи по классификации товаров', icon: <BookIcon />, path: '/admin/knowledge' },

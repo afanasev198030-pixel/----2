@@ -33,6 +33,7 @@ import {
   Psychology as StrategyIcon,
   MenuBook as BookIcon,
   ChecklistRtl as ChecklistIcon,
+  AttachMoney as CostIcon,
 } from '@mui/icons-material';
 
 const NAV_ITEMS = [
@@ -48,6 +49,7 @@ const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [
   { label: 'Аудит', path: '/admin/audit', icon: <AuditIcon fontSize="small" /> },
   { label: 'База знаний', path: '/admin/knowledge', icon: <BookIcon fontSize="small" /> },
   { label: 'Чек-листы', path: '/admin/checklists', icon: <ChecklistIcon fontSize="small" /> },
+  { label: 'AI-затраты', path: '/admin/ai-costs', icon: <CostIcon fontSize="small" /> },
 ];
 
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
