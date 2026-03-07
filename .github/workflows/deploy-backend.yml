@@ -71,6 +71,6 @@ jobs:
             BASE_URL=http://localhost:8001 \
             AI_BASE_URL=http://localhost:8003 \
             INTEGRATION_BASE_URL=http://localhost:8004 \
-            python3 scripts/smoke_digital_broker_flow.py --folder "3 dek"
+            python3 scripts/smoke_digital_broker_flow.py --folder "3 dek" --allow-blocking
 
             echo "==> Done. Backend deployed successfully."
