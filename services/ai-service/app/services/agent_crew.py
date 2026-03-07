@@ -14,6 +14,7 @@ _crewai_available = False
 try:
     from crewai import Agent, Task, Crew, Process
     _crewai_available = True
+    logger.info("crewai_available", msg="CrewAI dependency loaded")
 except ImportError:
     logger.warning("crewai_not_available", msg="CrewAI not installed")
 
@@ -841,6 +842,11 @@ JSON:"""},
 
         # --- Шаг 2.5: CrewAI мультиагентная оркестрация (если доступна) ---
         # Отключено для оптимизации: дублирует логику шагов 3 и 4, тратит токены и время.
+        logger.info(
+            "crewai_stage_skipped",
+            available=_crewai_available,
+            reason="disabled_for_optimization",
+        )
         # if _crewai_available:
         #     self._progress("crewai", "CrewAI агенты анализируют декларацию...", 72)
         #     result = self._run_crewai(parsed_docs, result)
