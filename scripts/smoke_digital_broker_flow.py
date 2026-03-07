@@ -83,6 +83,17 @@ def pdfs_in_folder(folder: Path) -> list[Path]:
     return sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
 
 
+def split_input_and_reference_pdfs(folder: Path) -> tuple[list[Path], list[Path]]:
+    input_pdfs: list[Path] = []
+    reference_gtd_pdfs: list[Path] = []
+    for pdf in pdfs_in_folder(folder):
+        if pdf.name.upper().startswith("GTD"):
+            reference_gtd_pdfs.append(pdf)
+        else:
+            input_pdfs.append(pdf)
+    return input_pdfs, reference_gtd_pdfs
+
+
 def body_for_from_parsed(parsed: dict) -> dict:
     items = []
     for i, item in enumerate(parsed.get("items") or []):
@@ -277,24 +288,25 @@ def main() -> int:
 
     declaration_id: str | None = None
     folder = pick_folder(args.folder)
-    pdfs = pdfs_in_folder(folder)
-    if not pdfs:
-        raise RuntimeError(f"В папке {folder} нет PDF")
+    input_pdfs, gtd_reference_pdfs = split_input_and_reference_pdfs(folder)
+    if not input_pdfs:
+        raise RuntimeError(f"В папке {folder} нет входных PDF для parse-smart после исключения GTD reference")
 
     logger.info(
-        "smoke_start base_url=%s ai_base_url=%s integration_base_url=%s folder=%s log_path=%s",
+        "smoke_start base_url=%s ai_base_url=%s integration_base_url=%s folder=%s log_path=%s gtd_references=%s",
         BASE_URL,
         AI_BASE_URL,
         INTEGRATION_BASE_URL,
         folder.name,
         SMOKE_LOG_PATH,
+        [path.name for path in gtd_reference_pdfs],
     )
 
     try:
         token = login(session)
         session.headers["Authorization"] = f"Bearer {token}"
 
-        parsed = parse_smart(session, pdfs)
+        parsed = parse_smart(session, input_pdfs)
         body = body_for_from_parsed(parsed)
         created = create_from_parsed(session, body)
         declaration_id = created["declaration_id"]
@@ -317,6 +329,8 @@ def main() -> int:
 
         summary = {
             "folder": folder.name,
+            "input_files": [path.name for path in input_pdfs],
+            "gtd_reference_files": [path.name for path in gtd_reference_pdfs],
             "declaration_id": declaration_id,
             "items_created": created.get("items_created"),
             "documents_linked": created.get("documents_linked"),

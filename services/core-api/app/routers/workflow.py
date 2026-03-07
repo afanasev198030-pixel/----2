@@ -20,6 +20,7 @@ from app.models import (
     Document,
     User,
 )
+from app.models.hs_code_history import HsCodeHistory
 from app.models.parse_issue import ParseIssue
 from app.schemas import StatusChangeRequest
 
@@ -238,13 +239,13 @@ async def run_pre_send_checks(
         need_packing_list=need_packing_list,
     )
 
-    items_no_hs = await db.execute(
-        select(func.count()).select_from(DeclarationItem).where(
+    item_rows_result = await db.execute(
+        select(DeclarationItem).where(
             DeclarationItem.declaration_id == declaration.id,
-            (DeclarationItem.hs_code.is_(None)) | (DeclarationItem.hs_code == ""),
         )
     )
-    no_hs_count = items_no_hs.scalar() or 0
+    item_rows = list(item_rows_result.scalars().all())
+    no_hs_count = sum(1 for item in item_rows if not (item.hs_code or "").strip())
     if no_hs_count > 0:
         checks.append(PreSendCheck(
             code="ITEMS_WITHOUT_HS", severity="error", field="hs_code",
@@ -389,6 +390,71 @@ async def run_pre_send_checks(
             blocking=False,
             message="Транспортный документ приложен, но его реквизиты не перенесены в декларацию",
         ))
+
+    drift_warnings = 0
+    for item in item_rows:
+        current_hs = (item.hs_code or "").strip()
+        desc_norm = ((item.description or item.commercial_name or "").strip().lower())[:300]
+        if not current_hs or not desc_norm:
+            continue
+
+        similarity_expr = func.similarity(HsCodeHistory.description_trgm, desc_norm)
+        history_result = await db.execute(
+            select(
+                HsCodeHistory.hs_code,
+                HsCodeHistory.usage_count,
+                similarity_expr.label("similarity"),
+            ).where(
+                HsCodeHistory.company_id == declaration.company_id,
+                HsCodeHistory.description_trgm.is_not(None),
+                similarity_expr > 0.35,
+            ).order_by(
+                similarity_expr.desc(),
+                HsCodeHistory.usage_count.desc(),
+            ).limit(20)
+        )
+        rows = list(history_result.all())
+        if not rows:
+            continue
+
+        aggregated: dict[str, dict[str, float]] = {}
+        for hs_code, usage_count, similarity in rows:
+            entry = aggregated.setdefault(hs_code, {"usage": 0.0, "similarity": 0.0})
+            entry["usage"] += float(usage_count or 0)
+            entry["similarity"] = max(entry["similarity"], float(similarity or 0.0))
+
+        leader_hs, leader_data = max(
+            aggregated.items(),
+            key=lambda pair: (pair[1]["usage"], pair[1]["similarity"]),
+        )
+        current_data = aggregated.get(current_hs)
+        if leader_hs == current_hs:
+            continue
+        if leader_data["usage"] < 3 or leader_data["similarity"] < 0.55:
+            continue
+        if current_data and leader_data["usage"] < current_data["usage"] + 2:
+            continue
+
+        drift_warnings += 1
+        item_no = item.item_no or drift_warnings
+        checks.append(PreSendCheck(
+            code="HS_HISTORY_DRIFT",
+            severity="warning",
+            field="hs_code",
+            blocking=False,
+            message=(
+                f"Позиция {item_no}: текущий код {current_hs} расходится с устойчивой историей компании. "
+                f"По похожим описаниям чаще использовался {leader_hs} "
+                f"(использований: {int(leader_data['usage'])}, similarity: {leader_data['similarity']:.2f})."
+            ),
+        ))
+
+    logger.info(
+        "pre_send_history_drift_checked",
+        declaration_id=str(declaration.id),
+        items_checked=len(item_rows),
+        drift_warnings=drift_warnings,
+    )
 
     logger.info(
         "pre_send_cross_doc_checked",

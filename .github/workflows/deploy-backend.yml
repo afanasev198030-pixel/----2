@@ -54,7 +54,20 @@ jobs:
             docker compose -f docker-compose.prod.yml up -d \
               core-api ai-service file-service calc-service integration-service
 
-            echo "==> [7/7] Running digital broker smoke test..."
+            echo "==> [7/8] Waiting for core-api and ai-service health..."
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8001/health >/dev/null && curl -sf http://localhost:8003/health >/dev/null; then
+                echo "Health checks passed."
+                break
+              fi
+              if [ "$i" -eq 30 ]; then
+                echo "Health checks did not pass in time."
+                exit 1
+              fi
+              sleep 5
+            done
+
+            echo "==> [8/8] Running digital broker smoke test..."
             BASE_URL=http://localhost:8001 \
             AI_BASE_URL=http://localhost:8003 \
             INTEGRATION_BASE_URL=http://localhost:8004 \

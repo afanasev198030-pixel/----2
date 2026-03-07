@@ -1,10 +1,26 @@
+import { useQuery } from '@tanstack/react-query';
 import { Box, Typography, Checkbox, FormControlLabel, Paper, LinearProgress, Chip, Alert, Button } from '@mui/material';
 import { CheckCircle, RadioButtonUnchecked, Warning } from '@mui/icons-material';
+import client from '../api/client';
 
 interface ChecklistProps {
   declaration: any;
   items: any[];
   formValues?: any;  // live form values (react-hook-form watch)
+}
+
+interface ServerPreSendCheck {
+  code: string;
+  severity: string;
+  field?: string;
+  blocking: boolean;
+  message: string;
+}
+
+interface ServerPreSendResult {
+  passed: boolean;
+  checks: ServerPreSendCheck[];
+  blocking_count: number;
 }
 
 const CHECKS = [
@@ -23,6 +39,14 @@ const CHECKS = [
 const DeclarationChecklist = ({ declaration, items, formValues }: ChecklistProps) => {
   // Use formValues (live) with fallback to declaration (server)
   const d = { ...declaration, ...(formValues || {}) };
+  const declarationId = declaration?.id;
+
+  const { data: serverChecks, isLoading: serverChecksLoading } = useQuery<ServerPreSendResult>({
+    queryKey: ['pre-send-check', declarationId],
+    queryFn: () => client.get(`/declarations/${declarationId}/pre-send-check`).then((r) => r.data),
+    enabled: Boolean(declarationId),
+    refetchOnWindowFocus: false,
+  });
 
   const results = CHECKS.map((check) => {
     let passed = false;
@@ -49,6 +73,8 @@ const DeclarationChecklist = ({ declaration, items, formValues }: ChecklistProps
   const totalCount = results.length;
   const allPassed = passedCount === totalCount;
   const criticalFailed = results.filter((r) => !r.passed && r.critical);
+  const serverBlocking = (serverChecks?.checks || []).filter((check) => check.blocking);
+  const serverWarnings = (serverChecks?.checks || []).filter((check) => !check.blocking);
 
   return (
     <Paper variant="outlined" sx={{ p: 2 }}>
@@ -119,6 +145,37 @@ const DeclarationChecklist = ({ declaration, items, formValues }: ChecklistProps
               )}
             </ul>
           </Box>
+        </Alert>
+      )}
+      {serverChecksLoading && (
+        <Alert severity="info" sx={{ mt: 2 }}>
+          Загружается серверная проверка последней сохранённой версии декларации...
+        </Alert>
+      )}
+      {!serverChecksLoading && (serverBlocking.length > 0 || serverWarnings.length > 0) && (
+        <Alert severity={serverBlocking.length > 0 ? 'warning' : 'info'} sx={{ mt: 2 }}>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+            Серверная проверка последней сохранённой версии
+          </Typography>
+          {serverBlocking.length > 0 && (
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              Блокирующих проблем: {serverBlocking.length}
+            </Typography>
+          )}
+          {serverWarnings.length > 0 && (
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              Предупреждений: {serverWarnings.length}
+            </Typography>
+          )}
+          <ul style={{ margin: '4px 0 0', paddingLeft: 20 }}>
+            {[...serverBlocking, ...serverWarnings].slice(0, 6).map((check, idx) => (
+              <li key={`${check.code}-${idx}`}>
+                <Typography variant="body2">
+                  {check.message}
+                </Typography>
+              </li>
+            ))}
+          </ul>
         </Alert>
       )}
       {allPassed && (

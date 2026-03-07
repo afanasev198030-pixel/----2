@@ -38,6 +38,17 @@ def pdfs_in_folder(folder: Path):
     return sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
 
 
+def split_input_and_reference_pdfs(folder: Path):
+    input_pdfs = []
+    gtd_reference_pdfs = []
+    for pdf in pdfs_in_folder(folder):
+        if pdf.name.upper().startswith("GTD"):
+            gtd_reference_pdfs.append(pdf)
+        else:
+            input_pdfs.append(pdf)
+    return input_pdfs, gtd_reference_pdfs
+
+
 def parse_smart(session: requests.Session, pdf_paths: list[Path]) -> dict:
     files = []
     for p in pdf_paths:
@@ -148,11 +159,13 @@ def main():
 
     created = []
     for folder in folders:
-        pdfs = pdfs_in_folder(folder)
+        pdfs, gtd_refs = split_input_and_reference_pdfs(folder)
         if not pdfs:
             print(f"  [{folder.name}] PDF не найдены, пропуск")
             continue
-        print(f"\n[{folder.name}] PDF: {len(pdfs)} файлов")
+        print(f"\n[{folder.name}] PDF: {len(pdfs)} входных файлов", flush=True)
+        if gtd_refs:
+            print(f"  Эталонные GTD исключены из parse-smart: {', '.join(p.name for p in gtd_refs)}", flush=True)
         try:
             parsed = parse_smart(session, pdfs)
             items_count = len(parsed.get("items") or [])

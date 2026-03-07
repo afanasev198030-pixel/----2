@@ -158,6 +158,11 @@ def _default_doc_filename(doc_type: str, doc_number: Optional[str]) -> str:
     return f"{doc_type}_{suffix or 'без_номера'}.pdf"
 
 
+def _is_placeholder_party(value: Optional[str]) -> bool:
+    normalized = (value or "").strip().upper()
+    return normalized in {"СМ. ГРАФУ 14 ДТ", "SEE GRAPH 14", "SEE BOX 14"}
+
+
 def _parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     raw = (raw_value or "").strip()
     if not raw:
@@ -302,7 +307,7 @@ class ApplyParsedRequest(BaseModel):
     buyer_matches_declarant: Optional[bool] = True
 
     # Графа 9: лицо, ответственное за финансовое урегулирование
-    responsible_person: Optional[ParsedCounterparty] = None
+    responsible_person: Optional[ParsedCounterparty | str] = None
     responsible_person_matches_declarant: Optional[bool] = True
 
     # Общие
@@ -372,6 +377,11 @@ async def apply_parsed_data(
     counters = {"counterparties": 0, "items": 0, "documents": 0}
 
     try:
+        responsible_person_data = data.responsible_person
+        if isinstance(responsible_person_data, str) and _is_placeholder_party(responsible_person_data):
+            responsible_person_data = None
+            data.responsible_person_matches_declarant = True
+
         # --- 0. Подтянуть ИНН/КПП из компании + адрес СВХ по коду поста ---
         company = await db.get(Company, current_user.company_id) if current_user.company_id else None
         merged_inn_kpp = _build_declarant_inn_kpp(company, data.declarant_inn_kpp or declaration.declarant_inn_kpp)
@@ -436,9 +446,9 @@ async def apply_parsed_data(
         financial_id = None
         if data.responsible_person_matches_declarant and declarant_id:
             financial_id = declarant_id
-        elif data.responsible_person and data.responsible_person.name:
+        elif isinstance(responsible_person_data, ParsedCounterparty) and responsible_person_data.name:
             financial_id = await _find_or_create_counterparty(
-                db, data.responsible_person, "financial", current_user.company_id
+                db, responsible_person_data, "financial", current_user.company_id
             )
             counters["counterparties"] += 1
 
