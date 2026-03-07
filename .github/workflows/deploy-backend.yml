@@ -12,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'services/**'
+      - 'scripts/**'
       - 'docker-compose.prod.yml'
       - 'docs/**'
       - '.github/workflows/deploy-backend.yml'
@@ -52,5 +53,11 @@ jobs:
             echo "==> [6/6] Restarting backend containers..."
             docker compose -f docker-compose.prod.yml up -d \
               core-api ai-service file-service calc-service integration-service
+
+            echo "==> [7/7] Running digital broker smoke test..."
+            BASE_URL=http://localhost:8001 \
+            AI_BASE_URL=http://localhost:8003 \
+            INTEGRATION_BASE_URL=http://localhost:8004 \
+            python3 scripts/smoke_digital_broker_flow.py --folder "3 dek"
 
             echo "==> Done. Backend deployed successfully."

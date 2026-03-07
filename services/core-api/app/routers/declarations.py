@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, delete, update
 from sqlalchemy.orm import selectinload
 import structlog
 
@@ -17,8 +17,11 @@ from app.models import (
     DeclarationLog,
     Company,
     Classifier,
+    Document,
     User,
 )
+from app.models.hs_code_history import HsCodeHistory
+from app.models.parse_issue import ParseIssue
 from app.schemas import (
     DeclarationCreate,
     DeclarationUpdate,
@@ -473,7 +476,31 @@ async def delete_declaration(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot delete declaration with status: {declaration.status}",
         )
-    
+
+    item_ids_result = await db.execute(
+        select(DeclarationItem.id).where(DeclarationItem.declaration_id == id)
+    )
+    item_ids = list(item_ids_result.scalars().all())
+
+    doc_filters = [Document.declaration_id == id]
+    if item_ids:
+        doc_filters.append(Document.item_id.in_(item_ids))
+    docs_deleted = await db.execute(
+        delete(Document).where(or_(*doc_filters))
+    )
+    parse_issues_deleted = await db.execute(
+        delete(ParseIssue).where(ParseIssue.declaration_id == id)
+    )
+
+    hs_history_filter = HsCodeHistory.declaration_id == id
+    if item_ids:
+        hs_history_filter = or_(hs_history_filter, HsCodeHistory.item_id.in_(item_ids))
+    hs_history_updated = await db.execute(
+        update(HsCodeHistory)
+        .where(hs_history_filter)
+        .values(declaration_id=None, item_id=None)
+    )
+
     await db.delete(declaration)
     await db.commit()
     
@@ -481,6 +508,9 @@ async def delete_declaration(
         "declaration_deleted",
         declaration_id=str(id),
         user_id=str(current_user.id),
+        docs_deleted=docs_deleted.rowcount or 0,
+        parse_issues_deleted=parse_issues_deleted.rowcount or 0,
+        hs_history_updated=hs_history_updated.rowcount or 0,
     )
 
 

@@ -552,6 +552,12 @@ JSON: {{"matches": [...]}}"""},
             import json as _json
             from app.services.llm_client import get_llm_client, get_model
 
+            def _first_filename(doc_type: str) -> str | None:
+                for doc in docs:
+                    if doc.get("doc_type") == doc_type:
+                        return doc.get("filename")
+                return None
+
             # Собираем тексты для промпта
             doc_sections = []
             for d in docs:
@@ -652,14 +658,16 @@ JSON:"""},
                         kpp=b.get("kpp"),
                         ogrn=b.get("ogrn"),
                     )
-                parsed_docs["contract"] = ContractParsed(
+                contract_payload = ContractParsed(
                     contract_number=c.get("contract_number"), contract_date=c.get("contract_date"),
                     seller_name=c.get("seller", {}).get("name"), buyer_name=c.get("buyer", {}).get("name"),
                     seller=seller_party, buyer=buyer_party,
                     currency=c.get("currency"), incoterms=c.get("incoterms"),
                     delivery_place=c.get("delivery_place"),
                     payment_terms=c.get("payment_terms"), confidence=0.85,
-                )
+                ).model_dump()
+                contract_payload["_filename"] = _first_filename("contract")
+                parsed_docs["contract"] = contract_payload
 
             if data.get("specification"):
                 spec_raw = data["specification"] if isinstance(data["specification"], dict) else {}
@@ -685,6 +693,7 @@ JSON:"""},
                     "currency": spec_raw.get("currency"),
                     "total_gross_weight": _safe_float(spec_raw.get("total_gross_weight")),
                     "total_net_weight": _safe_float(spec_raw.get("total_net_weight")),
+                    "_filename": _first_filename("specification"),
                 }
                 logger.info(
                     "spec_batch_parsed",
@@ -695,17 +704,22 @@ JSON:"""},
                 )
 
             if data.get("tech_description"):
-                parsed_docs.setdefault("tech_descriptions", []).append(data["tech_description"])
+                tech_desc_payload = data["tech_description"] if isinstance(data["tech_description"], dict) else {}
+                tech_desc_payload["_filename"] = _first_filename("tech_description")
+                parsed_docs.setdefault("tech_descriptions", []).append(tech_desc_payload)
 
             if data.get("transport_invoice"):
-                ti = data["transport_invoice"]
+                ti = data["transport_invoice"] if isinstance(data["transport_invoice"], dict) else {}
+                ti["_filename"] = _first_filename("transport_invoice")
                 parsed_docs["transport_invoice"] = ti
 
             if data.get("application_statement"):
-                parsed_docs["application_statement"] = data["application_statement"]
+                app_payload = data["application_statement"] if isinstance(data["application_statement"], dict) else {}
+                app_payload["_filename"] = _first_filename("application_statement")
+                parsed_docs["application_statement"] = app_payload
                 logger.info("application_statement_parsed",
-                            has_forwarder=bool(data["application_statement"].get("forwarding_agent")),
-                            has_shipper=bool(data["application_statement"].get("shipper")))
+                            has_forwarder=bool(app_payload.get("forwarding_agent")),
+                            has_shipper=bool(app_payload.get("shipper")))
 
             logger.info("batch_parse_complete", docs=len(docs), sections=list(data.keys()))
 
@@ -715,16 +729,24 @@ JSON:"""},
             for d in docs:
                 try:
                     if d["doc_type"] == "contract":
-                        parsed_docs["contract"] = self.contract_extractor.extract(d["file_bytes"], d["filename"])
+                        contract_payload = self._to_dict(self.contract_extractor.extract(d["file_bytes"], d["filename"]))
+                        contract_payload["_filename"] = d["filename"]
+                        parsed_docs["contract"] = contract_payload
                     elif d["doc_type"] == "specification":
                         from app.services.spec_parser import parse as parse_spec
-                        parsed_docs["specification"] = parse_spec(d["file_bytes"], d["filename"])
+                        spec_payload = self._to_dict(parse_spec(d["file_bytes"], d["filename"]))
+                        spec_payload["_filename"] = d["filename"]
+                        parsed_docs["specification"] = spec_payload
                     elif d["doc_type"] == "tech_description":
                         from app.services.techop_parser import parse as parse_techop
-                        parsed_docs.setdefault("tech_descriptions", []).append(parse_techop(d["file_bytes"], d["filename"]))
+                        tech_payload = self._to_dict(parse_techop(d["file_bytes"], d["filename"]))
+                        tech_payload["_filename"] = d["filename"]
+                        parsed_docs.setdefault("tech_descriptions", []).append(tech_payload)
                     elif d["doc_type"] == "transport_invoice":
                         from app.services.transport_parser import parse as parse_transport
-                        parsed_docs["transport_invoice"] = parse_transport(d["file_bytes"], d["filename"])
+                        transport_payload = self._to_dict(parse_transport(d["file_bytes"], d["filename"]))
+                        transport_payload["_filename"] = d["filename"]
+                        parsed_docs["transport_invoice"] = transport_payload
                 except Exception as inner_e:
                     logger.warning("fallback_parse_failed", doc_type=d["doc_type"], error=str(inner_e)[:100])
 
@@ -1646,8 +1668,25 @@ JSON:"""},
         return result
 
     @staticmethod
+    def _document_payload(obj) -> dict | None:
+        """Подготовить лёгкий parsed_data для хранения в core-api Document."""
+        data = DeclarationCrew._to_dict(obj)
+        if not data:
+            return None
+        cleaned: dict = {}
+        for key, value in data.items():
+            if key in {"raw_text", "_cache_type"}:
+                continue
+            if isinstance(key, str) and key.startswith("_"):
+                continue
+            cleaned[key] = value
+        return cleaned or None
+
+    @staticmethod
     def _build_documents_list(parsed_docs: dict, inv: dict, contract: dict, awb_number: str | None) -> list[dict]:
         """Графа 44: перечень документов с кодами классификатора, номерами и датами."""
+        import mimetypes
+
         _DOC_TYPE_CODES = {
             "invoice": "04021",
             "contract": "03011",
@@ -1659,43 +1698,107 @@ JSON:"""},
             "tech_description": "04099",
         }
         docs: list[dict] = []
-        if inv.get("invoice_number"):
+
+        def _append_doc(
+            *,
+            doc_type: str,
+            doc_code: str,
+            doc_type_name: str,
+            parsed_source,
+            doc_number: str | None = None,
+            doc_date: str | None = None,
+        ):
+            source_dict = DeclarationCrew._to_dict(parsed_source)
+            filename = source_dict.get("_filename")
+            payload = DeclarationCrew._document_payload(source_dict)
+            if not filename and not doc_number and not payload:
+                return
             docs.append({
-                "doc_code": _DOC_TYPE_CODES["invoice"],
-                "doc_number": inv["invoice_number"],
-                "doc_date": inv.get("invoice_date"),
-                "doc_type_name": "Инвойс (счёт-фактура)",
+                "doc_type": doc_type,
+                "doc_code": doc_code,
+                "doc_number": doc_number,
+                "doc_date": doc_date,
+                "doc_type_name": doc_type_name,
+                "original_filename": filename,
+                "mime_type": mimetypes.guess_type(filename or "")[0] or "application/pdf",
+                "parsed_data": payload,
             })
-        if contract.get("contract_number"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["contract"],
-                "doc_number": contract["contract_number"],
-                "doc_date": contract.get("contract_date"),
-                "doc_type_name": "Контракт (договор)",
-            })
-        if awb_number:
-            docs.append({
-                "doc_code": "02011",
-                "doc_number": awb_number,
-                "doc_date": None,
-                "doc_type_name": "Авиационная накладная (AWB)",
-            })
+
+        _append_doc(
+            doc_type="invoice",
+            doc_code=_DOC_TYPE_CODES["invoice"],
+            doc_type_name="Инвойс (счёт-фактура)",
+            parsed_source=inv,
+            doc_number=inv.get("invoice_number"),
+            doc_date=inv.get("invoice_date"),
+        )
+        _append_doc(
+            doc_type="contract",
+            doc_code=_DOC_TYPE_CODES["contract"],
+            doc_type_name="Контракт (договор)",
+            parsed_source=contract,
+            doc_number=contract.get("contract_number"),
+            doc_date=contract.get("contract_date"),
+        )
+
+        transport_data = parsed_docs.get("transport") or {}
+        _append_doc(
+            doc_type="transport_doc",
+            doc_code="02011",
+            doc_type_name="Транспортный документ",
+            parsed_source=transport_data,
+            doc_number=awb_number or transport_data.get("awb_number") or transport_data.get("vehicle_id"),
+            doc_date=None,
+        )
+
         packing_data = parsed_docs.get("packing") or {}
-        if isinstance(packing_data, dict) and packing_data.get("items"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["packing"],
-                "doc_number": packing_data.get("packing_list_number", "б/н"),
-                "doc_date": packing_data.get("packing_list_date"),
-                "doc_type_name": "Упаковочный лист",
-            })
+        _append_doc(
+            doc_type="packing_list",
+            doc_code=_DOC_TYPE_CODES["packing"],
+            doc_type_name="Упаковочный лист",
+            parsed_source=packing_data,
+            doc_number=packing_data.get("packing_list_number"),
+            doc_date=packing_data.get("packing_list_date"),
+        )
         transport_inv_data = parsed_docs.get("transport_invoice") or {}
-        if isinstance(transport_inv_data, dict) and transport_inv_data.get("freight_amount"):
-            docs.append({
-                "doc_code": _DOC_TYPE_CODES["transport_invoice"],
-                "doc_number": transport_inv_data.get("invoice_number", "б/н"),
-                "doc_date": transport_inv_data.get("invoice_date"),
-                "doc_type_name": "Транспортный инвойс (фрахт)",
-            })
+        _append_doc(
+            doc_type="transport_invoice",
+            doc_code=_DOC_TYPE_CODES["transport_invoice"],
+            doc_type_name="Транспортный инвойс (фрахт)",
+            parsed_source=transport_inv_data,
+            doc_number=transport_inv_data.get("invoice_number"),
+            doc_date=transport_inv_data.get("invoice_date"),
+        )
+
+        specification = parsed_docs.get("specification") or {}
+        _append_doc(
+            doc_type="specification",
+            doc_code=_DOC_TYPE_CODES["specification"],
+            doc_type_name="Спецификация",
+            parsed_source=specification,
+            doc_number=None,
+            doc_date=None,
+        )
+
+        application_statement = parsed_docs.get("application_statement") or {}
+        _append_doc(
+            doc_type="application_statement",
+            doc_code=_DOC_TYPE_CODES["application_statement"],
+            doc_type_name="Заявка / поручение экспедитору",
+            parsed_source=application_statement,
+            doc_number=None,
+            doc_date=None,
+        )
+
+        for tech_desc in parsed_docs.get("tech_descriptions") or []:
+            _append_doc(
+                doc_type="tech_description",
+                doc_code=_DOC_TYPE_CODES["tech_description"],
+                doc_type_name="Техническое описание",
+                parsed_source=tech_desc,
+                doc_number=None,
+                doc_date=None,
+            )
         return docs
 
     def _compile_by_rules(self, parsed_docs: dict, base_result: dict) -> dict:

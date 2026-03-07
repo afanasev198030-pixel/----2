@@ -60,6 +60,75 @@ class PreSendResult(BaseModel):
     blocking_count: int
 
 
+def _to_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pct_diff(left, right) -> Optional[float]:
+    left_f = _to_float(left)
+    right_f = _to_float(right)
+    if left_f is None or right_f is None:
+        return None
+    base = max(abs(left_f), abs(right_f), 0.01)
+    return abs(left_f - right_f) / base
+
+
+def _normalize_document_type(doc: Document) -> str:
+    raw = (doc.doc_type or "").strip().lower()
+    aliases = {
+        "packing": "packing_list",
+        "packing_list": "packing_list",
+        "transport": "transport_doc",
+        "transport_doc": "transport_doc",
+        "awb": "transport_doc",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    if raw in {
+        "invoice",
+        "contract",
+        "packing_list",
+        "transport_doc",
+        "transport_invoice",
+        "application_statement",
+        "specification",
+        "tech_description",
+    }:
+        return raw
+    name = (doc.original_filename or "").lower()
+    if "invoice" in name or "инвойс" in name:
+        return "invoice" if "transport" not in name and "фрахт" not in name else "transport_invoice"
+    if "contract" in name or "контракт" in name or "договор" in name:
+        return "contract"
+    if "packing" in name or "упаков" in name:
+        return "packing_list"
+    if "awb" in name or "waybill" in name or "наклад" in name or "cmr" in name:
+        return "transport_doc"
+    if "spec" in name or "спец" in name:
+        return "specification"
+    if "tech" in name or "тех" in name:
+        return "tech_description"
+    if "application" in name or "заявка" in name:
+        return "application_statement"
+    return "other"
+
+
+def _doc_payload(doc: Optional[Document]) -> dict:
+    if not doc or not isinstance(doc.parsed_data, dict):
+        return {}
+    return doc.parsed_data
+
+
+def _first_doc(docs_by_type: dict[str, list[Document]], doc_type: str) -> Optional[Document]:
+    docs = docs_by_type.get(doc_type) or []
+    return docs[0] if docs else None
+
+
 async def run_pre_send_checks(
     declaration: Declaration, db: AsyncSession
 ) -> PreSendResult:
@@ -101,16 +170,73 @@ async def run_pre_send_checks(
         ))
 
     docs_result = await db.execute(
-        select(func.count()).select_from(Document).where(
-            Document.declaration_id == declaration.id
-        )
+        select(Document).where(Document.declaration_id == declaration.id)
     )
-    docs_count = docs_result.scalar() or 0
+    docs = list(docs_result.scalars().all())
+    docs_count = len(docs)
     if docs_count == 0:
         checks.append(PreSendCheck(
             code="NO_DOCUMENTS", severity="error", field="documents",
             blocking=True, message="Нет прикреплённых документов",
         ))
+    docs_by_type: dict[str, list[Document]] = {}
+    for doc in docs:
+        docs_by_type.setdefault(_normalize_document_type(doc), []).append(doc)
+
+    recognized_doc_types = sorted(t for t, items in docs_by_type.items() if items and t != "other")
+    need_transport_doc = bool(
+        declaration.transport_type_border
+        or declaration.transport_at_border
+        or declaration.transport_on_border_id
+    )
+    need_packing_list = bool(
+        items_count > 1
+        or declaration.total_packages_count
+        or declaration.total_gross_weight
+        or declaration.total_net_weight
+    )
+
+    if docs_count > 0 and not docs_by_type.get("invoice"):
+        checks.append(PreSendCheck(
+            code="MISSING_INVOICE_DOCUMENT",
+            severity="error",
+            field="documents",
+            blocking=True,
+            message="В пакете нет инвойса — проверьте состав приложенных документов",
+        ))
+    if docs_count > 0 and not docs_by_type.get("contract"):
+        checks.append(PreSendCheck(
+            code="MISSING_CONTRACT_DOCUMENT",
+            severity="error",
+            field="documents",
+            blocking=True,
+            message="В пакете нет контракта — отправка без договора запрещена",
+        ))
+    if docs_count > 0 and need_transport_doc and not docs_by_type.get("transport_doc"):
+        checks.append(PreSendCheck(
+            code="MISSING_TRANSPORT_DOCUMENT",
+            severity="error",
+            field="documents",
+            blocking=True,
+            message="Для выбранного вида перевозки нет транспортного документа",
+        ))
+    if docs_count > 0 and need_packing_list and not docs_by_type.get("packing_list"):
+        checks.append(PreSendCheck(
+            code="MISSING_PACKING_LIST",
+            severity="warning",
+            field="documents",
+            blocking=False,
+            message="Нет упаковочного листа — вес и количество мест будут сложнее подтвердить",
+        ))
+
+    logger.info(
+        "pre_send_document_matrix_checked",
+        declaration_id=str(declaration.id),
+        docs_count=docs_count,
+        recognized_doc_types=recognized_doc_types,
+        need_transport_doc=need_transport_doc,
+        need_packing_list=need_packing_list,
+    )
 
     items_no_hs = await db.execute(
         select(func.count()).select_from(DeclarationItem).where(
@@ -146,6 +272,132 @@ async def run_pre_send_checks(
                 code="AI_BLOCKING_ISSUES", severity="error", field="ai_issues",
                 blocking=True, message=f"{len(ai_blocking)} блокирующих AI-проблем",
             ))
+
+    invoice_doc = _first_doc(docs_by_type, "invoice")
+    contract_doc = _first_doc(docs_by_type, "contract")
+    packing_doc = _first_doc(docs_by_type, "packing_list")
+    transport_doc = _first_doc(docs_by_type, "transport_doc")
+
+    invoice_payload = _doc_payload(invoice_doc)
+    contract_payload = _doc_payload(contract_doc)
+    packing_payload = _doc_payload(packing_doc)
+
+    invoice_total = _to_float(invoice_payload.get("total_amount"))
+    declaration_total = _to_float(declaration.total_invoice_value)
+    total_diff_pct = _pct_diff(invoice_total, declaration_total)
+    if total_diff_pct is not None and total_diff_pct > 0.05:
+        checks.append(PreSendCheck(
+            code="INVOICE_TOTAL_MISMATCH",
+            severity="warning",
+            field="total_invoice_value",
+            blocking=False,
+            message=(
+                f"Сумма в декларации ({declaration_total:.2f}) отличается от суммы инвойса "
+                f"({invoice_total:.2f}) на {total_diff_pct:.0%}"
+            ),
+        ))
+
+    contract_currency = (contract_payload.get("currency") or "").strip().upper()
+    declaration_currency = (declaration.currency_code or "").strip().upper()
+    if contract_currency and declaration_currency and contract_currency != declaration_currency:
+        checks.append(PreSendCheck(
+            code="CONTRACT_CURRENCY_MISMATCH",
+            severity="error",
+            field="currency_code",
+            blocking=True,
+            message=(
+                f"Валюта декларации ({declaration_currency}) не совпадает с валютой договора "
+                f"({contract_currency})"
+            ),
+        ))
+
+    invoice_currency = (invoice_payload.get("currency") or "").strip().upper()
+    if invoice_currency and declaration_currency and invoice_currency != declaration_currency:
+        checks.append(PreSendCheck(
+            code="INVOICE_CURRENCY_MISMATCH",
+            severity="warning",
+            field="currency_code",
+            blocking=False,
+            message=(
+                f"Валюта инвойса ({invoice_currency}) отличается от валюты декларации "
+                f"({declaration_currency})"
+            ),
+        ))
+
+    packing_gross = _to_float(packing_payload.get("total_gross_weight"))
+    declaration_gross = _to_float(declaration.total_gross_weight)
+    gross_diff_pct = _pct_diff(packing_gross, declaration_gross)
+    if gross_diff_pct is not None and gross_diff_pct > 0.05:
+        checks.append(PreSendCheck(
+            code="PACKING_GROSS_MISMATCH",
+            severity="warning",
+            field="total_gross_weight",
+            blocking=False,
+            message=(
+                f"Вес брутто в декларации ({declaration_gross:.3f}) отличается от packing list "
+                f"({packing_gross:.3f}) на {gross_diff_pct:.0%}"
+            ),
+        ))
+
+    packing_net = _to_float(packing_payload.get("total_net_weight"))
+    declaration_net = _to_float(declaration.total_net_weight)
+    net_diff_pct = _pct_diff(packing_net, declaration_net)
+    if net_diff_pct is not None and net_diff_pct > 0.05:
+        checks.append(PreSendCheck(
+            code="PACKING_NET_MISMATCH",
+            severity="warning",
+            field="total_net_weight",
+            blocking=False,
+            message=(
+                f"Вес нетто в декларации ({declaration_net:.3f}) отличается от packing list "
+                f"({packing_net:.3f}) на {net_diff_pct:.0%}"
+            ),
+        ))
+
+    packing_packages = packing_payload.get("total_packages")
+    declaration_packages = declaration.total_packages_count
+    if packing_packages and declaration_packages and int(packing_packages) != int(declaration_packages):
+        checks.append(PreSendCheck(
+            code="PACKING_PACKAGES_MISMATCH",
+            severity="warning",
+            field="total_packages_count",
+            blocking=False,
+            message=(
+                f"Количество мест в декларации ({declaration_packages}) отличается от packing list "
+                f"({packing_packages})"
+            ),
+        ))
+
+    invoice_items = invoice_payload.get("items")
+    if isinstance(invoice_items, list) and items_count and len(invoice_items) != items_count:
+        checks.append(PreSendCheck(
+            code="INVOICE_ITEMS_COUNT_MISMATCH",
+            severity="warning",
+            field="items",
+            blocking=False,
+            message=(
+                f"Количество позиций в декларации ({items_count}) отличается от количества позиций "
+                f"в инвойсе ({len(invoice_items)})"
+            ),
+        ))
+
+    if transport_doc and need_transport_doc and not (declaration.transport_at_border or declaration.transport_on_border_id):
+        checks.append(PreSendCheck(
+            code="TRANSPORT_DOC_NOT_APPLIED",
+            severity="warning",
+            field="transport_doc_number",
+            blocking=False,
+            message="Транспортный документ приложен, но его реквизиты не перенесены в декларацию",
+        ))
+
+    logger.info(
+        "pre_send_cross_doc_checked",
+        declaration_id=str(declaration.id),
+        invoice_doc=bool(invoice_doc),
+        contract_doc=bool(contract_doc),
+        packing_doc=bool(packing_doc),
+        transport_doc=bool(transport_doc),
+    )
 
     if declaration.total_gross_weight and declaration.total_net_weight:
         if declaration.total_net_weight > declaration.total_gross_weight:

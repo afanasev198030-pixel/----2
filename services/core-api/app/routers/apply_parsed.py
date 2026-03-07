@@ -6,6 +6,7 @@ import uuid
 import re
 from typing import Optional
 from decimal import Decimal
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,6 +65,97 @@ def _normalize_deal_nature_code(value: Optional[str]) -> Optional[str]:
     if len(digits) >= 2:
         return digits[:2]
     return digits
+
+
+_DOC_CODE_TO_TYPE = {
+    "04021": "invoice",
+    "03011": "contract",
+    "04024": "packing_list",
+    "02011": "transport_doc",
+    "04025": "transport_invoice",
+    "09999": "application_statement",
+}
+
+
+def _infer_doc_type_from_text(value: Optional[str]) -> Optional[str]:
+    text = (value or "").strip().lower()
+    if not text:
+        return None
+    if "invoice" in text or "инвойс" in text:
+        return "invoice" if "transport" not in text and "фрахт" not in text else "transport_invoice"
+    if "contract" in text or "контракт" in text or "договор" in text:
+        return "contract"
+    if "packing" in text or "упаков" in text:
+        return "packing_list"
+    if "awb" in text or "waybill" in text or "накладн" in text or "cmr" in text:
+        return "transport_doc"
+    if "spec" in text or "спец" in text:
+        return "specification"
+    if "tech" in text or "тех" in text:
+        return "tech_description"
+    if "application" in text or "заявка" in text:
+        return "application_statement"
+    return None
+
+
+def _normalize_doc_type(
+    explicit_type: Optional[str],
+    doc_code: Optional[str],
+    doc_type_name: Optional[str],
+    original_filename: Optional[str],
+) -> str:
+    raw = (explicit_type or "").strip().lower()
+    aliases = {
+        "packing": "packing_list",
+        "packing_list": "packing_list",
+        "transport": "transport_doc",
+        "transport_doc": "transport_doc",
+        "awb": "transport_doc",
+    }
+    if raw in aliases:
+        return aliases[raw]
+    if raw in {
+        "invoice",
+        "contract",
+        "packing_list",
+        "transport_doc",
+        "transport_invoice",
+        "application_statement",
+        "specification",
+        "tech_description",
+        "certificate_origin",
+        "license",
+        "permit",
+        "sanitary",
+        "veterinary",
+        "phytosanitary",
+        "other",
+    }:
+        return raw
+    if doc_code and doc_code in _DOC_CODE_TO_TYPE:
+        return _DOC_CODE_TO_TYPE[doc_code]
+    for candidate in (doc_type_name, original_filename):
+        inferred = _infer_doc_type_from_text(candidate)
+        if inferred:
+            return inferred
+    return "other"
+
+
+def _parse_doc_date(value: Optional[str]) -> Optional[date]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(raw[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _default_doc_filename(doc_type: str, doc_number: Optional[str]) -> str:
+    suffix = (doc_number or "без_номера").replace("/", "_").replace("\\", "_").strip()
+    return f"{doc_type}_{suffix or 'без_номера'}.pdf"
 
 
 def _parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str]]:
@@ -150,8 +242,11 @@ class ParsedItem(BaseModel):
 
 
 class ParsedDocumentRef(BaseModel):
+    doc_code: Optional[str] = None
     doc_type: Optional[str] = None
+    doc_type_name: Optional[str] = None
     doc_number: Optional[str] = None
+    doc_date: Optional[str] = None
     file_key: Optional[str] = None
     original_filename: Optional[str] = None
     mime_type: Optional[str] = None
@@ -623,13 +718,28 @@ async def apply_parsed_data(
 
         # --- 4. Привязать документы ---
         for doc_data in data.documents:
+            normalized_doc_type = _normalize_doc_type(
+                doc_data.doc_type,
+                doc_data.doc_code,
+                doc_data.doc_type_name,
+                doc_data.original_filename,
+            )
+            if normalized_doc_type != (doc_data.doc_type or "").strip().lower():
+                logger.info(
+                    "document_type_normalized",
+                    original=doc_data.doc_type,
+                    normalized=normalized_doc_type,
+                    doc_code=doc_data.doc_code,
+                    filename=doc_data.original_filename,
+                )
             doc = Document(
                 declaration_id=declaration.id,
-                doc_type=doc_data.doc_type or "other",
+                doc_type=normalized_doc_type,
                 file_key=doc_data.file_key,
-                original_filename=doc_data.original_filename,
+                original_filename=doc_data.original_filename or _default_doc_filename(normalized_doc_type, doc_data.doc_number),
                 mime_type=doc_data.mime_type or "application/pdf",
                 file_size=doc_data.file_size,
+                issued_at=_parse_doc_date(doc_data.doc_date),
                 doc_number=doc_data.doc_number,
                 parsed_data=doc_data.parsed_data,
             )
