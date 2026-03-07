@@ -197,6 +197,83 @@ def parse_smart(session: requests.Session, pdf_paths: list[Path]) -> dict:
             handle.close()
 
 
+def extract_gtd_references(session: requests.Session, pdf_paths: list[Path]) -> list[dict]:
+    files = []
+    handles = []
+    try:
+        for path in pdf_paths:
+            handle = path.open("rb")
+            handles.append(handle)
+            files.append(("files", (path.name, handle, "application/pdf")))
+
+        logger.info("extract_gtd_reference_start files=%s", [path.name for path in pdf_paths])
+        response = session.post(
+            f"{AI_BASE_URL}/api/v1/ai/extract-gtd-reference",
+            files=files,
+            timeout=PARSE_TIMEOUT,
+        )
+        response.raise_for_status()
+        data = response.json()
+        references = data.get("references") or []
+        logger.info("extract_gtd_reference_ok files=%s", len(references))
+        return references
+    finally:
+        for handle in handles:
+            handle.close()
+
+
+def normalize_hs(value: str | None) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if len(digits) < 6:
+        return ""
+    return digits[:10].ljust(10, "0")
+
+
+def compare_with_gtd_reference(parsed: dict, references: list[dict]) -> dict:
+    parsed_items = sorted(parsed.get("items") or [], key=lambda item: item.get("line_no") or 0)
+    reference_items: list[dict] = []
+    reference_headers: list[dict] = []
+    for ref in references:
+        reference_headers.append(ref.get("header") or {})
+        reference_items.extend(ref.get("items") or [])
+    reference_items.sort(key=lambda item: item.get("line_no") or 0)
+
+    parsed_hs = [normalize_hs(item.get("hs_code")) for item in parsed_items if normalize_hs(item.get("hs_code"))]
+    reference_hs = [normalize_hs(item.get("hs_code")) for item in reference_items if normalize_hs(item.get("hs_code"))]
+    exact_pairs = sum(1 for parsed_hs_code, reference_hs_code in zip(parsed_hs, reference_hs) if parsed_hs_code == reference_hs_code)
+
+    reference_header = next((header for header in reference_headers if header), {})
+    header_checks = []
+    header_match_count = 0
+    for field_name in ("country_dispatch", "country_destination", "currency", "transport_type", "customs_office_code"):
+        reference_value = reference_header.get(field_name)
+        if reference_value in (None, ""):
+            continue
+        parsed_value = parsed.get(field_name)
+        matched = str(parsed_value or "").strip().upper() == str(reference_value).strip().upper()
+        if matched:
+            header_match_count += 1
+        header_checks.append({
+            "field": field_name,
+            "parsed": parsed_value,
+            "reference": reference_value,
+            "matched": matched,
+        })
+
+    comparison = {
+        "reference_items_count": len(reference_items),
+        "parsed_items_count": len(parsed_items),
+        "hs_exact_match_count": exact_pairs,
+        "hs_exact_match_rate": round(exact_pairs / max(len(reference_hs), 1), 3),
+        "missing_reference_hs": sorted(set(reference_hs) - set(parsed_hs)),
+        "unexpected_parsed_hs": sorted(set(parsed_hs) - set(reference_hs)),
+        "header_match_count": header_match_count,
+        "header_checks": header_checks,
+    }
+    logger.info("gtd_reference_compare summary=%s", json_preview(comparison, limit=1500))
+    return comparison
+
+
 def create_from_parsed(session: requests.Session, body: dict) -> dict:
     logger.info("create_from_parsed_start")
     response = session.post(
@@ -281,6 +358,8 @@ def main() -> int:
     parser.add_argument("--folder", help="Имя подпапки внутри dek/ для smoke-прогона")
     parser.add_argument("--keep-declaration", action="store_true", help="Не удалять созданную декларацию")
     parser.add_argument("--allow-blocking", action="store_true", help="Не падать на blocking issues pre-send")
+    parser.add_argument("--compare-gtd", action="store_true", help="Сравнить parse-smart с GTD reference")
+    parser.add_argument("--enforce-gtd", action="store_true", help="Падать при несовпадении с GTD reference")
     args = parser.parse_args()
 
     session = requests.Session()
@@ -307,6 +386,12 @@ def main() -> int:
         session.headers["Authorization"] = f"Bearer {token}"
 
         parsed = parse_smart(session, input_pdfs)
+        gtd_comparison = None
+        if gtd_reference_pdfs and (args.compare_gtd or args.enforce_gtd):
+            references = extract_gtd_references(session, gtd_reference_pdfs)
+            gtd_comparison = compare_with_gtd_reference(parsed, references)
+            if args.enforce_gtd and gtd_comparison["hs_exact_match_rate"] < 1.0:
+                raise RuntimeError(f"GTD reference mismatch: {json_preview(gtd_comparison)}")
         body = body_for_from_parsed(parsed)
         created = create_from_parsed(session, body)
         declaration_id = created["declaration_id"]
@@ -339,6 +424,8 @@ def main() -> int:
             "xml_valid": xml_validation.get("valid"),
             "xml_warnings": len(xml_validation.get("warnings") or []),
         }
+        if gtd_comparison:
+            summary["gtd_comparison"] = gtd_comparison
         logger.info("smoke_success summary=%s", json_preview(summary))
         print(json.dumps(summary, ensure_ascii=False))
         return 0

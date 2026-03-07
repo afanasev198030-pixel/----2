@@ -604,7 +604,7 @@ contract: {{contract_number, contract_date, seller: {{name, country_code, addres
   is_trilateral: true если договор трёхсторонний (между получателем, декларантом и лицом за фин. урегулирование)
   receiver: получатель груза (графа 8 ДТ) — ТОЛЬКО если отличается от buyer/declarant
   financial_responsible: лицо, ответственное за финансовое урегулирование (графа 9 ДТ) — ТОЛЬКО если отличается от buyer/declarant
-specification: {{items: [{{description, quantity, unit, unit_price, line_total, gross_weight, net_weight, country_origin, hs_code}}], total_amount, currency, total_gross_weight, total_net_weight}}
+specification: {{items_count, total_amount, currency, total_gross_weight, total_net_weight}}
 tech_description: {{products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
 transport_invoice: {{freight_amount, freight_currency, carrier_name, shipper_name, shipper_address, awb_number, transport_type}}
   shipper_name: отправитель груза — искать "Shipper", "Shipper's Name", "Отправитель", "Consignor"
@@ -613,14 +613,14 @@ application_statement: {{forwarding_agent: {{name, address, country_code, inn, k
   shipper: отправитель груза — искать "Shipper", "Отправитель" и его адрес
 
 Заполни только те разделы, для которых есть документы. Если документа нет — не включай раздел.
-CRITICAL: В specification.items.description пиши РЕАЛЬНОЕ название товара из текста, а не заглушки.
+Для specification не извлекай все позиции целиком: нужен только items_count и totals для cross-check.
 
 {combined_text[:16000]}
 
 JSON:"""},
                 ],
                 temperature=0,
-                max_tokens=4000,
+                max_tokens=2500,
                 response_format={"type": "json_object"},
             )
 
@@ -671,24 +671,13 @@ JSON:"""},
 
             if data.get("specification"):
                 spec_raw = data["specification"] if isinstance(data["specification"], dict) else {}
-                spec_items = []
-                for idx, it in enumerate(spec_raw.get("items", []) if isinstance(spec_raw.get("items"), list) else []):
-                    if not isinstance(it, dict):
-                        continue
-                    spec_items.append({
-                        "line_no": it.get("line_no", idx + 1),
-                        "description": it.get("description") or "",
-                        "quantity": _safe_float(it.get("quantity")),
-                        "unit": it.get("unit"),
-                        "unit_price": _safe_float(it.get("unit_price")),
-                        "line_total": _safe_float(it.get("line_total")),
-                        "gross_weight": _safe_float(it.get("gross_weight")),
-                        "net_weight": _safe_float(it.get("net_weight")),
-                        "country_origin": it.get("country_origin"),
-                        "hs_code": it.get("hs_code"),
-                    })
+                spec_items_count = spec_raw.get("items_count")
+                try:
+                    spec_items_count = int(spec_items_count) if spec_items_count not in (None, "") else None
+                except (TypeError, ValueError):
+                    spec_items_count = None
                 parsed_docs["specification"] = {
-                    "items": spec_items,
+                    "items_count": spec_items_count,
                     "total_amount": _safe_float(spec_raw.get("total_amount")),
                     "currency": spec_raw.get("currency"),
                     "total_gross_weight": _safe_float(spec_raw.get("total_gross_weight")),
@@ -697,7 +686,7 @@ JSON:"""},
                 }
                 logger.info(
                     "spec_batch_parsed",
-                    items=len(spec_items),
+                    items_count=spec_items_count,
                     total=parsed_docs["specification"]["total_amount"],
                     gross=parsed_docs["specification"]["total_gross_weight"],
                     net=parsed_docs["specification"]["total_net_weight"],
@@ -1179,12 +1168,14 @@ JSON:"""},
         logger.info("items_source", source=items_source, count=len(raw_items))
 
         # Перекрёстная сверка со спецификацией (только предупреждение, не замена)
-        spec_items = spec.get("items", [])
-        if spec_items and inv_items:
-            if len(spec_items) != len(inv_items):
+        spec_items_count = spec.get("items_count")
+        if spec_items_count is None:
+            spec_items_count = len(spec.get("items", []) or [])
+        if spec_items_count and inv_items:
+            if int(spec_items_count) != len(inv_items):
                 logger.info(
                     "spec_vs_invoice_count_mismatch",
-                    spec_count=len(spec_items),
+                    spec_count=spec_items_count,
                     inv_count=len(inv_items),
                     msg="Количество позиций в спецификации и инвойсе различается — это нормально, "
                         "спецификация содержит весь заказ",

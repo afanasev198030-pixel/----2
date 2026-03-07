@@ -511,45 +511,20 @@ async def extract_facts(data: ExtractFactsRequest):
 @router.post("/train-from-gtd")
 async def train_from_gtd(files: list[UploadFile] = File(...)):
     """Извлечь прецеденты из готовых ДТ (PDF) и добавить их в память (ChromaDB)."""
-    from app.services.ocr_service import extract_text
-    from app.services.llm_client import get_llm_client, get_model
+    from app.services.gtd_reference_extractor import extract_gtd_reference
     from app.services.index_manager import get_index_manager
-    import json as _json
 
     idx = get_index_manager()
-    client = get_llm_client(operation="train_from_gtd")
     total_saved = 0
     total_files = len(files)
 
     for f in files:
         try:
             content = await f.read()
-            text = extract_text(content, f.filename)
-            if not text:
-                continue
+            reference = extract_gtd_reference(content, f.filename or "GTD.pdf")
 
-            resp = client.chat.completions.create(
-                model=get_model(),
-                messages=[
-                    {"role": "system", "content": "Ты таможенный эксперт. Извлеки из текста готовой декларации на товары (ГТД) все товарные позиции. Для каждой позиции найди 10-значный код ТН ВЭД (графа 33) и полное коммерческое описание (графа 31 и дополнения). Описание должно быть максимально подробным (марка, модель, артикул, назначение). Верни ТОЛЬКО валидный JSON-массив объектов: [{\"hs_code\": \"XXXXXXXXXX\", \"description\": \"...\"}]"},
-                    {"role": "user", "content": text[:15000]}
-                ],
-                temperature=0,
-                max_tokens=4000,
-            )
-            
-            res_text = resp.choices[0].message.content.strip()
-            if res_text.startswith("```"):
-                res_text = res_text.split("```")[1]
-                if res_text.startswith("json"):
-                    res_text = res_text[4:]
-            
-            items = _json.loads(res_text)
-            
-            # Save to ChromaDB
-            import re as _re
-            for it in items:
-                hs = _re.sub(r"\D", "", it.get("hs_code", ""))
+            for it in reference.get("items", []):
+                hs = (it.get("hs_code") or "").strip()
                 desc = it.get("description", "").strip()
                 if len(hs) >= 6 and desc:
                     idx.add_precedent(desc, hs[:10], metadata={
@@ -562,3 +537,31 @@ async def train_from_gtd(files: list[UploadFile] = File(...)):
             logger.error("gtd_training_failed", filename=f.filename, error=str(e))
             
     return {"status": "ok", "files_processed": total_files, "precedents_saved": total_saved}
+
+
+@router.post("/extract-gtd-reference")
+async def extract_gtd_reference_endpoint(files: list[UploadFile] = File(...)):
+    """Извлечь эталонные reference-данные из готовых GTD PDF без сохранения в память."""
+    from app.services.gtd_reference_extractor import extract_gtd_reference
+
+    references: list[dict] = []
+    for f in files:
+        try:
+            content = await f.read()
+            if not content:
+                continue
+            references.append(extract_gtd_reference(content, f.filename or "GTD.pdf"))
+        except Exception as e:
+            logger.error("gtd_reference_extract_failed", filename=f.filename, error=str(e))
+            references.append({
+                "filename": f.filename or "GTD.pdf",
+                "header": {},
+                "items": [],
+                "error": str(e)[:200],
+            })
+
+    return {
+        "status": "ok",
+        "files_processed": len(references),
+        "references": references,
+    }
