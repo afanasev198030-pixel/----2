@@ -51,7 +51,7 @@ const DeclarationEditPage = () => {
   const [docViewerOpen, setDocViewerOpen] = useState(false);
 
   // react-hook-form — single source of truth for form state
-  const { register, reset, setValue, getValues, watch } = useForm<any>({
+  const { register, reset, setValue, getValues, watch, formState: { isDirty } } = useForm<any>({
     defaultValues: {},
   });
 
@@ -184,6 +184,7 @@ const DeclarationEditPage = () => {
     try {
       const data = sanitizeData(getValues());
       const saved = await updateDeclaration(id, data);
+      reset(normalizeDecl(saved));
       queryClient.setQueryData(['declaration', id], saved);
       if (!getValues().goods_location && saved.goods_location) {
         setValue('goods_location', saved.goods_location, { shouldDirty: false });
@@ -205,6 +206,8 @@ const DeclarationEditPage = () => {
     if (!id || !loadedRef.current) return;
     // Only auto-save drafts
     if (decl?.status !== 'draft') return;
+    // Never auto-save untouched or freshly reset form state.
+    if (!isDirty) return;
 
     // Debounce 3 seconds
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -213,6 +216,7 @@ const DeclarationEditPage = () => {
         setAutoSaveStatus('saving');
         const data = sanitizeData(getValues());
         const saved = await updateDeclaration(id, data);
+        reset(normalizeDecl(saved));
         queryClient.setQueryData(['declaration', id], saved);
         if (!getValues().goods_location && saved.goods_location) {
           setValue('goods_location', saved.goods_location, { shouldDirty: false });
@@ -228,7 +232,7 @@ const DeclarationEditPage = () => {
     }, 3000);
 
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [watchedValues]); // eslint-disable-line
+  }, [watchedValues, isDirty]); // eslint-disable-line
 
   const handleFinish = useCallback(async () => {
     await handleSave();
