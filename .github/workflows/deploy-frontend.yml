@@ -28,7 +28,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            cd /home/2/----2
+            cd /opt/customs-broker
             git fetch origin && git reset --hard origin/main
             docker compose -f docker-compose.prod.yml build frontend --no-cache
             docker compose -f docker-compose.prod.yml up -d frontend

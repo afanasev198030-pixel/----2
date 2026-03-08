@@ -31,7 +31,7 @@ jobs:
           command_timeout: 15m
           script: |
             set -e
-            cd /home/2/----2
+            cd /opt/customs-broker
 
             echo "==> [1/5] Pulling latest code from main..."
             git fetch origin && git reset --hard origin/main
