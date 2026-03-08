@@ -7,6 +7,7 @@ from typing import Optional, Any
 from pydantic import BaseModel, field_validator
 import structlog
 
+from app.services.llm_json import strip_code_fences
 from app.services.ocr_service import extract_text
 
 logger = structlog.get_logger()
@@ -857,12 +858,8 @@ Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items el
             max_tokens=4000,
             response_format={"type": "json_object"},
         )
-        text = resp.choices[0].message.content.strip()
+        text = strip_code_fences(resp.choices[0].message.content)
         logger.debug("llm_enrich_raw_response", response_length=len(text), first_100=text[:100])
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
         data = _json.loads(text)
         logger.info("llm_enrich_parsed", keys=list(data.keys()),
                      items_count=len(data.get("items", [])),

@@ -5,6 +5,7 @@
 import json
 import structlog
 
+from app.services.llm_json import strip_code_fences
 from app.services.ocr_service import extract_text
 
 logger = structlog.get_logger()
@@ -56,11 +57,7 @@ products: массив товаров, каждый:
             response_format={"type": "json_object"},
         )
 
-        text = resp.choices[0].message.content.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
+        text = strip_code_fences(resp.choices[0].message.content)
         data = json.loads(text)
         result["products"] = data.get("products", [])
         logger.info("techop_parsed", filename=filename, products=len(result["products"]))

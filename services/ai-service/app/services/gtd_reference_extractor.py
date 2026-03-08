@@ -10,23 +10,11 @@ import json
 import re
 import structlog
 
+from app.services.llm_json import strip_code_fences
 from app.services.llm_client import get_llm_client, get_model
 from app.services.ocr_service import extract_text
 
 logger = structlog.get_logger()
-
-
-def _strip_code_fences(text: str) -> str:
-    cleaned = (text or "").strip()
-    if cleaned.startswith("```"):
-        parts = cleaned.split("```")
-        if len(parts) >= 2:
-            cleaned = parts[1]
-        if cleaned.startswith("json"):
-            cleaned = cleaned[4:]
-    return cleaned.strip()
-
-
 def _normalize_hs(value: str | None) -> str:
     digits = re.sub(r"\D", "", str(value or ""))
     if len(digits) < 6:
@@ -119,7 +107,7 @@ def extract_gtd_reference(file_bytes: bytes, filename: str) -> dict:
         response_format={"type": "json_object"},
     )
 
-    raw = _strip_code_fences(response.choices[0].message.content)
+    raw = strip_code_fences(response.choices[0].message.content)
     data = json.loads(raw)
 
     header = _normalize_header(data.get("header") if isinstance(data, dict) else {})

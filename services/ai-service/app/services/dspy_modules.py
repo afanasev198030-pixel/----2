@@ -8,6 +8,8 @@ import re
 from typing import Optional
 import structlog
 
+from app.services.llm_json import strip_code_fences
+
 logger = structlog.get_logger()
 
 # Лог классификации ТН ВЭД — in-memory ring buffer для дебаг-панели
@@ -605,11 +607,7 @@ class HSCodeClassifier:
                     max_tokens=300,
                     response_format={"type": "json_object"},
                 )
-                text = resp.choices[0].message.content.strip()
-                if text.startswith("```"):
-                    text = text.split("```")[1]
-                    if text.startswith("json"):
-                        text = text[4:]
+                text = strip_code_fences(resp.choices[0].message.content)
                 data = json.loads(text)
                 code = _normalize_hs_code(data.get("hs_code", ""), strict=True)
                 if not code:
@@ -768,11 +766,7 @@ def _refine_hs_code(llm_client, prefix_6: str, description: str, model: str) -> 
             temperature=0,
             max_tokens=150,
         )
-        text = refine_resp.choices[0].message.content.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
+        text = strip_code_fences(refine_resp.choices[0].message.content)
         data = json.loads(text)
         code = (data.get("code") or "").replace(".", "").replace(" ", "")
         if code and len(code) == 10:

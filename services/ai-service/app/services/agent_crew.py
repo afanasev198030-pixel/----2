@@ -8,6 +8,8 @@ import re
 from typing import Optional
 import structlog
 
+from app.services.llm_json import strip_code_fences
+
 logger = structlog.get_logger()
 
 _crewai_available = False
@@ -509,11 +511,7 @@ JSON: {{"matches": [...]}}"""},
                 max_tokens=2000,
             )
 
-            text = resp.choices[0].message.content.strip()
-            if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
+            text = strip_code_fences(resp.choices[0].message.content)
             matches = _json.loads(text).get("matches", [])
 
             result = [dict(it) for it in invoice_items]
@@ -624,11 +622,7 @@ JSON:"""},
                 response_format={"type": "json_object"},
             )
 
-            text = resp.choices[0].message.content.strip()
-            if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
+            text = strip_code_fences(resp.choices[0].message.content)
             data = _json.loads(text)
 
             # Маппинг результата
@@ -1918,12 +1912,8 @@ JSON:"""
                 temperature=0,
                 max_tokens=2000,
             )
-            raw = resp.choices[0].message.content.strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            llm_result = _json.loads(raw.strip())
+            raw = strip_code_fences(resp.choices[0].message.content)
+            llm_result = _json.loads(raw)
             logger.info("compile_by_rules_ok", fields=list(llm_result.keys()))
         except Exception as e:
             logger.warning("compile_by_rules_llm_failed", error=str(e))

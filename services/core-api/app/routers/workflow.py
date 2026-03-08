@@ -130,10 +130,7 @@ def _first_doc(docs_by_type: dict[str, list[Document]], doc_type: str) -> Option
     return docs[0] if docs else None
 
 
-async def run_pre_send_checks(
-    declaration: Declaration, db: AsyncSession
-) -> PreSendResult:
-    """Server-side validation before allowing send/sign transitions."""
+def _build_required_declaration_checks(declaration: Declaration) -> list[PreSendCheck]:
     checks: list[PreSendCheck] = []
 
     for field_name in REQUIRED_FIELDS_FOR_SEND:
@@ -158,32 +155,53 @@ async def run_pre_send_checks(
             blocking=True, message="Не указан получатель (графа 8)",
         ))
 
+    return checks
+
+
+async def _load_items_count(declaration_id: uuid.UUID, db: AsyncSession) -> int:
     items_result = await db.execute(
         select(func.count()).select_from(DeclarationItem).where(
-            DeclarationItem.declaration_id == declaration.id
+            DeclarationItem.declaration_id == declaration_id
         )
     )
-    items_count = items_result.scalar() or 0
-    if items_count == 0:
-        checks.append(PreSendCheck(
-            code="NO_ITEMS", severity="error", field="items",
-            blocking=True, message="Нет позиций товаров (графа 31/33)",
-        ))
+    return items_result.scalar() or 0
 
+
+def _build_items_presence_checks(items_count: int) -> list[PreSendCheck]:
+    if items_count == 0:
+        return [
+            PreSendCheck(
+                code="NO_ITEMS",
+                severity="error",
+                field="items",
+                blocking=True,
+                message="Нет позиций товаров (графа 31/33)",
+            )
+        ]
+    return []
+
+
+async def _load_documents(declaration_id: uuid.UUID, db: AsyncSession) -> list[Document]:
     docs_result = await db.execute(
-        select(Document).where(Document.declaration_id == declaration.id)
+        select(Document).where(Document.declaration_id == declaration_id)
     )
-    docs = list(docs_result.scalars().all())
-    docs_count = len(docs)
-    if docs_count == 0:
-        checks.append(PreSendCheck(
-            code="NO_DOCUMENTS", severity="error", field="documents",
-            blocking=True, message="Нет прикреплённых документов",
-        ))
+    return list(docs_result.scalars().all())
+
+
+def _group_documents_by_type(docs: list[Document]) -> dict[str, list[Document]]:
     docs_by_type: dict[str, list[Document]] = {}
     for doc in docs:
         docs_by_type.setdefault(_normalize_document_type(doc), []).append(doc)
+    return docs_by_type
 
+
+def _build_document_matrix_checks(
+    declaration: Declaration,
+    docs_count: int,
+    docs_by_type: dict[str, list[Document]],
+    items_count: int,
+) -> tuple[list[PreSendCheck], bool]:
+    checks: list[PreSendCheck] = []
     recognized_doc_types = sorted(t for t, items in docs_by_type.items() if items and t != "other")
     need_transport_doc = bool(
         declaration.transport_type_border
@@ -197,6 +215,11 @@ async def run_pre_send_checks(
         or declaration.total_net_weight
     )
 
+    if docs_count == 0:
+        checks.append(PreSendCheck(
+            code="NO_DOCUMENTS", severity="error", field="documents",
+            blocking=True, message="Нет прикреплённых документов",
+        ))
     if docs_count > 0 and not docs_by_type.get("invoice"):
         checks.append(PreSendCheck(
             code="MISSING_INVOICE_DOCUMENT",
@@ -239,31 +262,54 @@ async def run_pre_send_checks(
         need_packing_list=need_packing_list,
     )
 
+    return checks, need_transport_doc
+
+
+async def _load_item_rows(declaration_id: uuid.UUID, db: AsyncSession) -> list[DeclarationItem]:
     item_rows_result = await db.execute(
         select(DeclarationItem).where(
-            DeclarationItem.declaration_id == declaration.id,
+            DeclarationItem.declaration_id == declaration_id,
         )
     )
-    item_rows = list(item_rows_result.scalars().all())
+    return list(item_rows_result.scalars().all())
+
+
+def _build_item_quality_checks(item_rows: list[DeclarationItem]) -> list[PreSendCheck]:
     no_hs_count = sum(1 for item in item_rows if not (item.hs_code or "").strip())
     if no_hs_count > 0:
-        checks.append(PreSendCheck(
-            code="ITEMS_WITHOUT_HS", severity="error", field="hs_code",
-            blocking=True, message=f"{no_hs_count} позиций без кода ТН ВЭД",
-        ))
+        return [
+            PreSendCheck(
+                code="ITEMS_WITHOUT_HS",
+                severity="error",
+                field="hs_code",
+                blocking=True,
+                message=f"{no_hs_count} позиций без кода ТН ВЭД",
+            )
+        ]
+    return []
 
+
+async def _load_blocking_issue_count(declaration_id: uuid.UUID, db: AsyncSession) -> int:
     blocking_issues = await db.execute(
         select(func.count()).select_from(ParseIssue).where(
-            ParseIssue.declaration_id == declaration.id,
+            ParseIssue.declaration_id == declaration_id,
             ParseIssue.blocking.is_(True),
             ParseIssue.resolved.is_(False),
         )
     )
-    blocking_count = blocking_issues.scalar() or 0
-    if blocking_count > 0:
+    return blocking_issues.scalar() or 0
+
+
+def _build_issue_checks(
+    declaration: Declaration,
+    blocking_issue_count: int,
+) -> list[PreSendCheck]:
+    checks: list[PreSendCheck] = []
+
+    if blocking_issue_count > 0:
         checks.append(PreSendCheck(
             code="BLOCKING_ISSUES", severity="error", field="ai_issues",
-            blocking=True, message=f"{blocking_count} нерешённых блокирующих проблем парсинга",
+            blocking=True, message=f"{blocking_issue_count} нерешённых блокирующих проблем парсинга",
         ))
 
     if declaration.ai_issues:
@@ -273,6 +319,17 @@ async def run_pre_send_checks(
                 code="AI_BLOCKING_ISSUES", severity="error", field="ai_issues",
                 blocking=True, message=f"{len(ai_blocking)} блокирующих AI-проблем",
             ))
+
+    return checks
+
+
+def _build_cross_document_checks(
+    declaration: Declaration,
+    docs_by_type: dict[str, list[Document]],
+    items_count: int,
+    need_transport_doc: bool,
+) -> tuple[list[PreSendCheck], dict[str, bool]]:
+    checks: list[PreSendCheck] = []
 
     invoice_doc = _first_doc(docs_by_type, "invoice")
     contract_doc = _first_doc(docs_by_type, "contract")
@@ -391,7 +448,22 @@ async def run_pre_send_checks(
             message="Транспортный документ приложен, но его реквизиты не перенесены в декларацию",
         ))
 
+    return checks, {
+        "invoice_doc": bool(invoice_doc),
+        "contract_doc": bool(contract_doc),
+        "packing_doc": bool(packing_doc),
+        "transport_doc": bool(transport_doc),
+    }
+
+
+async def _build_history_drift_checks(
+    declaration: Declaration,
+    item_rows: list[DeclarationItem],
+    db: AsyncSession,
+) -> tuple[list[PreSendCheck], int]:
+    checks: list[PreSendCheck] = []
     drift_warnings = 0
+
     for item in item_rows:
         current_hs = (item.hs_code or "").strip()
         desc_norm = ((item.description or item.commercial_name or "").strip().lower())[:300]
@@ -456,21 +528,69 @@ async def run_pre_send_checks(
         drift_warnings=drift_warnings,
     )
 
+    return checks, drift_warnings
+
+
+def _build_weight_consistency_checks(declaration: Declaration) -> list[PreSendCheck]:
+    if declaration.total_gross_weight and declaration.total_net_weight:
+        if declaration.total_net_weight > declaration.total_gross_weight:
+            return [
+                PreSendCheck(
+                    code="WEIGHT_INCONSISTENCY",
+                    severity="warning",
+                    field="total_net_weight",
+                    blocking=False,
+                    message="Вес нетто превышает вес брутто",
+                )
+            ]
+    return []
+
+
+async def run_pre_send_checks(
+    declaration: Declaration, db: AsyncSession
+) -> PreSendResult:
+    """Server-side validation before allowing send/sign transitions."""
+    checks: list[PreSendCheck] = []
+    checks.extend(_build_required_declaration_checks(declaration))
+
+    items_count = await _load_items_count(declaration.id, db)
+    checks.extend(_build_items_presence_checks(items_count))
+
+    docs = await _load_documents(declaration.id, db)
+    docs_count = len(docs)
+    docs_by_type = _group_documents_by_type(docs)
+    document_checks, need_transport_doc = _build_document_matrix_checks(
+        declaration,
+        docs_count,
+        docs_by_type,
+        items_count,
+    )
+    checks.extend(document_checks)
+
+    item_rows = await _load_item_rows(declaration.id, db)
+    checks.extend(_build_item_quality_checks(item_rows))
+
+    blocking_count = await _load_blocking_issue_count(declaration.id, db)
+    checks.extend(_build_issue_checks(declaration, blocking_count))
+
+    cross_doc_checks, cross_doc_log_payload = _build_cross_document_checks(
+        declaration,
+        docs_by_type,
+        items_count,
+        need_transport_doc,
+    )
+    checks.extend(cross_doc_checks)
+
+    history_drift_checks, _ = await _build_history_drift_checks(declaration, item_rows, db)
+    checks.extend(history_drift_checks)
+
     logger.info(
         "pre_send_cross_doc_checked",
         declaration_id=str(declaration.id),
-        invoice_doc=bool(invoice_doc),
-        contract_doc=bool(contract_doc),
-        packing_doc=bool(packing_doc),
-        transport_doc=bool(transport_doc),
+        **cross_doc_log_payload,
     )
 
-    if declaration.total_gross_weight and declaration.total_net_weight:
-        if declaration.total_net_weight > declaration.total_gross_weight:
-            checks.append(PreSendCheck(
-                code="WEIGHT_INCONSISTENCY", severity="warning", field="total_net_weight",
-                blocking=False, message="Вес нетто превышает вес брутто",
-            ))
+    checks.extend(_build_weight_consistency_checks(declaration))
 
     blocking_total = sum(1 for c in checks if c.blocking)
     return PreSendResult(

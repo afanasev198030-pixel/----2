@@ -192,25 +192,36 @@ const DeclarationEditPage = () => {
     return copy;
   };
 
+  const syncSavedDeclaration = useCallback((saved: Declaration) => {
+    pauseAutoSave(1500);
+    reset(normalizeDecl(saved));
+    queryClient.setQueryData(['declaration', id], saved);
+    if (!getValues().goods_location && saved.goods_location) {
+      setValue('goods_location', saved.goods_location, { shouldDirty: false });
+    }
+    if (!getValues().declarant_inn_kpp && saved.declarant_inn_kpp) {
+      setValue('declarant_inn_kpp', saved.declarant_inn_kpp, { shouldDirty: false });
+    }
+  }, [getValues, id, normalizeDecl, pauseAutoSave, queryClient, reset, setValue]);
+
+  const persistDeclarationDraft = useCallback(async (): Promise<Declaration | null> => {
+    if (!id) return null;
+    const data = sanitizeData(getValues());
+    const saved = await updateDeclaration(id, data);
+    syncSavedDeclaration(saved);
+    return saved;
+  }, [getValues, id, sanitizeData, syncSavedDeclaration]);
+
   const handleSave = useCallback(async () => {
-    if (!id) return;
     try {
-      const data = sanitizeData(getValues());
-      const saved = await updateDeclaration(id, data);
-      pauseAutoSave(1500);
-      reset(normalizeDecl(saved));
-      queryClient.setQueryData(['declaration', id], saved);
-      if (!getValues().goods_location && saved.goods_location) {
-        setValue('goods_location', saved.goods_location, { shouldDirty: false });
-      }
-      if (!getValues().declarant_inn_kpp && saved.declarant_inn_kpp) {
-        setValue('declarant_inn_kpp', saved.declarant_inn_kpp, { shouldDirty: false });
-      }
+      const saved = await persistDeclarationDraft();
+      if (!saved) return;
       setSnackMsg('Сохранено');
     } catch (e: any) {
+      console.error('Declaration save failed:', e?.response?.data || e);
       setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
     }
-  }, [id, getValues, queryClient, setValue]);
+  }, [persistDeclarationDraft]);
 
   useEffect(() => {
     if (!id || !loadedRef.current) return;
@@ -227,26 +238,17 @@ const DeclarationEditPage = () => {
     autoSaveTimer.current = setTimeout(async () => {
       try {
         setAutoSaveStatus('saving');
-        const data = sanitizeData(getValues());
-        const saved = await updateDeclaration(id, data);
-        pauseAutoSave(1500);
-        reset(normalizeDecl(saved));
-        queryClient.setQueryData(['declaration', id], saved);
-        if (!getValues().goods_location && saved.goods_location) {
-          setValue('goods_location', saved.goods_location, { shouldDirty: false });
-        }
-        if (!getValues().declarant_inn_kpp && saved.declarant_inn_kpp) {
-          setValue('declarant_inn_kpp', saved.declarant_inn_kpp, { shouldDirty: false });
-        }
+        await persistDeclarationDraft();
         setAutoSaveStatus('saved');
         setTimeout(() => setAutoSaveStatus('idle'), 2000);
-      } catch {
+      } catch (e: any) {
+        console.error('Declaration autosave failed:', e?.response?.data || e);
         setAutoSaveStatus('idle');
       }
     }, 3000);
 
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [watchedValues, isDirty, activeStep, decl?.status, id, getValues, pauseAutoSave, queryClient, reset, setValue]); // eslint-disable-line
+  }, [watchedValues, isDirty, activeStep, decl?.status, id, persistDeclarationDraft]); // eslint-disable-line
 
   const handleFinish = useCallback(async () => {
     await handleSave();

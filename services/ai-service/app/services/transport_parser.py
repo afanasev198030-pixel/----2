@@ -6,6 +6,7 @@
 import json
 import structlog
 
+from app.services.llm_json import strip_code_fences
 from app.services.ocr_service import extract_text
 
 logger = structlog.get_logger()
@@ -94,11 +95,7 @@ JSON:"""},
             response_format={"type": "json_object"},
         )
 
-        text = resp.choices[0].message.content.strip()
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
+        text = strip_code_fences(resp.choices[0].message.content)
         data = json.loads(text)
         result.update({k: v for k, v in data.items() if v is not None and k in result})
         logger.info("transport_invoice_parsed", filename=filename, freight=result["freight_amount"], currency=result["freight_currency"])

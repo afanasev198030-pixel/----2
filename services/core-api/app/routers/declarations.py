@@ -1,5 +1,4 @@
 import uuid
-import re
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
@@ -31,6 +30,10 @@ from app.schemas import (
     PaginatedResponse,
 )
 from app.middleware.company_filter import get_accessible_company_ids
+from app.utils.declaration_helpers import (
+    merge_company_inn_kpp as _merge_company_inn_kpp,
+    post_address_fallback as _post_address_fallback,
+)
 
 logger = structlog.get_logger()
 
@@ -63,62 +66,6 @@ PROTECTED_SPARSE_UPDATE_FIELDS = {
     "container_info",
     "deal_nature_code",
 }
-
-
-def _normalize_digits(value: Optional[str]) -> str:
-    return re.sub(r"\D", "", value or "")
-
-
-def _parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str]]:
-    raw = (raw_value or "").strip()
-    if not raw:
-        return None, None
-    if "/" in raw:
-        left, right = raw.split("/", 1)
-        inn = _normalize_digits(left)
-        kpp = _normalize_digits(right)
-        return (inn or None), (kpp or None)
-    digits = _normalize_digits(raw)
-    if len(digits) == 19:
-        return digits[:10], digits[10:]
-    if len(digits) == 21:
-        return digits[:12], digits[12:]
-    if len(digits) in (10, 12):
-        return digits, None
-    return (digits or None), None
-
-
-def _merge_company_inn_kpp(company: Optional[Company], current_value: Optional[str]) -> Optional[str]:
-    cur_inn, cur_kpp = _parse_inn_kpp(current_value)
-    comp_inn = _normalize_digits(company.inn) if company and company.inn else ""
-    comp_kpp = _normalize_digits(company.kpp) if company and company.kpp else ""
-    inn = comp_inn or (cur_inn or "")
-    kpp = comp_kpp or (cur_kpp or "")
-    if inn and kpp:
-        return f"{inn}/{kpp}"
-    if inn:
-        return inn
-    return None
-
-
-def _post_address_fallback(code: Optional[str]) -> Optional[str]:
-    if not code:
-        return None
-    fallback = {
-        "10005020": "г. Москва, аэропорт Внуково, Внуковское шоссе, д. 1",
-        "10005030": "г. Москва, ул. Яузская, д. 8",
-        "10002010": "Московская обл., г.о. Химки, аэропорт Шереметьево",
-        "10002020": "Московская обл., г.о. Химки, аэропорт Шереметьево, Карго",
-        "10009100": "Московская обл., г. Домодедово, аэропорт Домодедово",
-        "10129060": "г. Санкт-Петербург, аэропорт Пулково",
-        "10216120": "г. Санкт-Петербург, Гладкий остров",
-        "10130090": "Приморский край, г. Находка, бухта Восточная",
-        "10012020": "Новосибирская обл., аэропорт Толмачёво",
-        "10009000": "Московская обл., г. Реутов, ул. Железнодорожная, д. 9",
-    }
-    return fallback.get(code[:8])
-
-
 def _has_meaningful_value(value) -> bool:
     if value is None:
         return False
