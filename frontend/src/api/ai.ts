@@ -120,11 +120,13 @@ export interface ParseSmartResult {
   invoice_date?: string;
   seller?: { name?: string; country_code?: string; address?: string; inn?: string; kpp?: string; ogrn?: string };
   buyer?: { name?: string; country_code?: string; address?: string; inn?: string; kpp?: string; ogrn?: string };
+  buyer_matches_declarant?: boolean;
   currency?: string;
   total_amount?: number;
   incoterms?: string;
   delivery_place?: string;
   transport_id?: string;
+  transport_doc_number?: string;
   transport_country_code?: string;
   trading_partner_country?: string;  // Гр. 11: страна контрагента
   country_dispatch?: string;          // Гр. 15: страна отправления
@@ -133,6 +135,9 @@ export interface ParseSmartResult {
   country_destination?: string;
   contract_number?: string;
   contract_date?: string;
+  declarant_inn_kpp?: string;
+  responsible_person?: { name?: string; country_code?: string; address?: string; inn?: string; kpp?: string; ogrn?: string } | string;
+  responsible_person_matches_declarant?: boolean;
   total_packages?: number;
   total_gross_weight?: number;
   total_net_weight?: number;
@@ -159,6 +164,20 @@ export interface ParseSmartResult {
   risk_score?: number;
   risk_flags?: any;
   confidence?: number;
+  documents?: Array<{
+    doc_code?: string;
+    doc_type?: string;
+    doc_type_name?: string;
+    doc_number?: string;
+    doc_date?: string;
+    file_key?: string;
+    original_filename?: string;
+    mime_type?: string;
+    file_size?: number;
+    parsed_data?: Record<string, unknown>;
+  }>;
+  evidence_map?: Record<string, unknown>;
+  issues?: Array<Record<string, unknown>>;
   request_id?: string;
 }
 

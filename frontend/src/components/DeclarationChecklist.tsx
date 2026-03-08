@@ -1,26 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { Box, Typography, Checkbox, FormControlLabel, Paper, LinearProgress, Chip, Alert, Button } from '@mui/material';
 import { CheckCircle, RadioButtonUnchecked, Warning } from '@mui/icons-material';
-import client from '../api/client';
+import { getPreSendCheck } from '../api/declarations';
+import { PreSendResult } from '../types';
 
 interface ChecklistProps {
   declaration: any;
   items: any[];
   formValues?: any;  // live form values (react-hook-form watch)
-}
-
-interface ServerPreSendCheck {
-  code: string;
-  severity: string;
-  field?: string;
-  blocking: boolean;
-  message: string;
-}
-
-interface ServerPreSendResult {
-  passed: boolean;
-  checks: ServerPreSendCheck[];
-  blocking_count: number;
 }
 
 const CHECKS = [
@@ -41,9 +28,9 @@ const DeclarationChecklist = ({ declaration, items, formValues }: ChecklistProps
   const d = { ...declaration, ...(formValues || {}) };
   const declarationId = declaration?.id;
 
-  const { data: serverChecks, isLoading: serverChecksLoading } = useQuery<ServerPreSendResult>({
+  const { data: serverChecks, isLoading: serverChecksLoading } = useQuery<PreSendResult>({
     queryKey: ['pre-send-check', declarationId],
-    queryFn: () => client.get(`/declarations/${declarationId}/pre-send-check`).then((r) => r.data),
+    queryFn: () => getPreSendCheck(declarationId),
     enabled: Boolean(declarationId),
     refetchOnWindowFocus: false,
   });

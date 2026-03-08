@@ -10,7 +10,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 import httpx
 import structlog
@@ -19,7 +19,7 @@ from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import (
     Declaration, DeclarationStatus, DeclarationItem,
-    Counterparty, Document, DeclarationLog, User, Company,
+    Counterparty, Document, DeclarationLog, User, Company, Classifier,
 )
 from app.schemas.declaration import DeclarationResponse
 
@@ -213,6 +213,105 @@ def _post_address_fallback(code: Optional[str]) -> Optional[str]:
         "10009000": "Московская обл., г. Реутов, ул. Железнодорожная, д. 9",
     }
     return fallback.get(code[:8])
+
+
+_CURRENCY_ALIASES = {
+    "RMB": "CNY",
+    "YUAN": "CNY",
+    "YUANS": "CNY",
+    "CNH": "CNY",
+    "RUR": "RUB",
+    "RUBLE": "RUB",
+    "RUBLES": "RUB",
+    "РУБЛЬ": "RUB",
+    "РУБЛИ": "RUB",
+    "ЮАНЬ": "CNY",
+    "ЮАНИ": "CNY",
+}
+
+_COUNTRY_ALIASES = {
+    "РОССИЯ": "RU",
+    "РФ": "RU",
+    "RUSSIA": "RU",
+    "RUSSIAN FEDERATION": "RU",
+    "КИТАЙ": "CN",
+    "КНР": "CN",
+    "CHINA": "CN",
+    "ГОНКОНГ": "HK",
+    "HONG KONG": "HK",
+    "HONG KONG SAR": "HK",
+}
+
+
+async def _normalize_classifier_code(
+    db: AsyncSession,
+    classifier_type: str,
+    raw_value: Optional[str],
+) -> Optional[str]:
+    raw = (raw_value or "").strip()
+    if not raw:
+        return None
+
+    compact = re.sub(r"\s+", " ", raw).strip()
+    upper = compact.upper()
+    code_len = 0
+
+    if classifier_type == "currency":
+        upper = _CURRENCY_ALIASES.get(upper, upper)
+        code_len = 3
+    elif classifier_type == "country":
+        upper = _COUNTRY_ALIASES.get(upper, upper)
+        code_len = 2
+
+    if code_len and len(upper) <= code_len and upper:
+        code_result = await db.execute(
+            select(Classifier.code).where(
+                Classifier.classifier_type == classifier_type,
+                Classifier.code == upper[:code_len],
+                Classifier.is_active == True,
+            ).limit(1)
+        )
+        code = code_result.scalar_one_or_none()
+        if code:
+            if code != compact:
+                logger.info(
+                    "classifier_code_normalized",
+                    classifier_type=classifier_type,
+                    raw=compact,
+                    normalized=code,
+                )
+            return code
+
+    normalized_text = compact.lower()
+    name_result = await db.execute(
+        select(Classifier.code).where(
+            Classifier.classifier_type == classifier_type,
+            Classifier.is_active == True,
+            or_(
+                func.lower(Classifier.name_ru) == normalized_text,
+                func.lower(Classifier.name_en) == normalized_text,
+            ),
+        ).limit(1)
+    )
+    code = name_result.scalar_one_or_none()
+    if code:
+        logger.info(
+            "classifier_name_resolved",
+            classifier_type=classifier_type,
+            raw=compact,
+            normalized=code,
+        )
+        return code
+
+    fallback = upper[:code_len] if code_len else upper
+    if fallback and fallback != compact:
+        logger.warning(
+            "classifier_code_fallback_used",
+            classifier_type=classifier_type,
+            raw=compact,
+            fallback=fallback,
+        )
+    return fallback or None
 
 
 # --- Pydantic schemas for parsed data ---
@@ -462,9 +561,10 @@ async def apply_parsed_data(
 
         # Конвертация валюты через calc-service (курсы ЦБ)
         exchange_rate = Decimal("1")
-        currency = data.currency or declaration.currency_code
-        if data.currency:
-            declaration.currency_code = (data.currency or "")[:3] or None
+        normalized_currency = await _normalize_classifier_code(db, "currency", data.currency)
+        currency = normalized_currency or ((declaration.currency_code or "").strip().upper() or None)
+        if currency:
+            declaration.currency_code = currency
 
         # Всегда подтягивать курс ЦБ для не-рублёвых валют
         if currency and currency.upper() != "RUB":
@@ -496,18 +596,26 @@ async def apply_parsed_data(
                 currency=currency, amount=data.total_amount,
                 rate=float(exchange_rate), rub=float(total_rub))
         if data.incoterms:
-            declaration.incoterms_code = (data.incoterms or "")[:3] or None
-        if data.country_origin:
-            declaration.country_origin_code = (data.country_origin or "")[:2] or None
-        if data.country_dispatch:
-            declaration.country_dispatch_code = (data.country_dispatch or "")[:2] or None
-        if data.trading_partner_country:
-            declaration.trading_country_code = (data.trading_partner_country or "")[:2] or None
+            declaration.incoterms_code = (data.incoterms or "").strip().upper()[:3] or None
+        normalized_country_origin = await _normalize_classifier_code(db, "country", data.country_origin)
+        if normalized_country_origin:
+            declaration.country_origin_code = normalized_country_origin
+        normalized_country_dispatch = await _normalize_classifier_code(db, "country", data.country_dispatch)
+        if normalized_country_dispatch:
+            declaration.country_dispatch_code = normalized_country_dispatch
+        normalized_trading_country = await _normalize_classifier_code(db, "country", data.trading_partner_country)
+        if normalized_trading_country:
+            declaration.trading_country_code = normalized_trading_country
         if data.container is not None:
             # Гр. 19: "1" — контейнер, "0" — нет
             declaration.container_info = "1" if data.container else "0"
         # country_destination: всегда RU если не указан
-        declaration.country_destination_code = (data.country_destination or declaration.country_destination_code or "RU")[:2]
+        normalized_country_destination = await _normalize_classifier_code(
+            db,
+            "country",
+            data.country_destination or declaration.country_destination_code or "RU",
+        )
+        declaration.country_destination_code = normalized_country_destination or "RU"
         if data.total_packages is not None:
             declaration.total_packages_count = data.total_packages
         gross_dec = _to_decimal(data.total_gross_weight)
@@ -537,7 +645,7 @@ async def apply_parsed_data(
         if data.delivery_place:
             declaration.delivery_place = data.delivery_place  # Гр. 20: место поставки по Инкотермс
         if data.customs_office_code:
-            declaration.customs_office_code = data.customs_office_code[:8]
+            declaration.customs_office_code = _normalize_digits(data.customs_office_code)[:8] or None
         if data.goods_location and not declaration.goods_location:
             declaration.goods_location = data.goods_location.strip()
         freight_dec = _to_decimal(data.freight_amount)
@@ -589,7 +697,6 @@ async def apply_parsed_data(
         # Адрес СВХ (графа 30): по коду таможенного поста из справочника
         office_code = (declaration.customs_office_code or declaration.entry_customs_code or "")[:8] or None
         if not declaration.goods_location and office_code:
-            from app.models import Classifier
             post_result = await db.execute(
                 select(Classifier).where(
                     Classifier.classifier_type == "customs_post",
@@ -617,6 +724,11 @@ async def apply_parsed_data(
             hs_code = item_data.hs_code or ""
             hs_source = "ai"
             desc_norm = (item_data.description or "")[:300].strip().lower()
+            item_country_origin_code = await _normalize_classifier_code(
+                db,
+                "country",
+                item_data.country_origin_code or data.country_origin,
+            )
 
             if not hs_code and desc_norm and current_user.company_id:
                 try:
@@ -658,7 +770,7 @@ async def apply_parsed_data(
                 description=item_data.description,
                 commercial_name=item_data.commercial_name or item_data.description,
                 hs_code=hs_code,
-                country_origin_code=(item_data.country_origin_code or data.country_origin or "")[:2] or None,
+                country_origin_code=item_country_origin_code,
                 gross_weight=_to_decimal(item_data.gross_weight),
                 net_weight=_to_decimal(item_data.net_weight),
                 unit_price=graph_42,  # гр. 42: фактурная стоимость позиции (не цена за единицу)
@@ -871,6 +983,7 @@ async def _find_or_create_counterparty(
     Обновляет недостающие поля у найденного контрагента.
     """
     existing = None
+    normalized_country_code = await _normalize_classifier_code(db, "country", parsed.country_code)
 
     if parsed.tax_number:
         result = await db.execute(
@@ -903,8 +1016,8 @@ async def _find_or_create_counterparty(
 
     if existing:
         updated = False
-        if parsed.country_code and not existing.country_code:
-            existing.country_code = parsed.country_code
+        if normalized_country_code and not existing.country_code:
+            existing.country_code = normalized_country_code
             updated = True
         if parsed.tax_number and not existing.tax_number:
             existing.tax_number = parsed.tax_number
@@ -927,7 +1040,7 @@ async def _find_or_create_counterparty(
     counterparty = Counterparty(
         type=cp_type,
         name=parsed.name,
-        country_code=parsed.country_code,
+        country_code=normalized_country_code,
         tax_number=effective_tax,
         registration_number=parsed.ogrn,
         address=parsed.address,
@@ -940,7 +1053,7 @@ async def _find_or_create_counterparty(
         "counterparty_created",
         name=parsed.name,
         type=cp_type,
-        country_code=parsed.country_code,
+        country_code=normalized_country_code,
     )
 
     return counterparty.id

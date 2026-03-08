@@ -254,7 +254,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
   useEffect(() => {
     if (!showPreview || !editableResult?.items?.length) return;
 
-    // 1) seed options from backend candidates (already computed during parse-smart)
+    // Seed options from backend candidates, but do not auto-open the list.
     setHsOptions((prev) => {
       let changed = false;
       const next = { ...prev };
@@ -268,17 +268,7 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
       });
       return changed ? next : prev;
     });
-
-    // 2) auto-load similar codes for first rows so the user sees it immediately
-    const maxAutoRows = Math.min(editableResult.items.length, 6);
-    for (let i = 0; i < maxAutoRows; i += 1) {
-      const item = editableResult.items[i];
-      const description = item?.description || item?.commercial_name || '';
-      if (!description || description.length < 3) continue;
-      if (hsOptions[i]?.length || hsOptionsLoading[i]) continue;
-      void loadSimilarCodes(i, item);
-    }
-  }, [showPreview, editableResult, hsOptions, hsOptionsLoading, loadSimilarCodes]);
+  }, [showPreview, editableResult]);
 
   const confidenceColor = (c: number) => {
     if (c >= 0.8) return 'success';
@@ -681,10 +671,20 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
                               <Button
                                 size="small"
                                 variant="outlined"
-                                onClick={() => loadSimilarCodes(i, item)}
+                                onClick={() => {
+                                  if (hsOptions[i]?.length) {
+                                    setExpandedHsRows((prev) => ({ ...prev, [i]: !prev[i] }));
+                                    return;
+                                  }
+                                  void loadSimilarCodes(i, item);
+                                }}
                                 disabled={!!hsOptionsLoading[i] || !(item.description || item.commercial_name)}
                               >
-                                {hsOptionsLoading[i] ? 'Поиск...' : 'Похожие коды'}
+                                {hsOptionsLoading[i]
+                                  ? 'Поиск...'
+                                  : hsOptions[i]?.length
+                                    ? (expandedHsRows[i] ? 'Скрыть похожие коды' : 'Показать похожие коды')
+                                    : 'Похожие коды'}
                               </Button>
                               {!!hsOptions[i]?.length && (
                                 <Chip size="small" color="info" label={`Вариантов: ${hsOptions[i].length}`} />
@@ -692,13 +692,6 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
                             </Box>
                             {!!hsOptions[i]?.length && (
                               <Box sx={{ mt: 0.5 }}>
-                                <Button
-                                  size="small"
-                                  color="inherit"
-                                  onClick={() => setExpandedHsRows((prev) => ({ ...prev, [i]: !prev[i] }))}
-                                >
-                                  {expandedHsRows[i] ? 'Скрыть список' : 'Показать список'}
-                                </Button>
                                 <Collapse in={!!expandedHsRows[i]}>
                                   <Paper variant="outlined" sx={{ p: 0.75, mt: 0.5, maxHeight: 180, overflow: 'auto' }}>
                                     {hsOptions[i].map((opt, k) => (

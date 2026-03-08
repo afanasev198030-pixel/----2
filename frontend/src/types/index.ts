@@ -48,6 +48,55 @@ export type DeclarationStatus =
   | 'released'
   | 'rejected';
 
+export interface AiIssue {
+  code: string;
+  severity: string;
+  field?: string;
+  blocking: boolean;
+  message: string;
+  source?: string;
+  resolved?: boolean;
+}
+
+export interface EvidenceMapEntry {
+  source: string;
+  document_id?: string;
+  confidence?: number;
+  raw_value?: string;
+}
+
+export interface PreSendCheck {
+  code: string;
+  severity: string;
+  field?: string;
+  blocking: boolean;
+  message: string;
+}
+
+export interface PreSendResult {
+  passed: boolean;
+  checks: PreSendCheck[];
+  blocking_count: number;
+}
+
+export interface DeclarationLogEntry {
+  id: string;
+  action: string;
+  old_value?: Record<string, unknown> | null;
+  new_value?: Record<string, unknown> | null;
+  created_at?: string | null;
+  user_id?: string | null;
+}
+
+export interface DeclarationStatusHistoryEntry {
+  id: string;
+  status_code: DeclarationStatus | string;
+  status_text?: string | null;
+  source?: string | null;
+  customs_post_code?: string | null;
+  created_at?: string | null;
+}
+
 export interface Declaration {
   id: string;
   number_internal?: string;
@@ -96,6 +145,9 @@ export interface Declaration {
   spot_amount?: number;
   submitted_at?: string;
   place_and_date?: string;
+  ai_issues?: AiIssue[];
+  evidence_map?: Record<string, EvidenceMapEntry>;
+  ai_confidence?: number;
   created_by?: string;
   created_at: string;
   updated_at?: string;

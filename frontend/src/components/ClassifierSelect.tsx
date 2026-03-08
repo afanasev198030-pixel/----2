@@ -32,6 +32,22 @@ const ClassifierSelect = ({
     [options, value],
   );
 
+  const fallbackSelected = useMemo<Classifier | null>(() => {
+    if (!value || selected) return null;
+    return {
+      id: `fallback-${classifierType}-${value}`,
+      classifier_type: classifierType,
+      code: value.toUpperCase(),
+      name_ru: 'Значение вне справочника',
+      is_active: true,
+    };
+  }, [classifierType, selected, value]);
+
+  const optionsWithFallback = useMemo(
+    () => (fallbackSelected ? [fallbackSelected, ...options] : options),
+    [fallbackSelected, options],
+  );
+
   const handleChange = useCallback(
     (_: any, item: Classifier | null) => onChange(item?.code || '', item || undefined),
     [onChange],
@@ -46,8 +62,8 @@ const ClassifierSelect = ({
     <Autocomplete
       size={size}
       disabled={disabled}
-      options={options}
-      value={selected}
+      options={optionsWithFallback}
+      value={selected || fallbackSelected}
       onChange={handleChange}
       getOptionLabel={getLabel}
       isOptionEqualToValue={(o, v) => o.code === v.code}

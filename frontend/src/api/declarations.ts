@@ -1,5 +1,12 @@
 import client from './client';
-import { Declaration, PaginatedResponse, DeclarationStatus } from '../types';
+import {
+  Declaration,
+  PaginatedResponse,
+  DeclarationStatus,
+  DeclarationLogEntry,
+  DeclarationStatusHistoryEntry,
+  PreSendResult,
+} from '../types';
 
 export interface GetDeclarationsParams {
   page?: number;
@@ -45,5 +52,20 @@ export const changeStatus = async (
   const response = await client.post(`/declarations/${id}/status/`, {
     new_status: newStatus,
   });
+  return response.data;
+};
+
+export const getPreSendCheck = async (id: string): Promise<PreSendResult> => {
+  const response = await client.get<PreSendResult>(`/declarations/${id}/pre-send-check`);
+  return response.data;
+};
+
+export const getDeclarationLogs = async (id: string): Promise<DeclarationLogEntry[]> => {
+  const response = await client.get<DeclarationLogEntry[]>(`/declarations/${id}/logs`);
+  return response.data;
+};
+
+export const getDeclarationStatusHistory = async (id: string): Promise<DeclarationStatusHistoryEntry[]> => {
+  const response = await client.get<DeclarationStatusHistoryEntry[]>(`/declarations/${id}/status-history`);
   return response.data;
 };

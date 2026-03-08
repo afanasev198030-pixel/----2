@@ -73,7 +73,7 @@ export default function AiExplainPanel({ declaration, items }: AiExplainPanelPro
     <Paper sx={{ p: 2, mb: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
         <AiIcon color="primary" fontSize="small" />
-        <Typography variant="subtitle2" fontWeight={700}>AI-анализ</Typography>
+        <Typography variant="subtitle2" fontWeight={700}>Источники AI и история ТН ВЭД</Typography>
         {confidence && (
           <Chip
             icon={<ConfidenceIcon />}

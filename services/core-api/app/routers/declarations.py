@@ -15,6 +15,7 @@ from app.models import (
     DeclarationStatus,
     DeclarationItem,
     DeclarationLog,
+    DeclarationStatusHistory,
     Company,
     Classifier,
     Document,
@@ -247,6 +248,13 @@ async def create_declaration(
         new_value={"status": "draft", "type_code": data.type_code},
     )
     db.add(log_entry)
+    status_history_entry = DeclarationStatusHistory(
+        declaration_id=declaration.id,
+        status_code=DeclarationStatus.DRAFT.value,
+        status_text="Декларация создана",
+        source="system",
+    )
+    db.add(status_history_entry)
 
     # Audit log
     from app.services.audit import log_action
@@ -662,4 +670,60 @@ async def get_declaration_logs(
             "user_id": str(log.user_id) if log.user_id else None,
         }
         for log in logs
+    ]
+
+
+@router.get("/{id}/status-history")
+async def get_declaration_status_history(
+    id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get declaration status history for status timeline."""
+    declaration_result = await db.execute(
+        select(Declaration).where(Declaration.id == id)
+    )
+    declaration = declaration_result.scalar_one_or_none()
+
+    if not declaration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Declaration not found",
+        )
+
+    if current_user.company_id and declaration.company_id != current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied",
+        )
+    if not current_user.company_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User must be associated with a company",
+        )
+
+    result = await db.execute(
+        select(DeclarationStatusHistory)
+        .where(DeclarationStatusHistory.declaration_id == id)
+        .order_by(DeclarationStatusHistory.created_at.asc())
+    )
+    history = result.scalars().all()
+
+    logger.info(
+        "declaration_status_history_requested",
+        declaration_id=str(id),
+        user_id=str(current_user.id),
+        history_count=len(history),
+    )
+
+    return [
+        {
+            "id": str(entry.id),
+            "status_code": entry.status_code,
+            "status_text": entry.status_text,
+            "source": entry.source,
+            "customs_post_code": entry.customs_post_code,
+            "created_at": entry.created_at.isoformat() if entry.created_at else None,
+        }
+        for entry in history
     ]

@@ -6,11 +6,13 @@ import {
   Box, Typography, Button, Container, LinearProgress,
   Stepper, Step, StepLabel, Paper, TextField, Grid,
   IconButton, Chip, Alert, Snackbar, Divider,
+  Accordion, AccordionSummary, AccordionDetails,
 } from '@mui/material';
 import {
   Save, AutoAwesome as AiIcon,
   Visibility as ViewIcon, Delete as DeleteIcon,
   Description as DocsIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
 import {
@@ -31,6 +33,8 @@ import DeclarationChecklist from '../components/DeclarationChecklist';
 import HistoryPanel from '../components/HistoryPanel';
 import CounterpartyLookup from '../components/CounterpartyLookup';
 import AiExplainPanel from '../components/AiExplainPanel';
+import DeclarationStatusTimeline from '../components/DeclarationStatusTimeline';
+import NextActionsPanel from '../components/NextActionsPanel';
 import { Declaration, DeclarationItem, Document as DocType } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
@@ -238,8 +242,10 @@ const DeclarationEditPage = () => {
         invoice_number: parsed.invoice_number, invoice_date: parsed.invoice_date,
         seller: parsed.seller ? { name: parsed.seller.name, country_code: parsed.seller.country_code, address: parsed.seller.address, inn: parsed.seller.inn, kpp: parsed.seller.kpp, ogrn: parsed.seller.ogrn, type: 'seller' } : undefined,
         buyer: parsed.buyer ? { name: parsed.buyer.name, country_code: parsed.buyer.country_code, address: parsed.buyer.address, inn: parsed.buyer.inn, kpp: parsed.buyer.kpp, ogrn: parsed.buyer.ogrn, type: 'buyer' } : undefined,
+        buyer_matches_declarant: parsed.buyer_matches_declarant,
         currency: parsed.currency, total_amount: parsed.total_amount, incoterms: parsed.incoterms,
         delivery_place: parsed.delivery_place,
+        transport_doc_number: parsed.transport_doc_number,
         transport_id: parsed.transport_id,
         transport_country_code: parsed.transport_country_code,
         trading_partner_country: parsed.trading_partner_country,
@@ -247,13 +253,18 @@ const DeclarationEditPage = () => {
         container: parsed.container,
         country_origin: parsed.country_origin, country_destination: parsed.country_destination || 'RU',
         contract_number: parsed.contract_number, contract_date: parsed.contract_date,
+        declarant_inn_kpp: parsed.declarant_inn_kpp,
+        responsible_person: parsed.responsible_person,
+        responsible_person_matches_declarant: parsed.responsible_person_matches_declarant,
         total_packages: parsed.total_packages,
         total_gross_weight: parsed.total_gross_weight, total_net_weight: parsed.total_net_weight,
         transport_type: parsed.transport_type || '40', deal_nature_code: parsed.deal_nature_code || '01', type_code: parsed.type_code || 'IM40',
         customs_office_code: parsed.customs_office_code,
         goods_location: parsed.goods_location,
-        declarant_inn_kpp: parsed.declarant_inn_kpp,
         freight_amount: parsed.freight_amount, freight_currency: parsed.freight_currency,
+        documents: parsed.documents,
+        evidence_map: parsed.evidence_map,
+        issues: parsed.issues,
         items: (parsed.items || []).map((item: any, idx: number) => ({
           line_no: item.line_no || idx + 1,
           description: item.description || item.commercial_name || '',
@@ -490,11 +501,32 @@ const DeclarationEditPage = () => {
                   </Box>
                 </Paper>
               )}
+
+              {items.length > 0 && (
+                <Accordion disableGutters sx={{ mb: 2, '&:before': { display: 'none' } }}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      AI-детали и история ТН ВЭД
+                    </Typography>
+                  </AccordionSummary>
+                  <AccordionDetails sx={{ pt: 0 }}>
+                    <AiExplainPanel declaration={decl} items={items} />
+                  </AccordionDetails>
+                </Accordion>
+              )}
             </Grid>
 
             {/* Right panel */}
             <Grid item xs={12} md={4}>
-              <AiExplainPanel declaration={decl} items={items} />
+              <DeclarationStatusTimeline declaration={decl} />
+              <NextActionsPanel
+                declaration={decl}
+                items={items}
+                documentsCount={docs.length}
+                onGoToUpload={() => setActiveStep(0)}
+                onGoToReview={() => setActiveStep(1)}
+                onOpenDocuments={() => setDocViewerOpen(true)}
+              />
               {(riskScore > 0 || riskFlags) && <Box sx={{ mb: 2 }}><RiskPanel riskScore={riskScore} risks={riskFlags?.risks || []} source={riskFlags?.source} /></Box>}
               <DeclarationChecklist declaration={decl} items={items} formValues={watchedValues} />
               {id && <HistoryPanel declarationId={id} />}
