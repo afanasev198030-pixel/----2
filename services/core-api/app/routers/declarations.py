@@ -36,6 +36,34 @@ logger = structlog.get_logger()
 
 router = APIRouter(prefix="/api/v1/declarations", tags=["declarations"])
 
+PROTECTED_SPARSE_UPDATE_FIELDS = {
+    "currency_code",
+    "total_invoice_value",
+    "exchange_rate",
+    "country_dispatch_code",
+    "country_origin_code",
+    "country_destination_code",
+    "incoterms_code",
+    "delivery_place",
+    "transport_type_border",
+    "transport_type_inland",
+    "customs_office_code",
+    "goods_location",
+    "total_gross_weight",
+    "total_net_weight",
+    "total_packages_count",
+    "total_items_count",
+    "forms_count",
+    "total_customs_value",
+    "trading_country_code",
+    "sender_counterparty_id",
+    "receiver_counterparty_id",
+    "declarant_counterparty_id",
+    "financial_counterparty_id",
+    "container_info",
+    "deal_nature_code",
+}
+
 
 def _normalize_digits(value: Optional[str]) -> str:
     return re.sub(r"\D", "", value or "")
@@ -89,6 +117,42 @@ def _post_address_fallback(code: Optional[str]) -> Optional[str]:
         "10009000": "Московская обл., г. Реутов, ул. Железнодорожная, д. 9",
     }
     return fallback.get(code[:8])
+
+
+def _has_meaningful_value(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict, set, tuple)):
+        return bool(value)
+    return True
+
+
+def _strip_suspicious_sparse_update(
+    update_data: dict,
+    declaration: Declaration,
+) -> list[str]:
+    cleared_fields: list[str] = []
+    filled_fields = 0
+
+    for field in PROTECTED_SPARSE_UPDATE_FIELDS:
+        if field not in update_data:
+            continue
+        incoming_value = update_data.get(field)
+        current_value = getattr(declaration, field, None)
+        if _has_meaningful_value(incoming_value):
+            filled_fields += 1
+            continue
+        if _has_meaningful_value(current_value):
+            cleared_fields.append(field)
+
+    if len(cleared_fields) >= 6 and filled_fields <= 2:
+        for field in cleared_fields:
+            update_data.pop(field, None)
+        return cleared_fields
+
+    return []
 
 
 @router.get("/", response_model=PaginatedResponse)
@@ -357,6 +421,15 @@ async def update_declaration(
     
     # Update fields, track what actually changed
     update_data = data.model_dump(exclude_unset=True)
+    cleared_protected_fields = _strip_suspicious_sparse_update(update_data, declaration)
+    if cleared_protected_fields:
+        logger.warning(
+            "suspicious_sparse_update_blocked",
+            declaration_id=str(id),
+            user_id=str(current_user.id),
+            blocked_fields=cleared_protected_fields,
+        )
+
     changed_fields = {}
     for field, value in update_data.items():
         old_val = getattr(declaration, field, None)

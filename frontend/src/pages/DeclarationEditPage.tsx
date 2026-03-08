@@ -49,6 +49,9 @@ const DeclarationEditPage = () => {
   const [riskFlags, setRiskFlags] = useState<any>(null);
   const [payments, setPayments] = useState<PaymentResult | null>(null);
   const [docViewerOpen, setDocViewerOpen] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
+  const autoSavePausedUntilRef = useRef(0);
 
   // react-hook-form — single source of truth for form state
   const { register, reset, setValue, getValues, watch, formState: { isDirty } } = useForm<any>({
@@ -127,10 +130,20 @@ const DeclarationEditPage = () => {
   const loadedRef = useRef<string>('');
   const initialStepRef = useRef(false);
 
+  const pauseAutoSave = useCallback((ms = 0) => {
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+    autoSavePausedUntilRef.current = Date.now() + ms;
+    setAutoSaveStatus('idle');
+  }, []);
+
   useEffect(() => {
     if (decl && decl.id !== loadedRef.current) {
       reset(normalizeDecl(decl));
       loadedRef.current = decl.id;
+      autoSavePausedUntilRef.current = Date.now() + 1500;
       // Auto-step to review if data already exists
       if (!initialStepRef.current && (decl.currency_code || decl.total_invoice_value)) {
         setActiveStep(1);
@@ -184,6 +197,7 @@ const DeclarationEditPage = () => {
     try {
       const data = sanitizeData(getValues());
       const saved = await updateDeclaration(id, data);
+      pauseAutoSave(1500);
       reset(normalizeDecl(saved));
       queryClient.setQueryData(['declaration', id], saved);
       if (!getValues().goods_location && saved.goods_location) {
@@ -198,16 +212,15 @@ const DeclarationEditPage = () => {
     }
   }, [id, getValues, queryClient, setValue]);
 
-  // Auto-save drafts
-  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const autoSaveTimer = useRef<NodeJS.Timeout | null>(null);
-
   useEffect(() => {
     if (!id || !loadedRef.current) return;
     // Only auto-save drafts
     if (decl?.status !== 'draft') return;
+    // Only auto-save on the actual form step, never on upload/result transition.
+    if (activeStep !== 1) return;
     // Never auto-save untouched or freshly reset form state.
     if (!isDirty) return;
+    if (Date.now() < autoSavePausedUntilRef.current) return;
 
     // Debounce 3 seconds
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
@@ -216,6 +229,7 @@ const DeclarationEditPage = () => {
         setAutoSaveStatus('saving');
         const data = sanitizeData(getValues());
         const saved = await updateDeclaration(id, data);
+        pauseAutoSave(1500);
         reset(normalizeDecl(saved));
         queryClient.setQueryData(['declaration', id], saved);
         if (!getValues().goods_location && saved.goods_location) {
@@ -232,7 +246,7 @@ const DeclarationEditPage = () => {
     }, 3000);
 
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
-  }, [watchedValues, isDirty]); // eslint-disable-line
+  }, [watchedValues, isDirty, activeStep, decl?.status, id, getValues, pauseAutoSave, queryClient, reset, setValue]); // eslint-disable-line
 
   const handleFinish = useCallback(async () => {
     await handleSave();
@@ -242,6 +256,7 @@ const DeclarationEditPage = () => {
   const handleApplyParsed = useCallback(async (parsed: any) => {
     if (!id) return;
     try {
+      pauseAutoSave(15000);
       await client.post(`/declarations/${id}/apply-parsed`, {
         invoice_number: parsed.invoice_number, invoice_date: parsed.invoice_date,
         seller: parsed.seller ? { name: parsed.seller.name, country_code: parsed.seller.country_code, address: parsed.seller.address, inn: parsed.seller.inn, kpp: parsed.seller.kpp, ogrn: parsed.seller.ogrn, type: 'seller' } : undefined,
@@ -285,6 +300,7 @@ const DeclarationEditPage = () => {
       if (parsed.risk_score) setRiskScore(parsed.risk_score);
       if (parsed.risk_flags) setRiskFlags(parsed.risk_flags);
       const fresh = await getDeclaration(id);
+      pauseAutoSave(15000);
       reset(normalizeDecl(fresh));
       loadedRef.current = fresh.id;
       queryClient.setQueryData(['declaration', id], fresh);
@@ -296,7 +312,7 @@ const DeclarationEditPage = () => {
     } catch (e: any) {
       setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
     }
-  }, [id, reset, queryClient, refetchItems]);
+  }, [id, pauseAutoSave, reset, queryClient, refetchItems]);
 
   if (!decl) return <Container sx={{ py: 4 }}><Typography>Загрузка...</Typography></Container>;
 

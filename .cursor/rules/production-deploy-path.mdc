@@ -1,0 +1,30 @@
+---
+description: Production deploy path and safe deploy rules
+alwaysApply: true
+---
+
+# Production Hosts
+
+- User-facing production checked by the user is `http://141.105.65.148/`.
+- On `141.105.65.148`, the live Docker Compose project runs from `/home/2/----2`.
+- Treat `141.105.65.148` as the only production host unless the user explicitly says otherwise.
+
+# Safe Deploy Rules
+
+- For small changes, deploy only affected services.
+- Do not run broad `docker compose build` or full-stack rebuilds unless the user explicitly asks for a full rebuild.
+- For UI-only changes, rebuild/restart only `frontend`.
+- For API-only changes in `core-api`, rebuild/restart only `core-api`.
+- Before changing deploy commands or workflows, verify the live compose working dir on the server if there is any doubt.
+
+# Server State
+
+- On `141.105.65.148`, containers are labeled with working dir `/home/2/----2`.
+- Be careful with server-only runtime files such as `services/ai-service/app/ml_models/hs_classifier_optimized.json`.
+- If a server `git pull` is blocked by untracked runtime files, back them up first instead of deleting them blindly.
+
+# Deploy Troubleshooting
+
+- Do not switch to any other server or IP when debugging production unless the user explicitly names that host.
+- If the user reports an issue on `141.105.65.148`, fix and verify on `141.105.65.148` first.
+- Prefer health checks and targeted verification after deploy instead of rebuilding unrelated services.
