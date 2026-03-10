@@ -281,6 +281,8 @@ def create_from_parsed(session: requests.Session, body: dict) -> dict:
         json=body,
         timeout=LONG_REQUEST_TIMEOUT,
     )
+    if response.status_code >= 400:
+        logger.error("create_from_parsed_failed status=%s body=%s", response.status_code, response.text[:2000])
     response.raise_for_status()
     data = response.json()
     logger.info("create_from_parsed_ok declaration_id=%s", data.get("declaration_id"))
