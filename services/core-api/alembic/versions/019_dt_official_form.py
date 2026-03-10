@@ -48,8 +48,7 @@ def upgrade() -> None:
     # -- Declaration: country_origin_code -> country_origin_name (idempotent) --
     if 'country_origin_code' in decl_cols and 'country_origin_name' not in decl_cols:
         op.alter_column('declarations', 'country_origin_code', new_column_name='country_origin_name', schema='core')
-    if 'country_origin_name' in decl_cols or 'country_origin_code' not in decl_cols:
-        op.execute("ALTER TABLE core.declarations ALTER COLUMN country_origin_name TYPE VARCHAR(60)")
+    op.execute("ALTER TABLE core.declarations ALTER COLUMN country_origin_name TYPE VARCHAR(60)")
 
     # -- DeclarationItem: new fields --
     if 'hs_code_letters' not in item_cols:
