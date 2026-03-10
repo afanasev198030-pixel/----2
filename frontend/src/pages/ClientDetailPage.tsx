@@ -58,7 +58,7 @@ const ClientDetailPage = () => {
 
   const { data: declarationsData, isLoading: declLoading } = useQuery({
     queryKey: ['declarations', 1, 50, client?.client_company_id],
-    queryFn: () => getDeclarations({ page: 1, page_size: 50, company_id: client?.client_company_id }),
+    queryFn: () => getDeclarations({ page: 1, per_page: 50, company_id: client?.client_company_id }),
     enabled: !!client?.client_company_id,
   });
 

@@ -35,6 +35,7 @@ import CounterpartyLookup from '../components/CounterpartyLookup';
 import AiExplainPanel from '../components/AiExplainPanel';
 import DeclarationStatusTimeline from '../components/DeclarationStatusTimeline';
 import NextActionsPanel from '../components/NextActionsPanel';
+import ConfidenceBadge from '../components/ConfidenceBadge';
 import { Declaration, DeclarationItem, Document as DocType } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
@@ -64,10 +65,10 @@ const DeclarationEditPage = () => {
   // Explicitly register custom fields so watch() tracks them properly
   useEffect(() => {
     const customFields = [
-      'currency_code', 'country_dispatch_code', 'country_origin_code',
+      'currency_code', 'country_dispatch_code', 'country_origin_name',
       'country_destination_code', 'incoterms_code', 'deal_nature_code',
-      'transport_type_border', 'trading_country_code',
-      'sender_counterparty_id', 'receiver_counterparty_id'
+      'deal_specifics_code', 'transport_type_border', 'trading_country_code',
+      'special_ref_code', 'sender_counterparty_id', 'receiver_counterparty_id'
     ];
     customFields.forEach(f => register(f));
   }, [register]);
@@ -321,6 +322,11 @@ const DeclarationEditPage = () => {
   const totals = payments?.totals;
   const num = (v: any, d = 2) => v ? Number(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
 
+  const ev = decl.evidence_map;
+  const lbl = (text: string, field: string) => (
+    <>{text}<ConfidenceBadge evidenceMap={ev} fieldName={field} /></>
+  );
+
   return (
     <AppLayout noPadding breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Редактирование' }]}>
       {/* Action toolbar */}
@@ -372,7 +378,7 @@ const DeclarationEditPage = () => {
               const missing: string[] = [];
               if (!watchedValues.currency_code) missing.push('Валюта (22)');
               if (!watchedValues.total_invoice_value) missing.push('Сумма инвойса (22)');
-              if (!watchedValues.country_origin_code) missing.push('Страна происхождения (16)');
+              if (!watchedValues.country_origin_name) missing.push('Страна происхождения (16)');
               if (!watchedValues.country_dispatch_code) missing.push('Страна отправления (15)');
               if (!watchedValues.incoterms_code) missing.push('Incoterms (20)');
               if (!watchedValues.total_gross_weight) missing.push('Вес брутто (35)');
@@ -418,39 +424,67 @@ const DeclarationEditPage = () => {
           <Grid container spacing={2}>
             <Grid item xs={12} md={8}>
               <Paper sx={{ p: 2, mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>Основные данные декларации</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, gap: 1 }}>
+                  <Typography variant="subtitle1" fontWeight={600}>Основные данные декларации</Typography>
+                  {decl.ai_confidence != null && (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        px: 1, py: 0.25, borderRadius: 1, fontWeight: 700,
+                        bgcolor: Number(decl.ai_confidence) >= 0.85 ? '#e8f5e9' : Number(decl.ai_confidence) >= 0.6 ? '#fff3e0' : '#ffebee',
+                        color: Number(decl.ai_confidence) >= 0.85 ? '#2e7d32' : Number(decl.ai_confidence) >= 0.6 ? '#ed6c02' : '#d32f2f',
+                      }}
+                    >
+                      AI: {Math.round(Number(decl.ai_confidence) * 100)}%
+                    </Typography>
+                  )}
+                </Box>
                 <Grid container spacing={2}>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тип (1)" {...register('type_code')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Номер (7)" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label="Валюта (22)" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={`Сумма инвойса (22) ${watchedValues.currency_code || ''}`} {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label="Страна отпр. (15)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_code || ''} onChange={(c) => updateField('country_origin_code', c)} label="Происхождение (16)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label="Назначение (17)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="incoterms" value={watchedValues.incoterms_code || ''} onChange={(c) => updateField('incoterms_code', c)} label="Incoterms (20)" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Город поставки (20)" {...register('delivery_place')} InputLabelProps={{ shrink: true }} placeholder="SHIJIAZHUANG" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Рейс/транспорт (21)" {...register('transport_on_border_id')} InputLabelProps={{ shrink: true }} placeholder="1:U3-9222" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Тип (1)", "type_code")} {...register('type_code')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Внутр. номер" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="declaration_specifics" value={watchedValues.special_ref_code || ''} onChange={(c) => updateField('special_ref_code', c)} label={lbl("Особенности (7)", "special_ref_code")} /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label={lbl("Валюта (22)", "currency_code")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl(`Сумма инвойса (22) ${watchedValues.currency_code || ''}`, "total_invoice_value")} {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label={lbl("Страна отпр. (15)", "country_dispatch_code")} /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_name || ''} onChange={(c) => updateField('country_origin_name', c)} label={lbl("Происхождение (16)", "country_origin_name")} /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label={lbl("Назначение (17)", "country_destination_code")} /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="incoterms" value={watchedValues.incoterms_code || ''} onChange={(c) => updateField('incoterms_code', c)} label={lbl("Incoterms (20)", "incoterms_code")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Город поставки (20)", "delivery_place")} {...register('delivery_place')} InputLabelProps={{ shrink: true }} placeholder="SHIJIAZHUANG" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Рейс/транспорт (21)", "transport_on_border_id")} {...register('transport_on_border_id')} InputLabelProps={{ shrink: true }} placeholder="1:U3-9222" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Курс (23)" {...register('exchange_rate')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="deal_nature" value={watchedValues.deal_nature_code || ''} onChange={(c) => updateField('deal_nature_code', c)} label="Хар. сделки (24)" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="transport_type" value={watchedValues.transport_type_border || ''} onChange={(c) => updateField('transport_type_border', c)} label="Транспорт (25)" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Орган въезда (29)" {...register('entry_customs_code')} InputLabelProps={{ shrink: true }} placeholder="10005020" /></Grid>
-                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.trading_country_code || ''} onChange={(c) => updateField('trading_country_code', c)} label="Торг. страна (11)" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Мест (6)" type="number" {...register('total_packages_count')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Брутто, кг (35)" {...register('total_gross_weight')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Нетто, кг (38)" {...register('total_net_weight')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={12} md={6}><TextField size="small" fullWidth label="Местонахождение товаров / СВХ (30)" {...register('goods_location')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="ИНН/КПП декларанта (14)" {...register('declarant_inn_kpp')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Тамож. пост (29)" {...register('customs_office_code')} InputLabelProps={{ shrink: true }} placeholder="10005030" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="deal_nature" value={watchedValues.deal_nature_code || ''} onChange={(c) => updateField('deal_nature_code', c)} label={lbl("Хар. сделки (24.1)", "deal_nature_code")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Особ. сделки (24.2)", "deal_specifics_code")} {...register('deal_specifics_code')} InputLabelProps={{ shrink: true }} placeholder="01" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="transport_type" value={watchedValues.transport_type_border || ''} onChange={(c) => updateField('transport_type_border', c)} label={lbl("Транспорт (25)", "transport_type_border")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Орган въезда (29)", "entry_customs_code")} {...register('entry_customs_code')} InputLabelProps={{ shrink: true }} placeholder="10005020" /></Grid>
+                  <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.trading_country_code || ''} onChange={(c) => updateField('trading_country_code', c)} label={lbl("Торг. страна (11)", "trading_country_code")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Мест (6)", "total_packages_count")} type="number" {...register('total_packages_count')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Брутто, кг (35)", "total_gross_weight")} {...register('total_gross_weight')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Нетто, кг (38)", "total_net_weight")} {...register('total_net_weight')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={12} md={6}><TextField size="small" fullWidth label={lbl("Местонахождение товаров / СВХ (30)", "goods_location")} {...register('goods_location')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("ИНН/КПП декларанта (14)", "declarant_inn_kpp")} {...register('declarant_inn_kpp')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Тамож. пост (29)", "customs_office_code")} {...register('customs_office_code')} InputLabelProps={{ shrink: true }} placeholder="10005030" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Отсрочка платежей (48)" {...register('payment_deferral')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Реквизиты склада (49)" {...register('warehouse_requisites')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Органы транзита (51)" {...register('transit_offices')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Орган назначения (53)" {...register('destination_office_code')} InputLabelProps={{ shrink: true }} /></Grid>
                 </Grid>
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Участники сделки</Typography>
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
-                    <CounterpartyLookup type="seller" value={watchedValues.sender_counterparty_id || ''} label="Отправитель (графа 2)"
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">Отправитель (графа 2)</Typography>
+                      <ConfidenceBadge evidenceMap={ev} fieldName="sender_counterparty_id" />
+                    </Box>
+                    <CounterpartyLookup type="seller" value={watchedValues.sender_counterparty_id || ''} label="Отправитель"
                       onChange={(cId) => updateField('sender_counterparty_id', cId || '')} />
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <CounterpartyLookup type="buyer" value={watchedValues.receiver_counterparty_id || ''} label="Получатель (графа 8)"
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">Получатель (графа 8)</Typography>
+                      <ConfidenceBadge evidenceMap={ev} fieldName="receiver_counterparty_id" />
+                    </Box>
+                    <CounterpartyLookup type="buyer" value={watchedValues.receiver_counterparty_id || ''} label="Получатель"
                       onChange={(cId) => updateField('receiver_counterparty_id', cId || '')} />
                   </Grid>
                 </Grid>
@@ -478,6 +512,12 @@ const DeclarationEditPage = () => {
                       <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Цена ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price ? Number(item.unit_price).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
                       <Grid item xs={2}><Typography variant="caption" color="text.secondary">Сумма ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price && item.additional_unit_qty ? (Number(item.unit_price) * Number(item.additional_unit_qty)).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
                       <Grid item xs={2}><Typography variant="caption" color="text.secondary">Тамож. стоимость (руб)</Typography><Typography variant="body2" fontWeight={600} color="primary.main">{item.customs_value_rub ? Number(item.customs_value_rub).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
+                    </Grid>
+                    <Grid container spacing={1} sx={{ mt: 0.5 }}>
+                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Стат. ст-ть USD (46)</Typography><Typography variant="body2">{item.statistical_value_usd ? Number(item.statistical_value_usd).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
+                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Код 33.2</Typography><Typography variant="body2">{item.hs_code_letters || '—'}</Typography></Grid>
+                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Код 33.3</Typography><Typography variant="body2">{item.hs_code_extra || '—'}</Typography></Grid>
+                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">34b преф.</Typography><Typography variant="body2">{item.country_origin_pref_code || '—'}</Typography></Grid>
                     </Grid>
                     {!item.hs_code && <Alert severity="warning" sx={{ mt: 1 }} icon={<AiIcon />}>Нажмите "Подобрать" или введите код вручную.</Alert>}
                     <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'flex-start' }}>

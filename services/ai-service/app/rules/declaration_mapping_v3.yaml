@@ -335,7 +335,7 @@ header_graphs:
       Источники: сертификат происхождения, декларация соответствия (страна изготовителя).
     target:
       kind: core_declaration
-      field: country_origin_code
+      field: country_origin_name
     sources: [origin_certificate, conformity_declaration]
     source_notes:
       origin_certificate: "Сертификат происхождения — основной источник."

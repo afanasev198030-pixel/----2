@@ -70,7 +70,7 @@ export const updateBrokerClient = async (id: string, data: Partial<CreateBrokerC
 
 export const getClientDeclarations = async (
   clientId: string,
-  params?: { page?: number; page_size?: number }
+  params?: { page?: number; per_page?: number }
 ): Promise<PaginatedResponse<Declaration>> => {
   const response = await client.get(`/broker/clients/${clientId}/declarations`, { params });
   return response.data;

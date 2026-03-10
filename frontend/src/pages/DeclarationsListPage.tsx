@@ -106,7 +106,7 @@ const DeclarationsListPage = () => {
 
   const { data, isLoading } = useQuery({
     queryKey: ['declarations', page, perPage],
-    queryFn: () => getDeclarations({ page, page_size: perPage }),
+    queryFn: () => getDeclarations({ page, per_page: perPage }),
   });
 
   const createMutation = useMutation({
@@ -169,7 +169,7 @@ const DeclarationsListPage = () => {
         currency_code: original.currency_code,
         country_dispatch_code: original.country_dispatch_code,
         country_destination_code: original.country_destination_code,
-        country_origin_code: original.country_origin_code,
+        country_origin_name: original.country_origin_name,
         incoterms_code: original.incoterms_code,
         deal_nature_code: original.deal_nature_code,
         transport_type_border: original.transport_type_border,

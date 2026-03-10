@@ -59,7 +59,7 @@ def build_declaration_xml(
     receiver : dict | None
         Counterparty for графа 8 (consignee).
     payments : list[dict] | None
-        Customs payments (currently unused in XML body, reserved).
+        Customs payments for графа 47 / B.
     """
     root = etree.Element("DeclarationOnGoods", nsmap=NSMAP)
 
@@ -75,6 +75,9 @@ def build_declaration_xml(
     # Customs procedure (digits after IM/EX)
     procedure_digits = "".join(ch for ch in type_code if ch.isdigit())
     _sub(root, "CustomsProcedure", procedure_digits or "40")
+
+    # --- Графа 7: особенности декларирования ---
+    _sub(root, "SpecialReferenceCode", decl.get("special_ref_code"))
 
     # --- Declaration number block ---
     dn = etree.SubElement(root, "DeclarationNumber")
@@ -95,7 +98,6 @@ def build_declaration_xml(
         _sub(ce, "OrganizationName", receiver.get("name"))
         _sub(ce, "Address", receiver.get("address"))
         _sub(ce, "CountryCode", receiver.get("country_code"))
-        # INN from tax_number
         _sub(ce, "INN", receiver.get("tax_number"))
 
     # --- Financial / regulatory ---
@@ -103,23 +105,26 @@ def build_declaration_xml(
     contract = decl.get("transport_at_border") or decl.get("number_internal")
     _sub(fr, "ContractNumber", contract)
     _sub(fr, "DealNatureCode", decl.get("deal_nature_code"))
+    _sub(fr, "DealSpecificsCode", decl.get("deal_specifics_code"))
 
     # --- Transport info ---
     ti = etree.SubElement(root, "TransportInfo")
     _sub(ti, "BorderTransportMode", decl.get("transport_type_border"))
+    _sub(ti, "InlandTransportMode", decl.get("transport_type_inland"))
     _sub(ti, "TransportDocument", decl.get("transport_at_border"))
+    _sub(ti, "ContainerIndicator", decl.get("container_info"))
 
     # --- Countries ---
-    trading_country = decl.get("country_dispatch_code") or decl.get("country_origin_code")
+    trading_country = decl.get("trading_country_code") or decl.get("country_dispatch_code")
     _sub(root, "TradeCountry", trading_country)
     _sub(root, "DispatchCountry", decl.get("country_dispatch_code"))
     _sub(root, "DestinationCountry", decl.get("country_destination_code"))
-    _sub(root, "OriginCountry", decl.get("country_origin_code"))
+    _sub(root, "OriginCountry", decl.get("country_origin_name"))
 
     # --- Delivery terms (Incoterms) ---
-    dt = etree.SubElement(root, "DeliveryTerms")
-    _sub(dt, "Code", decl.get("incoterms_code"))
-    _sub(dt, "Place", decl.get("loading_place"))
+    dt_el = etree.SubElement(root, "DeliveryTerms")
+    _sub(dt_el, "Code", decl.get("incoterms_code"))
+    _sub(dt_el, "Place", decl.get("delivery_place") or decl.get("loading_place"))
 
     # --- Currency info ---
     ci = etree.SubElement(root, "CurrencyInfo")
@@ -133,6 +138,7 @@ def build_declaration_xml(
     _sub(cs, "TotalPackagesCount", decl.get("total_packages_count"))
     _sub(cs, "TotalGrossWeight", decl.get("total_gross_weight"))
     _sub(cs, "TotalNetWeight", decl.get("total_net_weight"))
+    _sub(cs, "TotalCustomsValue", decl.get("total_customs_value"))
 
     # --- Declaration items ---
     di_root = etree.SubElement(root, "DeclarationItems")
@@ -143,16 +149,50 @@ def build_declaration_xml(
         _sub(item_el, "GoodsDescription", item.get("description"))
         _sub(item_el, "CommercialName", item.get("commercial_name"))
         _sub(item_el, "HSCode", item.get("hs_code"))
+        _sub(item_el, "HSCodeLetters", item.get("hs_code_letters"))
+        _sub(item_el, "HSCodeExtra", item.get("hs_code_extra"))
         _sub(item_el, "OriginCountryCode", item.get("country_origin_code"))
+        _sub(item_el, "OriginCountryPrefCode", item.get("country_origin_pref_code"))
         _sub(item_el, "GrossWeight", item.get("gross_weight"))
         _sub(item_el, "NetWeight", item.get("net_weight"))
+        _sub(item_el, "PreferenceCode", item.get("preference_code"))
+        _sub(item_el, "ProcedureCode", item.get("procedure_code"))
         _sub(item_el, "Quantity", item.get("additional_unit_qty"))
+        _sub(item_el, "AdditionalUnit", item.get("additional_unit"))
         _sub(item_el, "UnitPrice", item.get("unit_price"))
         _sub(item_el, "CustomsValue", item.get("customs_value_rub"))
+        _sub(item_el, "StatisticalValueUSD", item.get("statistical_value_usd"))
         _sub(item_el, "ValuationMethod", item.get("mos_method_code"))
+
+    # --- Payments (графа 47) ---
+    if payments:
+        pay_root = etree.SubElement(root, "Payments")
+        for pay in payments:
+            pay_el = etree.SubElement(pay_root, "Payment")
+            _sub(pay_el, "PaymentTypeCode", pay.get("payment_type_code"))
+            _sub(pay_el, "PaymentType", pay.get("payment_type"))
+            _sub(pay_el, "BaseAmount", pay.get("base_amount"))
+            _sub(pay_el, "Rate", pay.get("rate"))
+            _sub(pay_el, "Amount", pay.get("amount"))
+            _sub(pay_el, "PaymentSpecifics", pay.get("payment_specifics"))
+
+    # --- Графа 48: отсрочка платежей ---
+    _sub(root, "PaymentDeferral", decl.get("payment_deferral"))
+
+    # --- Графа 49: реквизиты склада ---
+    _sub(root, "WarehouseRequisites", decl.get("warehouse_requisites"))
+
+    # --- Графа 51: органы транзита ---
+    _sub(root, "TransitOffices", decl.get("transit_offices"))
+
+    # --- Графа 53: орган назначения ---
+    _sub(root, "DestinationOffice", decl.get("destination_office_code"))
 
     # --- Customs office ---
     _sub(root, "CustomsOffice", decl.get("customs_office_code"))
+
+    # --- Графа 54: место и дата ---
+    _sub(root, "PlaceAndDate", decl.get("place_and_date"))
 
     # Serialize
     xml_bytes: bytes = etree.tostring(

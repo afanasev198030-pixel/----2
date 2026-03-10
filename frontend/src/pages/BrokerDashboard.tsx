@@ -52,7 +52,7 @@ const BrokerDashboard = () => {
 
   const { data: declarationsData, isLoading: declLoading } = useQuery({
     queryKey: ['declarations', 1, 50],
-    queryFn: () => getDeclarations({ page: 1, page_size: 50 }),
+    queryFn: () => getDeclarations({ page: 1, per_page: 50 }),
   });
 
   const { data: clientsData, isLoading: clientsLoading } = useQuery({

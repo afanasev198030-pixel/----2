@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict
 
 from .declaration_item import DeclarationItemResponse
@@ -15,8 +15,9 @@ class DeclarationCreate(BaseModel):
     receiver_counterparty_id: Optional[uuid.UUID] = None
     financial_counterparty_id: Optional[uuid.UUID] = None
     declarant_counterparty_id: Optional[uuid.UUID] = None
+    special_ref_code: Optional[str] = None
     country_dispatch_code: Optional[str] = None
-    country_origin_code: Optional[str] = None
+    country_origin_name: Optional[str] = None
     country_destination_code: Optional[str] = None
     transport_at_border: Optional[str] = None
     container_info: Optional[str] = None
@@ -26,6 +27,7 @@ class DeclarationCreate(BaseModel):
     total_invoice_value: Optional[Decimal] = None
     exchange_rate: Optional[Decimal] = None
     deal_nature_code: Optional[str] = None
+    deal_specifics_code: Optional[str] = None
     transport_type_border: Optional[str] = None
     transport_type_inland: Optional[str] = None
     loading_place: Optional[str] = None
@@ -48,6 +50,10 @@ class DeclarationCreate(BaseModel):
     transport_on_border_id: Optional[str] = None
     entry_customs_code: Optional[str] = None
     goods_location: Optional[str] = None
+    payment_deferral: Optional[str] = None
+    warehouse_requisites: Optional[str] = None
+    transit_offices: Optional[str] = None
+    destination_office_code: Optional[str] = None
 
 
 class DeclarationUpdate(BaseModel):
@@ -57,8 +63,9 @@ class DeclarationUpdate(BaseModel):
     receiver_counterparty_id: Optional[uuid.UUID] = None
     financial_counterparty_id: Optional[uuid.UUID] = None
     declarant_counterparty_id: Optional[uuid.UUID] = None
+    special_ref_code: Optional[str] = None
     country_dispatch_code: Optional[str] = None
-    country_origin_code: Optional[str] = None
+    country_origin_name: Optional[str] = None
     country_destination_code: Optional[str] = None
     transport_at_border: Optional[str] = None
     container_info: Optional[str] = None
@@ -68,6 +75,7 @@ class DeclarationUpdate(BaseModel):
     total_invoice_value: Optional[Decimal] = None
     exchange_rate: Optional[Decimal] = None
     deal_nature_code: Optional[str] = None
+    deal_specifics_code: Optional[str] = None
     transport_type_border: Optional[str] = None
     transport_type_inland: Optional[str] = None
     loading_place: Optional[str] = None
@@ -90,6 +98,10 @@ class DeclarationUpdate(BaseModel):
     transport_on_border_id: Optional[str] = None
     entry_customs_code: Optional[str] = None
     goods_location: Optional[str] = None
+    payment_deferral: Optional[str] = None
+    warehouse_requisites: Optional[str] = None
+    transit_offices: Optional[str] = None
+    destination_office_code: Optional[str] = None
 
 
 class DeclarationResponse(BaseModel):
@@ -104,8 +116,9 @@ class DeclarationResponse(BaseModel):
     receiver_counterparty_id: Optional[uuid.UUID]
     financial_counterparty_id: Optional[uuid.UUID]
     declarant_counterparty_id: Optional[uuid.UUID]
+    special_ref_code: Optional[str] = None
     country_dispatch_code: Optional[str]
-    country_origin_code: Optional[str]
+    country_origin_name: Optional[str] = None
     country_destination_code: Optional[str]
     transport_at_border: Optional[str]
     container_info: Optional[str]
@@ -115,6 +128,7 @@ class DeclarationResponse(BaseModel):
     total_invoice_value: Optional[Decimal]
     exchange_rate: Optional[Decimal]
     deal_nature_code: Optional[str]
+    deal_specifics_code: Optional[str] = None
     transport_type_border: Optional[str]
     transport_type_inland: Optional[str]
     loading_place: Optional[str]
@@ -142,6 +156,15 @@ class DeclarationResponse(BaseModel):
     transport_on_border_id: Optional[str] = None
     entry_customs_code: Optional[str] = None
     goods_location: Optional[str] = None
+    payment_deferral: Optional[str] = None
+    warehouse_requisites: Optional[str] = None
+    transit_offices: Optional[str] = None
+    destination_office_code: Optional[str] = None
+    evidence_map: Optional[dict[str, Any]] = None
+    ai_confidence: Optional[Decimal] = None
+    ai_issues: Optional[list[dict]] = None
+    freight_amount: Optional[Decimal] = None
+    freight_currency: Optional[str] = None
     created_by: uuid.UUID
     created_at: Optional[datetime]
     updated_at: Optional[datetime]

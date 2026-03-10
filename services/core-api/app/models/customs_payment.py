@@ -33,6 +33,8 @@ class CustomsPayment(Base):
         UUID(as_uuid=True), ForeignKey("core.declaration_items.id"), nullable=True
     )
     payment_type: Mapped[str] = mapped_column(String(20))
+    payment_type_code: Mapped[Optional[str]] = mapped_column(String(4))
+    payment_specifics: Mapped[Optional[str]] = mapped_column(String(2))
     base_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
     rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(10, 4))
     amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))

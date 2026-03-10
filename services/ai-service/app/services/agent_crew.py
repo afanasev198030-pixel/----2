@@ -26,6 +26,7 @@ from app.services.dspy_modules import (
 )
 from app.services.index_manager import get_index_manager
 from app.services.ocr_service import extract_text
+from app.services.invoice_parser import _is_garbage_desc
 from app.services.rules_engine import (
     EvidenceTracker, validate_declaration,
     build_graph_rules_prompt, get_source_priority_map,
@@ -310,6 +311,7 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
         "awb_number": None,
         "shipper_name": None,
         "shipper_address": None,
+        "destination_airport": None,
     }
     if not text or len(text.strip()) < 20:
         return result
@@ -336,8 +338,15 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
     • B/L → название судна (vessel name)
     • Ж/д → номер поезда или локомотива
 - awb_number: номер авиационной накладной (только для AWB, формат NNN-NNNNNNNN)
-- transport_country_code: ISO 3166-1 alpha-2 код страны регистрации ТС (страна перевозчика)
+- transport_country_code: ISO 3166-1 alpha-2 код страны регистрации конкретного транспортного средства.
+    ВАЖНО: если регистрация конкретного ВС неизвестна (нет tail number / бортового знака) — вернуть "00".
+    Для AWB: если известен только перевозчик, но не борт — "00".
 - vehicle_count: количество транспортных средств (обычно 1)
+- destination_airport: IATA-код аэропорта/порта назначения (графа 29 ДТ — таможня на границе).
+    Искать в полях: "Airport of Destination", "Destination", "DEST", "To", "Аэропорт назначения".
+    Примеры: "SVO", "SVO2", "DME", "VKO", "LED", "SVX", "OVB".
+    Для CMR/авто: код пограничного перехода или города (например "МОСКВА", "БРЕСТ").
+    Если не найдено — null.
 - shipper_name: полное наименование ОТПРАВИТЕЛЯ груза (графа 2 ДТ).
     Искать в полях: "Shipper", "Shipper's Name", "Consignor", "Отправитель", "Грузоотправитель".
     Это компания, которая отправляет груз (НЕ перевозчик и НЕ агент).
@@ -345,7 +354,7 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
     Искать в полях: "Shipper's Address", "Address", "Адрес отправителя" — обычно сразу под именем отправителя.
     Включить: улицу, город, почтовый индекс, страну.
 
-ВАЖНО: shipper_name и shipper_address обязательны для графы 2 ДТ. Если видишь имя и адрес рядом — извлеки оба.
+ВАЖНО: shipper_name, shipper_address и destination_airport обязательны для граф 2 и 29 ДТ.
 
 Текст документа:
 {text[:6000]}
@@ -364,6 +373,8 @@ JSON:"""},
         result["vehicle_count"] = data.get("vehicle_count") or 1
         result["shipper_name"] = data.get("shipper_name")
         result["shipper_address"] = data.get("shipper_address")
+        dest = (data.get("destination_airport") or "").strip().upper()
+        result["destination_airport"] = dest or None
         logger.info("transport_doc_parsed", filename=filename,
                     vehicle_id=result["vehicle_id"], doc_type=result["vehicle_type"])
     except Exception as e:
@@ -770,12 +781,26 @@ JSON:"""},
             file_hash = _hashlib.md5(file_bytes).hexdigest()[:12]
             cached = _parse_cache.get(file_hash)
             if cached:
-                logger.info("parse_cache_hit", filename=filename, doc_type=doc_type)
+                cache_ok = True
+                # Не использовать кеш инвойса, если в нём нет цен —
+                # при предыдущем парсинге мог упасть LLM.
                 if cached.get("_cache_type") == "invoice":
-                    parsed_docs["invoice"] = cached
-                elif cached.get("_cache_type") == "packing":
-                    parsed_docs["packing"] = cached
-                continue
+                    cached_items = cached.get("items", [])
+                    has_any_price = any(
+                        it.get("unit_price") or it.get("line_total")
+                        for it in cached_items
+                    ) if cached_items else False
+                    if cached_items and not has_any_price:
+                        cache_ok = False
+                        logger.info("parse_cache_skip_no_prices",
+                                    filename=filename, items=len(cached_items))
+                if cache_ok:
+                    logger.info("parse_cache_hit", filename=filename, doc_type=doc_type)
+                    if cached.get("_cache_type") == "invoice":
+                        parsed_docs["invoice"] = cached
+                    elif cached.get("_cache_type") == "packing":
+                        parsed_docs["packing"] = cached
+                    continue
 
             if doc_type == "invoice":
                 self._progress("parsing", f"[{i+1}/{total_files}] AI: инвойс...", pct)
@@ -1057,20 +1082,30 @@ JSON:"""},
                         result["ogrn"] = p["ogrn"]
             return result
 
-        # Графа 2 (Отправитель) — приоритет по правилам:
-        # 1. Транспортный документ (AWB/CMR/B/L) — поле Shipper/Consignor
-        # 2. Заявка (Application) — forwarding_agent / shipper
-        # 3. Транспортный инвойс — shipper (fallback)
-        # 4. Инвойс на товары — seller
-        # 5. Контракт — seller (только для дополнения address/country/inn)
+        # Графа 2 (Отправитель) — ТОЛЬКО транспортные источники:
+        # 1. Транспортный документ (AWB/CMR/B/L) — Shipper/Consignor
+        # 2. Заявка на ПЕРЕВОЗКУ (Application) — Отправитель/Shipper
+        # 3. Транспортный инвойс — Shipper
+        # Товарный инвойс (seller) и контракт (seller) НЕ используются —
+        # это стороны сделки (Гр.11), а не физический грузоотправитель.
         transport_shipper = {"name": transport.get("shipper_name"),
                              "address": transport.get("shipper_address")} if transport.get("shipper_name") else None
         app_forwarder = application.get("forwarding_agent") or application.get("shipper")
         transp_inv_shipper = {"name": transport_inv.get("shipper_name"),
                               "address": transport_inv.get("shipper_address")} if transport_inv.get("shipper_name") else None
-        contract_seller = contract.get("seller")
 
-        seller = _extract_party([transport_shipper, app_forwarder, transp_inv_shipper, inv.get("seller"), contract_seller], "seller")
+        sender = _extract_party([transport_shipper, app_forwarder, transp_inv_shipper], "seller")
+
+        # Fallback: если ни один транспортный документ не дал отправителя —
+        # берём продавца из товарного инвойса/контракта с предупреждением.
+        # Это НЕ правильный источник для Гр.2, но лучше чем пустое поле.
+        if not sender:
+            sender = _extract_party([inv.get("seller"), contract.get("seller")], "seller")
+            if sender:
+                logger.warning("sender_fallback_to_invoice_seller",
+                               name=sender.get("name"),
+                               msg="Гр.2: отправитель не найден в транспортных документах. "
+                                   "Использован продавец из инвойса/контракта — ТРЕБУЕТ ПРОВЕРКИ.")
 
         buyer = _extract_party([contract.get("buyer"), inv.get("buyer")], "buyer")
         if not buyer and contract.get("buyer_name"):
@@ -1188,8 +1223,17 @@ JSON:"""},
             if _SKIP_ITEM.search(desc or ""):
                 logger.info("skip_non_goods_item", description=desc[:60])
                 continue
+            # Quality gate: drop descriptions that are clearly garbage —
+            # service lines, header rows, payment conditions, raw codes, etc.
+            if _is_garbage_desc(desc or ""):
+                logger.warning("skip_garbage_item", description=(desc or "")[:80],
+                               msg="Описание не похоже на товар — строка отфильтрована quality gate")
+                continue
             hs_from_doc = _normalize_hs_code(item_data.get("hs_code"))
-            if hs_from_doc and (not desc or str(desc).strip().lower().startswith("item ")):
+            if hs_from_doc and (not desc or _re.match(
+                r'^(item|товар|product|goods?|позиция|pos)\s*\d*$',
+                str(desc).strip(), _re.IGNORECASE,
+            )):
                 logger.info("drop_untrusted_doc_hs", hs_code=hs_from_doc, description=(desc or "")[:40])
                 hs_from_doc = ""
             qty = _safe_float(item_data.get("quantity"))
@@ -1466,41 +1510,161 @@ JSON:"""},
         if not awb_number and transport_inv.get("awb_number"):
             awb_number = transport_inv["awb_number"]
 
-        # Код таможенного поста: определяем по AWB prefix (airline code → аэропорт)
-        customs_office_code = None
-        _AWB_TO_POST = {
-            "728": "10005020",  # Внуково
-            "784": "10002020",  # Шереметьево
-            "555": "10009100",  # Домодедово
-            "880": "10005020",  # Внуково (DHL/UPS)
-            "176": "10002020",  # Шереметьево (Emirates)
-            "074": "10002020",  # Шереметьево (KLM)
-            "172": "10005020",  # Внуково (прочие)
-            "580": "10002020",  # Шереметьево (прочие)
+        # ── Гр. 29: Таможня на границе ──────────────────────────────────────────
+        # Приоритет определения:
+        #   1) IATA-код аэропорта назначения из транспортного документа (AWB/CMR/B/L)
+        #   2) Regex-поиск "DEST:" в тексте транспортного документа
+        #   3) Префикс AWB-номера (код авиакомпании)
+        #   4) Дефолт для воздушного транспорта
+
+        # Справочник: IATA-код аэропорта / ИКАО → (код таможенного органа, наименование, адрес места нахождения)
+        _DESTINATION_TO_POST: dict[str, tuple[str, str, str]] = {
+            # Москва — Шереметьево (Грузовой)
+            "SVO":  ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+            "SVO2": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+            "UUEE": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+            # Москва — Внуково
+            "VKO":  ("10005030", "Т/П Аэропорт Внуково",                "г. Москва, Внуковское шоссе, д. 4"),
+            "UUWW": ("10005030", "Т/П Аэропорт Внуково",                "г. Москва, Внуковское шоссе, д. 4"),
+            # Москва — Домодедово
+            "DME":  ("10009100", "Т/П Аэропорт Домодедово",             "Московская обл., г.о. Домодедово, Аэропорт Домодедово"),
+            "UUDD": ("10009100", "Т/П Аэропорт Домодедово",             "Московская обл., г.о. Домодедово, Аэропорт Домодедово"),
+            # Москва — Жуковский
+            "ZIA":  ("10005040", "Т/П Аэропорт Жуковский",              "Московская обл., г.о. Жуковский, Аэропорт Жуковский"),
+            "UUBW": ("10005040", "Т/П Аэропорт Жуковский",              "Московская обл., г.о. Жуковский, Аэропорт Жуковский"),
+            # Санкт-Петербург — Пулково
+            "LED":  ("10206020", "Т/П Аэропорт Пулково",                "г. Санкт-Петербург, Аэропорт Пулково, Пулковское ш."),
+            "ULLI": ("10206020", "Т/П Аэропорт Пулково",                "г. Санкт-Петербург, Аэропорт Пулково, Пулковское ш."),
+            # Екатеринбург — Кольцово
+            "SVX":  ("10502050", "Т/П Аэропорт Кольцово",               "Свердловская обл., г. Екатеринбург, Аэропорт Кольцово"),
+            "USSS": ("10502050", "Т/П Аэропорт Кольцово",               "Свердловская обл., г. Екатеринбург, Аэропорт Кольцово"),
+            # Новосибирск — Толмачёво
+            "OVB":  ("10609040", "Т/П Аэропорт Толмачёво",              "Новосибирская обл., г. Новосибирск, Аэропорт Толмачёво"),
+            "UNNT": ("10609040", "Т/П Аэропорт Толмачёво",              "Новосибирская обл., г. Новосибирск, Аэропорт Толмачёво"),
+            # Красноярск — Емельяново
+            "KJA":  ("10614040", "Т/П Аэропорт Красноярск (Емельяново)", "Красноярский край, г. Красноярск, Аэропорт Емельяново"),
+            "UNKL": ("10614040", "Т/П Аэропорт Красноярск (Емельяново)", "Красноярский край, г. Красноярск, Аэропорт Емельяново"),
+            # Владивосток — Кневичи
+            "VVO":  ("10702030", "Т/П Аэропорт Владивосток",            "Приморский край, г. Владивосток, Аэропорт Кневичи"),
+            "UHWW": ("10702030", "Т/П Аэропорт Владивосток",            "Приморский край, г. Владивосток, Аэропорт Кневичи"),
+            # Хабаровск — Новый
+            "KHV":  ("10703040", "Т/П Аэропорт Хабаровск",             "Хабаровский край, г. Хабаровск, Аэропорт Новый"),
+            "UHHH": ("10703040", "Т/П Аэропорт Хабаровск",             "Хабаровский край, г. Хабаровск, Аэропорт Новый"),
+            # Казань
+            "KZN":  ("10404080", "Т/П Аэропорт Казань",                 "Республика Татарстан, г. Казань, Аэропорт Казань"),
+            "UWKD": ("10404080", "Т/П Аэропорт Казань",                 "Республика Татарстан, г. Казань, Аэропорт Казань"),
+            # Уфа
+            "UFA":  ("10401060", "Т/П Аэропорт Уфа",                    "Республика Башкортостан, г. Уфа, Аэропорт Уфа"),
+            "UWUU": ("10401060", "Т/П Аэропорт Уфа",                    "Республика Башкортостан, г. Уфа, Аэропорт Уфа"),
+            # Самара — Курумоч
+            "KUF":  ("10412030", "Т/П Аэропорт Самара (Курумоч)",       "Самарская обл., г. Самара, Аэропорт Курумоч"),
+            "UWWW": ("10412030", "Т/П Аэропорт Самара (Курумоч)",       "Самарская обл., г. Самара, Аэропорт Курумоч"),
+            # Ростов-на-Дону — Платов
+            "ROV":  ("10313110", "Т/П Аэропорт Ростов-на-Дону (Платов)", "Ростовская обл., г. Ростов-на-Дону, Аэропорт Платов"),
+            "URRP": ("10313110", "Т/П Аэропорт Ростов-на-Дону (Платов)", "Ростовская обл., г. Ростов-на-Дону, Аэропорт Платов"),
+            # Краснодар — Пашковский
+            "KRR":  ("10309110", "Т/П Аэропорт Краснодар (Пашковский)", "Краснодарский край, г. Краснодар, Аэропорт Пашковский"),
+            "URKK": ("10309110", "Т/П Аэропорт Краснодар (Пашковский)", "Краснодарский край, г. Краснодар, Аэропорт Пашковский"),
+            # Сочи — Адлер
+            "AER":  ("10317110", "Т/П Аэропорт Сочи",                   "Краснодарский край, г. Сочи, Аэропорт Адлер"),
+            "URSS": ("10317110", "Т/П Аэропорт Сочи",                   "Краснодарский край, г. Сочи, Аэропорт Адлер"),
+            # Иркутск
+            "IKT":  ("10607040", "Т/П Аэропорт Иркутск",                "Иркутская обл., г. Иркутск, Аэропорт Иркутск"),
+            "UIII": ("10607040", "Т/П Аэропорт Иркутск",                "Иркутская обл., г. Иркутск, Аэропорт Иркутск"),
+            # Омск — Центральный
+            "OMS":  ("10610040", "Т/П Аэропорт Омск (Центральный)",     "Омская обл., г. Омск, Аэропорт Центральный"),
+            "UNOO": ("10610040", "Т/П Аэропорт Омск (Центральный)",     "Омская обл., г. Омск, Аэропорт Центральный"),
+            # Тюмень — Рощино
+            "TJM":  ("10503050", "Т/П Аэропорт Тюмень (Рощино)",        "Тюменская обл., г. Тюмень, Аэропорт Рощино"),
+            "USTR": ("10503050", "Т/П Аэропорт Тюмень (Рощино)",        "Тюменская обл., г. Тюмень, Аэропорт Рощино"),
+            # Нижний Новгород — Стригино
+            "GOJ":  ("10408030", "Т/П Аэропорт Нижний Новгород (Стригино)", "Нижегородская обл., г. Нижний Новгород, Аэропорт Стригино"),
+            "UWGG": ("10408030", "Т/П Аэропорт Нижний Новгород (Стригино)", "Нижегородская обл., г. Нижний Новгород, Аэропорт Стригино"),
+            # Пермь — Большое Савино
+            "PEE":  ("10411070", "Т/П Аэропорт Пермь (Большое Савино)", "Пермский край, г. Пермь, Аэропорт Большое Савино"),
+            "USPP": ("10411070", "Т/П Аэропорт Пермь (Большое Савино)", "Пермский край, г. Пермь, Аэропорт Большое Савино"),
+            # Минеральные Воды
+            "MRV":  ("10802050", "Т/П Аэропорт Минеральные Воды",       "Ставропольский край, г. Минеральные Воды, Аэропорт Минеральные Воды"),
+            "URMM": ("10802050", "Т/П Аэропорт Минеральные Воды",       "Ставропольский край, г. Минеральные Воды, Аэропорт Минеральные Воды"),
+            # Калининград — Храброво
+            "KGD":  ("10012030", "Т/П Аэропорт Калининград (Храброво)", "Калининградская обл., г. Калининград, Аэропорт Храброво"),
+            "UMKK": ("10012030", "Т/П Аэропорт Калининград (Храброво)", "Калининградская обл., г. Калининград, Аэропорт Храброво"),
+            # Мурманск
+            "MMK":  ("10207070", "Т/П Аэропорт Мурманск",               "Мурманская обл., г. Мурманск, Аэропорт Мурманск"),
+            "ULMM": ("10207070", "Т/П Аэропорт Мурманск",               "Мурманская обл., г. Мурманск, Аэропорт Мурманск"),
+            # Якутск
+            "YKS":  ("10704030", "Т/П Аэропорт Якутск",                 "Республика Саха (Якутия), г. Якутск, Аэропорт Якутск"),
+            "UEEE": ("10704030", "Т/П Аэропорт Якутск",                 "Республика Саха (Якутия), г. Якутск, Аэропорт Якутск"),
+            # Магадан — Сокол
+            "GDX":  ("10706040", "Т/П Аэропорт Магадан (Сокол)",        "Магаданская обл., г. Магадан, Аэропорт Сокол"),
+            "UHMM": ("10706040", "Т/П Аэропорт Магадан (Сокол)",        "Магаданская обл., г. Магадан, Аэропорт Сокол"),
+            # Петропавловск-Камчатский — Елизово
+            "PKC":  ("10705030", "Т/П Аэропорт Петропавловск-Камчатский", "Камчатский край, г. Петропавловск-Камчатский, Аэропорт Елизово"),
+            "UHPP": ("10705030", "Т/П Аэропорт Петропавловск-Камчатский", "Камчатский край, г. Петропавловск-Камчатский, Аэропорт Елизово"),
+            # Южно-Сахалинск — Хомутово
+            "UUS":  ("10707050", "Т/П Аэропорт Южно-Сахалинск",         "Сахалинская обл., г. Южно-Сахалинск, Аэропорт Хомутово"),
+            "UHSS": ("10707050", "Т/П Аэропорт Южно-Сахалинск",         "Сахалинская обл., г. Южно-Сахалинск, Аэропорт Хомутово"),
+            # Челябинск — Баландино
+            "CEK":  ("10504050", "Т/П Аэропорт Челябинск (Баландино)",  "Челябинская обл., г. Челябинск, Аэропорт Баландино"),
+            "USCC": ("10504050", "Т/П Аэропорт Челябинск (Баландино)",  "Челябинская обл., г. Челябинск, Аэропорт Баландино"),
+            # Воронеж — Чертовицкое
+            "VOZ":  ("10104030", "Т/П Аэропорт Воронеж (Чертовицкое)",  "Воронежская обл., г. Воронеж, Аэропорт Чертовицкое"),
+            "UUOO": ("10104030", "Т/П Аэропорт Воронеж (Чертовицкое)",  "Воронежская обл., г. Воронеж, Аэропорт Чертовицкое"),
         }
-        if awb_number:
+
+        # Fallback по префиксу AWB (IATA-код авиакомпании → аэропорт базирования для грузов в РФ)
+        _AWB_PREFIX_TO_POST: dict[str, tuple[str, str, str]] = {
+            "999": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),  # Air China Cargo
+            "784": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),  # Aeroflot Cargo
+            "555": ("10009100", "Т/П Аэропорт Домодедово",             "Московская обл., г.о. Домодедово, Аэропорт Домодедово"),                   # UPS
+            "880": ("10005030", "Т/П Аэропорт Внуково",                "г. Москва, Внуковское шоссе, д. 4"),                                       # DHL
+            "176": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),  # Emirates
+            "074": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),  # KLM
+            "172": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),  # Lufthansa Cargo
+            "580": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),  # Turkish Airlines
+            "728": ("10005030", "Т/П Аэропорт Внуково",                "г. Москва, Внуковское шоссе, д. 4"),                                       # UTair
+        }
+
+        _DEFAULT_POST: tuple[str, str, str] = (
+            "10005020",
+            "Т/П Аэропорт Шереметьево (Грузовой)",
+            "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш.",
+        )
+
+        customs_office_code: Optional[str] = None
+        customs_office_name: Optional[str] = None
+        goods_location: Optional[str] = None
+
+        # Priority 1: IATA-код назначения из LLM-разбора транспортного документа
+        destination_airport = (transport.get("destination_airport") or "").upper().strip()
+
+        # Priority 2 (regex fallback): "DEST: SVO2" в тексте AWB или транспортного инвойса
+        if not destination_airport:
+            for _raw_src in (transport.get("raw_text") or "", str(transport_inv)):
+                _dest_m = re.search(r'\bDEST\s*[:\-]?\s*([A-Z]{3,4})\b', _raw_src, re.IGNORECASE)
+                if _dest_m:
+                    destination_airport = _dest_m.group(1).upper()
+                    logger.info("destination_from_regex", destination=destination_airport)
+                    break
+
+        if destination_airport and destination_airport in _DESTINATION_TO_POST:
+            customs_office_code, customs_office_name, goods_location = _DESTINATION_TO_POST[destination_airport]
+            logger.info("customs_from_destination", destination=destination_airport,
+                        code=customs_office_code, name=customs_office_name)
+
+        # Priority 3: префикс AWB-номера
+        if not customs_office_code and awb_number:
             awb_prefix = awb_number.split("-")[0] if "-" in awb_number else awb_number[:3]
-            customs_office_code = _AWB_TO_POST.get(awb_prefix)
+            if awb_prefix in _AWB_PREFIX_TO_POST:
+                customs_office_code, customs_office_name, goods_location = _AWB_PREFIX_TO_POST[awb_prefix]
+                logger.info("customs_from_awb_prefix", prefix=awb_prefix,
+                            code=customs_office_code, name=customs_office_name)
 
-        _POST_ADDR = {
-            "10005020": "г. Москва, аэропорт Внуково, Внуковское шоссе, д. 1",
-            "10005030": "г. Москва, Внуковское шоссе, д. 1",
-            "10002020": "Московская обл., г.о. Химки, аэропорт Шереметьево, Карго",
-            "10009100": "Московская обл., г. Домодедово, аэропорт Домодедово",
-        }
-
-        # Default: если AWB есть но пост не определён — Внуково
-        if awb_number and not customs_office_code:
-            customs_office_code = "10005030"
-            logger.info("customs_office_default", awb=awb_number, code=customs_office_code)
-        # Если вообще нет AWB но transport_type=40 (воздушный) — Внуково
+        # Priority 4: fallback — воздушный транспорт → Шереметьево (Грузовой)
         if not customs_office_code and transport_type == "40":
-            customs_office_code = "10005030"
-
-        goods_location = _POST_ADDR.get(customs_office_code or "", "")
-        # Fallback: если всё ещё пусто
-        if not goods_location and customs_office_code:
-            goods_location = f"Таможенный пост {customs_office_code}"
+            customs_office_code, customs_office_name, goods_location = _DEFAULT_POST
+            logger.warning("customs_office_fallback_default", code=customs_office_code,
+                           reason="destination и AWB-prefix не определены")
 
         # Гр. 22: валюта — ТОЛЬКО из контракта (единственный источник по правилам).
         currency = contract.get("currency")
@@ -1525,17 +1689,36 @@ JSON:"""},
             )
 
         # ── Evidence tracking ──
-        seller_src = "transport_doc" if transport_shipper else ("application" if app_forwarder else ("transport_invoice" if transp_inv_shipper else "invoice"))
-        ev.record("seller", seller, seller_src, confidence=0.9 if seller_src == "transport_doc" else 0.8, graph=2)
+        sender_src = "transport_doc" if transport_shipper else ("application" if app_forwarder else "transport_invoice")
+        ev.record("seller", sender, sender_src, confidence=0.9 if sender_src == "transport_doc" else 0.8, graph=2)
         buyer_src = "contract" if contract.get("buyer") or contract.get("buyer_name") else "invoice"
         ev.record("buyer", buyer, buyer_src, confidence=0.85 if buyer_src == "contract" else 0.8, graph=8)
         ev.record("currency", currency, "contract", confidence=0.97 if currency else 0.3, graph=22)
         ev.record("total_amount", total_amount, "invoice", confidence=0.85, graph=22)
-        # Графа 20: Инкотермс — 1) Заявка, 2) Контракт (инвойс НЕ является источником)
+        # Графа 20: Инкотермс — 1) Заявка на перевозку, 2) Контракт.
+        # Товарный инвойс НЕ является источником условий поставки.
         inco_val = application.get("incoterms") or contract.get("incoterms")
         delivery_place_val = application.get("delivery_place") or contract.get("delivery_place")
         inco_src = "application" if application.get("incoterms") else "contract"
         ev.record("incoterms", inco_val, inco_src, confidence=0.85, graph=20)
+
+        # Предупреждение при расхождении условий поставки между документами
+        app_inco = application.get("incoterms")
+        app_place = application.get("delivery_place")
+        inv_inco = inv.get("incoterms")
+        contract_inco = contract.get("incoterms")
+        if app_inco and inv_inco and app_inco.upper() != inv_inco.upper():
+            logger.warning("incoterms_conflict_app_vs_invoice",
+                           application=f"{app_inco} {app_place or ''}".strip(),
+                           invoice=inv_inco,
+                           msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ инвойс ({inv_inco}). "
+                               f"Используются условия из заявки на перевозку.")
+        if app_inco and contract_inco and app_inco.upper() != contract_inco.upper():
+            logger.warning("incoterms_conflict_app_vs_contract",
+                           application=f"{app_inco} {app_place or ''}".strip(),
+                           contract=contract_inco,
+                           msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ контракт ({contract_inco}). "
+                               f"Используются условия из заявки на перевозку.")
         # Графа 16: агрегация страны происхождения из всех позиций
         _EU_COUNTRIES = {"AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"}
         unique_origins = set()
@@ -1574,19 +1757,24 @@ JSON:"""},
                   "contract" if contract.get("buyer") else "invoice", confidence=0.8, graph=14)
 
         # Гр. 11, 15, 19: страна контрагента, страна отправления, контейнер
-        # Гр. 11: страна торгового партнёра (контрагента по контракту = продавца)
-        seller_cc = seller.get("country_code") if seller and isinstance(seller, dict) else None
+
+        # Гр. 11: страна торгового партнёра = страна ПРОДАВЦА ПО КОНТРАКТУ.
+        # НЕ путать с sender (отправитель из транспортного документа, Гр.2).
+        # Пример: продавец ZED Group (HK) ≠ грузоотправитель HK SAN GENSHIN (CN).
+        contract_seller = contract.get("seller") or {}
+        contract_seller_cc = contract_seller.get("country_code") if isinstance(contract_seller, dict) else None
         trading_partner = (
             contract.get("seller_country")
+            or contract_seller_cc
             or inv.get("seller_country")
-            or seller_cc
         )
 
-        # Гр. 15: страна отправления — страна откуда отправлен груз
+        # Гр. 15: страна отправления — откуда физически отправлен груз.
+        # Источники: заявка на перевозку, транспортные документы, sender (Гр.2).
+        sender_cc = sender.get("country_code") if sender and isinstance(sender, dict) else None
         country_dispatch_val = (
             application.get("country_dispatch")
-            or inv.get("country_dispatch")
-            or seller_cc
+            or sender_cc
         )
 
         # Гр. 19: контейнерная перевозка
@@ -1597,7 +1785,7 @@ JSON:"""},
         result = {
             "invoice_number": inv.get("invoice_number"),
             "invoice_date": inv.get("invoice_date"),
-            "seller": seller,
+            "seller": sender,
             "buyer": buyer,
             "buyer_matches_declarant": buyer_matches_declarant,
             "currency": currency,
@@ -1620,6 +1808,7 @@ JSON:"""},
             "transport_country_code": transport.get("transport_country_code"),
             "delivery_place": delivery_place_val,
             "customs_office_code": customs_office_code,
+            "customs_office_name": customs_office_name,
             "goods_location": goods_location,
             "deal_nature_code": "01",
             "type_code": "IM40",
@@ -1639,9 +1828,9 @@ JSON:"""},
         ev.record("responsible_person",
                   responsible_person_data.get("name") if responsible_person_data else "СМ. ГРАФУ 14 ДТ",
                   rp_src, confidence=0.95, graph=9)
-        tp_src = "contract" if contract.get("seller_country") else ("invoice" if inv.get("seller_country") else "seller")
+        tp_src = "contract" if (contract.get("seller_country") or contract_seller_cc) else "invoice"
         ev.record("trading_partner_country", trading_partner, tp_src, confidence=0.85, graph=11)
-        cd_src = "application" if application.get("country_dispatch") else ("invoice" if inv.get("country_dispatch") else "seller")
+        cd_src = "application" if application.get("country_dispatch") else "sender"
         ev.record("country_dispatch", country_dispatch_val, cd_src, confidence=0.75, graph=15)
         ev.record("container", container_val, "transport_type" if transport_type else "unknown", confidence=0.6, graph=19)
 
@@ -1877,7 +2066,7 @@ JSON:"""},
 Верни JSON со следующими полями (null если нет данных):
 {{
   "type_code": "код типа декларации (гр.1), обычно ИМ 40",
-  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.2: Приоритет: 1) transport_doc_parsed.shipper, 2) application_statement.forwarding_agent, 3) transport_invoice.shipper, 4) invoice.seller. Контракт НЕ источник.
+  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.2 ОТПРАВИТЕЛЬ: ТОЛЬКО транспортные источники: 1) transport_doc.shipper, 2) application_statement.shipper, 3) transport_invoice.shipper. Товарный инвойс и контракт НЕ источники.
   "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
   "responsible_person": "гр.9: 'СМ. ГРАФУ 14 ДТ' по умолчанию. Заполнять данными ТОЛЬКО при трёхстороннем договоре (is_trilateral=true).",
   "trading_partner_country": "гр.11: ISO2 страна контрагента",
@@ -1895,7 +2084,6 @@ JSON:"""},
   "deal_nature_code": "гр.24 подр.1: трёхзначный код характера сделки (010=купля-продажа, 020=бартер, 030=безвозмездная)",
   "contract_number": "гр.37: номер контракта",
   "contract_date": "гр.37: дата контракта ГГГГ-ММ-ДД",
-  "customs_office_code": "гр.30: код таможенного поста",
   "special_features_code": "гр.7: код особенностей или null"
 }}
 
@@ -1927,6 +2115,7 @@ JSON:"""
             "responsible_person", "responsible_person_matches_declarant",
             "transport_id", "transport_doc_number",
             "currency", "country_origin", "incoterms",
+            "customs_office_code", "customs_office_name", "goods_location",
             "documents", "items", "evidence_map", "issues",
         }
 
