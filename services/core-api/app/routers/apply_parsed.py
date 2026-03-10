@@ -563,7 +563,7 @@ async def _apply_declaration_header_fields(
         or _normalize_deal_nature_code(declaration.deal_nature_code)
         or "01"
     )
-    if data.type_code:
+    if data.type_code and not declaration.type_code:
         declaration.type_code = str(data.type_code)[:10]
     if data.transport_type:
         transport_map = {

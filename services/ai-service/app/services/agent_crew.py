@@ -2111,6 +2111,7 @@ JSON:"""
         # Поля, вычисленные в _compile_declaration со строгим приоритетом
         # источников, защищены от перезаписи LLM (если уже имеют значение).
         _PRIORITY_FIELDS = {
+            "type_code", "deal_nature_code",
             "seller", "buyer", "buyer_matches_declarant",
             "responsible_person", "responsible_person_matches_declarant",
             "transport_id", "transport_doc_number",
