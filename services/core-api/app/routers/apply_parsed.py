@@ -531,7 +531,7 @@ async def _apply_declaration_header_fields(
         declaration.incoterms_code = (data.incoterms or "").strip().upper()[:3] or None
 
     if data.country_origin:
-        declaration.country_origin_name = data.country_origin or None
+        declaration.country_origin_name = (data.country_origin or "")[:60] or None
     normalized_country_dispatch = await _normalize_classifier_code(db, "country", data.country_dispatch)
     if normalized_country_dispatch:
         declaration.country_dispatch_code = normalized_country_dispatch
@@ -564,7 +564,7 @@ async def _apply_declaration_header_fields(
         or "01"
     )
     if data.type_code:
-        declaration.type_code = data.type_code
+        declaration.type_code = str(data.type_code)[:10]
     if data.transport_type:
         transport_map = {
             "air": "40",
@@ -580,11 +580,11 @@ async def _apply_declaration_header_fields(
         declaration.transport_type_border = transport_type
         declaration.transport_type_inland = transport_type
     if data.transport_doc_number:
-        declaration.transport_at_border = data.transport_doc_number
+        declaration.transport_at_border = str(data.transport_doc_number)[:100]
     if data.transport_id:
-        declaration.transport_on_border_id = data.transport_id
+        declaration.transport_on_border_id = str(data.transport_id)[:100]
     if data.delivery_place:
-        declaration.delivery_place = data.delivery_place
+        declaration.delivery_place = str(data.delivery_place)[:200]
     if data.customs_office_code:
         declaration.customs_office_code = _normalize_digits(data.customs_office_code)[:8] or None
     if data.goods_location and not declaration.goods_location:
@@ -594,7 +594,7 @@ async def _apply_declaration_header_fields(
     if freight_dec is not None:
         declaration.freight_amount = freight_dec
     if data.freight_currency:
-        declaration.freight_currency = data.freight_currency
+        declaration.freight_currency = str(data.freight_currency)[:3]
 
     declaration.total_items_count = len(data.items) if data.items else 0
 
@@ -611,6 +611,9 @@ async def _apply_declaration_header_fields(
             ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
             ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
             ("freight_currency", 3), ("customs_office_code", 8), ("type_code", 10),
+            ("country_origin_name", 60), ("transport_at_border", 100),
+            ("transport_on_border_id", 100), ("delivery_place", 200),
+            ("declarant_inn_kpp", 30), ("declarant_ogrn", 15), ("declarant_phone", 20),
         ],
     )
     await _fill_goods_location_from_post(db, declaration)
@@ -682,15 +685,15 @@ async def _create_declaration_items(
             declaration_id=declaration.id,
             item_no=item_data.line_no,
             description=item_data.description,
-            commercial_name=item_data.commercial_name or item_data.description,
-            hs_code=hs_code,
-            country_origin_code=item_country_origin_code,
+            commercial_name=((item_data.commercial_name or item_data.description) or "")[:500] or None,
+            hs_code=(hs_code or "")[:10] or None,
+            country_origin_code=(item_country_origin_code or "")[:2] or None,
             gross_weight=_to_decimal(item_data.gross_weight),
             net_weight=_to_decimal(item_data.net_weight),
             unit_price=graph_42,
             package_count=item_data.package_count,
-            package_type=item_data.package_type,
-            additional_unit=item_data.unit,
+            package_type=((item_data.package_type or "")[:50]) or None,
+            additional_unit=((item_data.unit or "")[:20]) or None,
             additional_unit_qty=_to_decimal(item_data.quantity),
             mos_method_code="1",
             risk_score=data.risk_score or 0,
@@ -766,8 +769,9 @@ def _attach_parsed_documents(
     db: AsyncSession,
     declaration: Declaration,
     documents: list[ParsedDocumentRef],
-) -> int:
-    documents_linked = 0
+) -> tuple[int, list[Document]]:
+    """Create Document records and return (count, created_docs) for evidence linking."""
+    created_docs: list[Document] = []
 
     for doc_data in documents:
         normalized_doc_type = _normalize_doc_type(
@@ -796,9 +800,50 @@ def _attach_parsed_documents(
             parsed_data=doc_data.parsed_data,
         )
         db.add(doc)
-        documents_linked += 1
+        created_docs.append(doc)
 
-    return documents_linked
+    return len(created_docs), created_docs
+
+
+def _enrich_evidence_map_with_document_ids(
+    evidence_map: dict | None,
+    created_docs: list[Document],
+) -> dict | None:
+    """Link evidence_map entries to concrete Document IDs by matching source type to doc_type."""
+    if not evidence_map or not created_docs:
+        return evidence_map
+
+    # doc_type → document_id lookup (first match wins)
+    type_to_doc_id: dict[str, str] = {}
+    for doc in created_docs:
+        doc_type = str(doc.doc_type).lower().replace("documenttype.", "")
+        if doc_type not in type_to_doc_id:
+            type_to_doc_id[doc_type] = str(doc.id)
+
+    # source values used by EvidenceTracker → document doc_type mapping
+    source_to_doc_type = {
+        "invoice": "invoice",
+        "contract": "contract",
+        "packing_list": "packing_list",
+        "transport_doc": "transport_doc",
+        "transport_invoice": "transport_invoice",
+        "application_statement": "application_statement",
+        "specification": "specification",
+        "tech_description": "tech_description",
+        "transport": "transport_doc",
+        "packing": "packing_list",
+    }
+
+    enriched = dict(evidence_map)
+    for field, info in enriched.items():
+        if not isinstance(info, dict) or info.get("document_id"):
+            continue
+        source = info.get("source", "")
+        mapped_type = source_to_doc_type.get(source, source)
+        doc_id = type_to_doc_id.get(mapped_type)
+        if doc_id:
+            info["document_id"] = doc_id
+    return enriched
 
 
 def _build_apply_parsed_log_entry(
@@ -877,7 +922,7 @@ async def apply_parsed_data(
         company = await db.get(Company, current_user.company_id) if current_user.company_id else None
         merged_inn_kpp = _build_declarant_inn_kpp(company, data.declarant_inn_kpp or declaration.declarant_inn_kpp)
         if merged_inn_kpp:
-            declaration.declarant_inn_kpp = merged_inn_kpp
+            declaration.declarant_inn_kpp = str(merged_inn_kpp)[:30]
 
         # --- 1. Создать/найти контрагентов ---
         sender_id = None
@@ -918,9 +963,9 @@ async def apply_parsed_data(
 
         if declarant_id:
             declaration.declarant_counterparty_id = declarant_id
-            declaration.declarant_ogrn = decl_ogrn
+            declaration.declarant_ogrn = str(decl_ogrn)[:15] if decl_ogrn else None
             if company and company.contact_phone:
-                declaration.declarant_phone = company.contact_phone
+                declaration.declarant_phone = str(company.contact_phone)[:20]
 
         # Графа 8: по умолчанию «СМ. ГРАФУ 14 ДТ» (receiver = declarant)
         # Исключение: трёхсторонний договор — отдельный получатель
@@ -1004,11 +1049,14 @@ async def apply_parsed_data(
                             items=len(created_items))
 
         # --- 4. Привязать документы ---
-        counters["documents"] = _attach_parsed_documents(db, declaration, data.documents)
+        doc_count, created_docs = _attach_parsed_documents(db, declaration, data.documents)
+        counters["documents"] = doc_count
 
         # --- 5. Сохранить evidence_map и ai_confidence ---
         if data.evidence_map:
-            declaration.evidence_map = data.evidence_map
+            declaration.evidence_map = _enrich_evidence_map_with_document_ids(
+                data.evidence_map, created_docs,
+            )
         if data.confidence is not None:
             declaration.ai_confidence = Decimal(str(data.confidence))
         if data.issues:
@@ -1030,6 +1078,10 @@ async def apply_parsed_data(
                 ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
                 ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
                 ("customs_office_code", 8), ("type_code", 10),
+                ("country_origin_name", 60), ("transport_at_border", 100),
+                ("transport_on_border_id", 100), ("delivery_place", 200),
+                ("declarant_inn_kpp", 30), ("declarant_ogrn", 15), ("declarant_phone", 20),
+                ("freight_currency", 3),
             ],
         )
 
@@ -1185,3 +1237,76 @@ async def _find_or_create_counterparty(
     )
 
     return counterparty.id
+
+
+# ──────────────────────────────────────────────────────────────
+# Evidence map editing
+# ──────────────────────────────────────────────────────────────
+
+class EvidenceFieldPatch(BaseModel):
+    """Patch for a single evidence_map entry."""
+    source: Optional[str] = None
+    document_id: Optional[str] = None
+    confidence: Optional[float] = None
+    value_preview: Optional[str] = None
+    note: Optional[str] = None
+
+
+class EvidencePatchRequest(BaseModel):
+    """Partial update of evidence_map — only specified fields are changed."""
+    fields: dict[str, EvidenceFieldPatch]
+
+
+@router.patch(
+    "/{declaration_id}/evidence",
+    response_model=dict,
+    summary="Update individual evidence_map entries",
+)
+async def patch_evidence_map(
+    declaration_id: uuid.UUID,
+    data: EvidencePatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Declaration).where(Declaration.id == declaration_id)
+    )
+    declaration = result.scalar_one_or_none()
+    if not declaration:
+        raise HTTPException(status_code=404, detail="Declaration not found")
+
+    ev_map: dict = dict(declaration.evidence_map or {})
+    old_values: dict = {}
+
+    for field_name, patch in data.fields.items():
+        old_values[field_name] = ev_map.get(field_name)
+        existing = ev_map.get(field_name, {})
+        if not isinstance(existing, dict):
+            existing = {}
+        updates = patch.model_dump(exclude_unset=True)
+        existing.update(updates)
+        ev_map[field_name] = existing
+
+    declaration.evidence_map = ev_map
+    await db.flush()
+
+    log = DeclarationLog(
+        declaration_id=declaration.id,
+        user_id=current_user.id,
+        action="evidence_map_edited",
+        new_value={
+            "fields_changed": list(data.fields.keys()),
+            "old_values": old_values,
+        },
+    )
+    db.add(log)
+    await db.commit()
+
+    logger.info(
+        "evidence_map_patched",
+        declaration_id=str(declaration_id),
+        fields=list(data.fields.keys()),
+        user_id=str(current_user.id),
+    )
+
+    return {"status": "ok", "fields_updated": list(data.fields.keys()), "evidence_map": ev_map}
