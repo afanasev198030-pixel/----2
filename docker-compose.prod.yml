@@ -223,6 +223,7 @@ services:
       - ai-service
       - integration-service
       - calc-service
+      - integration-service
     networks:
       - customs-net
 

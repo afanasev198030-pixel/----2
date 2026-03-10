@@ -7,6 +7,8 @@ module.exports = function(app) {
     changeOrigin: true,
     pathFilter: '/api/v1/ai/**',
     logger: console,
+    timeout: 600000,
+    proxyTimeout: 600000,
   }));
 
   // Integration service: keep full path /api/v1/integration/*

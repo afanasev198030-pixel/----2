@@ -10,7 +10,7 @@ import {
 
 export interface GetDeclarationsParams {
   page?: number;
-  page_size?: number;
+  per_page?: number;
   status?: DeclarationStatus;
   type_code?: string;
   company_id?: string;

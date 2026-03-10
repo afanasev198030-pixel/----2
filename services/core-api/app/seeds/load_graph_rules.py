@@ -460,7 +460,7 @@ GRAPH_RULES = [
             "conformity_declaration": {"fields": ["manufacturer_country", "country_of_manufacture"], "notes": "Декларация соответствия — поле «страна изготовителя»"},
         },
         "confidence_map": {"origin_certificate": 0.95, "conformity_declaration": 0.85},
-        "target_field": "country_origin_code",
+        "target_field": "country_origin_name",
         "target_kind": "core_declaration",
     },
     {

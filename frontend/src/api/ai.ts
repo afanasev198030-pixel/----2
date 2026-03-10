@@ -176,8 +176,8 @@ export interface ParseSmartResult {
     file_size?: number;
     parsed_data?: Record<string, unknown>;
   }>;
-  evidence_map?: Record<string, unknown>;
-  issues?: Array<Record<string, unknown>>;
+  evidence_map?: Record<string, { value_preview?: string; source?: string; confidence?: number; graph?: number; note?: string }>;
+  issues?: Array<{ id?: string; severity?: string; graph?: number; field?: string; message?: string }>;
   request_id?: string;
 }
 

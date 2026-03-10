@@ -97,6 +97,29 @@ def _infer_doc_type_from_text(value: Optional[str]) -> Optional[str]:
     return None
 
 
+async def _get_exchange_rate(currency: str) -> Optional[Decimal]:
+    """Получить курс ЦБ для валюты из calc-service. Возвращает None при ошибке."""
+    if not currency or currency.upper() == "RUB":
+        return Decimal("1")
+    try:
+        from app.middleware.logging_middleware import tracing_headers
+        async with httpx.AsyncClient(timeout=10) as http:
+            resp = await http.get(
+                "http://calc-service:8005/api/v1/calc/exchange-rates/latest",
+                headers=tracing_headers(),
+            )
+            resp.raise_for_status()
+            rates = resp.json().get("rates", {})
+            rate_value = rates.get(currency.upper())
+            if rate_value and float(rate_value) > 0:
+                return Decimal(str(rate_value))
+            logger.warning("currency_rate_not_found", currency=currency,
+                           available=list(rates.keys())[:10])
+    except Exception as e:
+        logger.warning("calc_service_rate_failed", error=str(e), currency=currency)
+    return None
+
+
 def _normalize_doc_type(
     explicit_type: Optional[str],
     doc_code: Optional[str],
@@ -1038,10 +1061,56 @@ async def apply_parsed_data(
             exchange_rate,
         )
 
+        # --- 3b. Распределить фрахт по позициям (Гр.45) и рассчитать Гр.46 ---
+        freight_dec = _to_decimal(data.freight_amount)
+        if freight_dec and freight_dec > 0 and created_items:
+            freight_rate = Decimal("1")
+            if data.freight_currency and data.freight_currency.upper() != "RUB":
+                fr = await _get_exchange_rate(data.freight_currency)
+                if fr:
+                    freight_rate = fr
+            freight_rub = (freight_dec * freight_rate).quantize(Decimal("0.01"))
+            declaration.freight_amount = freight_dec
+            declaration.freight_currency = data.freight_currency
+
+            total_gross = declaration.total_gross_weight or Decimal("0")
+            if total_gross > 0:
+                for item in created_items:
+                    item_gross = item.gross_weight or Decimal("0")
+                    item_freight = (freight_rub * item_gross / total_gross).quantize(Decimal("0.01"))
+                    item.customs_value_rub = (item.customs_value_rub or Decimal("0")) + item_freight
+                logger.info("freight_distributed",
+                            freight_rub=float(freight_rub), items=len(created_items),
+                            freight_currency=data.freight_currency, freight_rate=float(freight_rate))
+
+        # Гр.46: статистическая стоимость в USD
+        for item in created_items:
+            if item.customs_value_rub and usd_rate and usd_rate > 0:
+                item.statistical_value_usd = (item.customs_value_rub / usd_rate).quantize(Decimal("0.01"))
+
+        # Гр.12: общая таможенная стоимость = сумма Гр.45 по всем позициям
+        if created_items:
+            total_cv = sum(
+                (it.customs_value_rub or Decimal("0")) for it in created_items
+            )
+            if total_cv > 0:
+                declaration.total_customs_value = total_cv.quantize(Decimal("0.01"))
+                logger.info("total_customs_value_calculated",
+                            value=float(declaration.total_customs_value),
+                            items=len(created_items))
+
         # --- 4. Привязать документы ---
         counters["documents"] = _attach_parsed_documents(db, declaration, data.documents)
 
-        # --- 5. Логирование ---
+        # --- 5. Сохранить evidence_map и ai_confidence ---
+        if data.evidence_map:
+            declaration.evidence_map = data.evidence_map
+        if data.confidence is not None:
+            declaration.ai_confidence = Decimal(str(data.confidence))
+        if data.issues:
+            declaration.ai_issues = data.issues
+
+        # --- 6. Логирование ---
         log_entry, parsed_issues = _build_apply_parsed_log_entry(
             declaration,
             current_user,

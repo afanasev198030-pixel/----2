@@ -102,6 +102,33 @@ def validate_declaration_xml(xml_string: str) -> dict:
             if not desc:
                 errors.append(f"Item {item_num}: GoodsDescription is missing or empty")
 
+    # --- ContainerIndicator (графа 19): must be "0" or "1" ---
+    ci_el = _find(root, "d:TransportInfo/d:ContainerIndicator")
+    ci_text = _text(ci_el)
+    if ci_text and ci_text not in ("0", "1"):
+        errors.append(f"ContainerIndicator (графа 19) must be '0' or '1', got '{ci_text}'")
+
+    # --- DealNatureCode + DealSpecificsCode (графа 24) ---
+    dnc = _text(_find(root, "d:FinancialRegulatory/d:DealNatureCode"))
+    dsc = _text(_find(root, "d:FinancialRegulatory/d:DealSpecificsCode"))
+    if dnc and not dsc:
+        warnings.append("DealSpecificsCode (графа 24.2) is missing — should be filled alongside DealNatureCode")
+
+    # --- Per-item: StatisticalValueUSD ---
+    if item_els:
+        for idx, item_el in enumerate(item_els, start=1):
+            item_num = item_el.get("itemNumber", str(idx))
+            sv = _text(item_el.find(f"{_NS}StatisticalValueUSD"))
+            if not sv:
+                warnings.append(f"Item {item_num}: StatisticalValueUSD (графа 46) is missing")
+            elif sv:
+                try:
+                    sv_val = float(sv)
+                    if sv_val <= 0:
+                        warnings.append(f"Item {item_num}: StatisticalValueUSD should be > 0, got {sv_val}")
+                except ValueError:
+                    warnings.append(f"Item {item_num}: StatisticalValueUSD is not a valid number: {sv}")
+
     # --- Warnings for optional fields ---
     er_el = _find(root, "d:CurrencyInfo/d:ExchangeRate")
     if not _text(er_el):
