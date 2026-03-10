@@ -299,7 +299,6 @@ const DeclarationEditPage = () => {
           package_count: item.package_count, package_type: item.package_type,
         })),
         risk_score: parsed.risk_score, risk_flags: parsed.risk_flags, confidence: parsed.confidence,
-        evidence_map: parsed.evidence_map, issues: parsed.issues,
       });
       if (parsed.risk_score) setRiskScore(parsed.risk_score);
       if (parsed.risk_flags) setRiskFlags(parsed.risk_flags);

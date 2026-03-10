@@ -629,9 +629,8 @@ async def _apply_declaration_header_fields(
     if data.incoterms:
         declaration.incoterms_code = (data.incoterms or "").strip().upper()[:3] or None
 
-    normalized_country_origin = await _normalize_classifier_code(db, "country", data.country_origin)
-    if normalized_country_origin:
-        declaration.country_origin_code = normalized_country_origin
+    if data.country_origin:
+        declaration.country_origin_name = data.country_origin or None
     normalized_country_dispatch = await _normalize_classifier_code(db, "country", data.country_dispatch)
     if normalized_country_dispatch:
         declaration.country_dispatch_code = normalized_country_dispatch
@@ -707,7 +706,7 @@ async def _apply_declaration_header_fields(
     _truncate_declaration_fields(
         declaration,
         [
-            ("country_dispatch_code", 2), ("country_origin_code", 2), ("country_destination_code", 2),
+            ("country_dispatch_code", 2), ("country_destination_code", 2),
             ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
             ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
             ("freight_currency", 3), ("customs_office_code", 8), ("type_code", 10),
@@ -1122,7 +1121,7 @@ async def apply_parsed_data(
         _truncate_declaration_fields(
             declaration,
             [
-                ("country_dispatch_code", 2), ("country_origin_code", 2), ("country_destination_code", 2),
+                ("country_dispatch_code", 2), ("country_destination_code", 2),
                 ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
                 ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
                 ("customs_office_code", 8), ("type_code", 10),

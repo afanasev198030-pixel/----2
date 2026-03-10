@@ -44,7 +44,7 @@ PROTECTED_SPARSE_UPDATE_FIELDS = {
     "total_invoice_value",
     "exchange_rate",
     "country_dispatch_code",
-    "country_origin_code",
+    "country_origin_name",
     "country_destination_code",
     "incoterms_code",
     "delivery_place",
