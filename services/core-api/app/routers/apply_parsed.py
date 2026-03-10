@@ -284,105 +284,6 @@ async def _normalize_classifier_code(
     return fallback or None
 
 
-_CURRENCY_ALIASES = {
-    "RMB": "CNY",
-    "YUAN": "CNY",
-    "YUANS": "CNY",
-    "CNH": "CNY",
-    "RUR": "RUB",
-    "RUBLE": "RUB",
-    "RUBLES": "RUB",
-    "РУБЛЬ": "RUB",
-    "РУБЛИ": "RUB",
-    "ЮАНЬ": "CNY",
-    "ЮАНИ": "CNY",
-}
-
-_COUNTRY_ALIASES = {
-    "РОССИЯ": "RU",
-    "РФ": "RU",
-    "RUSSIA": "RU",
-    "RUSSIAN FEDERATION": "RU",
-    "КИТАЙ": "CN",
-    "КНР": "CN",
-    "CHINA": "CN",
-    "ГОНКОНГ": "HK",
-    "HONG KONG": "HK",
-    "HONG KONG SAR": "HK",
-}
-
-
-async def _normalize_classifier_code(
-    db: AsyncSession,
-    classifier_type: str,
-    raw_value: Optional[str],
-) -> Optional[str]:
-    raw = (raw_value or "").strip()
-    if not raw:
-        return None
-
-    compact = re.sub(r"\s+", " ", raw).strip()
-    upper = compact.upper()
-    code_len = 0
-
-    if classifier_type == "currency":
-        upper = _CURRENCY_ALIASES.get(upper, upper)
-        code_len = 3
-    elif classifier_type == "country":
-        upper = _COUNTRY_ALIASES.get(upper, upper)
-        code_len = 2
-
-    if code_len and len(upper) <= code_len and upper:
-        code_result = await db.execute(
-            select(Classifier.code).where(
-                Classifier.classifier_type == classifier_type,
-                Classifier.code == upper[:code_len],
-                Classifier.is_active == True,
-            ).limit(1)
-        )
-        code = code_result.scalar_one_or_none()
-        if code:
-            if code != compact:
-                logger.info(
-                    "classifier_code_normalized",
-                    classifier_type=classifier_type,
-                    raw=compact,
-                    normalized=code,
-                )
-            return code
-
-    normalized_text = compact.lower()
-    name_result = await db.execute(
-        select(Classifier.code).where(
-            Classifier.classifier_type == classifier_type,
-            Classifier.is_active == True,
-            or_(
-                func.lower(Classifier.name_ru) == normalized_text,
-                func.lower(Classifier.name_en) == normalized_text,
-            ),
-        ).limit(1)
-    )
-    code = name_result.scalar_one_or_none()
-    if code:
-        logger.info(
-            "classifier_name_resolved",
-            classifier_type=classifier_type,
-            raw=compact,
-            normalized=code,
-        )
-        return code
-
-    fallback = upper[:code_len] if code_len else upper
-    if fallback and fallback != compact:
-        logger.warning(
-            "classifier_code_fallback_used",
-            classifier_type=classifier_type,
-            raw=compact,
-            fallback=fallback,
-        )
-    return fallback or None
-
-
 # --- Pydantic schemas for parsed data ---
 
 class ParsedCounterparty(BaseModel):
@@ -724,11 +625,12 @@ async def _create_declaration_items(
     current_user: User,
     sender_id: Optional[uuid.UUID],
     exchange_rate: Decimal,
-) -> int:
+) -> tuple[int, list]:
     from app.models.hs_code_history import HsCodeHistory
     from sqlalchemy import func as sa_func
 
     items_created = 0
+    created_items: list[DeclarationItem] = []
 
     for item_data in data.items:
         hs_code = item_data.hs_code or ""
@@ -800,6 +702,7 @@ async def _create_declaration_items(
 
         db.add(item)
         await db.flush()
+        created_items.append(item)
         items_created += 1
 
         if hs_code and desc_norm and current_user.company_id:
@@ -856,7 +759,7 @@ async def _create_declaration_items(
             except Exception as fb_err:
                 logger.warning("ai_feedback_failed", error=str(fb_err), hs_code=item_data.hs_code)
 
-    return items_created
+    return items_created, created_items
 
 
 def _attach_parsed_documents(
@@ -1051,7 +954,7 @@ async def apply_parsed_data(
         exchange_rate = await _apply_declaration_header_fields(db, declaration, data)
 
         # --- 3. Создать товарные позиции ---
-        counters["items"] = await _create_declaration_items(
+        counters["items"], created_items = await _create_declaration_items(
             db,
             declaration,
             data,
@@ -1059,6 +962,8 @@ async def apply_parsed_data(
             sender_id,
             exchange_rate,
         )
+
+        usd_rate = await _get_exchange_rate("USD")
 
         # --- 3b. Распределить фрахт по позициям (Гр.45) и рассчитать Гр.46 ---
         freight_dec = _to_decimal(data.freight_amount)
