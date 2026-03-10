@@ -2,7 +2,7 @@
 # Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service, integration-service.
 # Секреты в GitHub: Settings → Secrets and variables → Actions:
 #   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
-#   SERVER_HOST     — хост (напр. 82.148.28.122)
+#   SERVER_HOST     — хост (напр. 141.105.65.148)
 #   SERVER_USER     — пользователь SSH (напр. root)
 
 name: Deploy backend to server
@@ -31,7 +31,7 @@ jobs:
           command_timeout: 15m
           script: |
             set -e
-            cd /opt/customs-broker
+            cd /home/2/----2
 
             echo "==> [1/5] Pulling latest code from main..."
             git fetch origin && git reset --hard origin/main
