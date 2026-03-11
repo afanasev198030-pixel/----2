@@ -11,6 +11,10 @@ class DeclarationItemCreate(BaseModel):
     package_count: Optional[int] = None
     package_type: Optional[str] = None
     commercial_name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    trademark: Optional[str] = None
+    model_name: Optional[str] = None
+    article_number: Optional[str] = None
     hs_code: Optional[str] = None
     hs_code_letters: Optional[str] = None
     hs_code_extra: Optional[str] = None
@@ -29,6 +33,9 @@ class DeclarationItemCreate(BaseModel):
     customs_value_rub: Optional[Decimal] = None
     statistical_value_usd: Optional[Decimal] = None
     documents_json: Optional[list] = None
+    package_type_code: Optional[str] = None
+    package_marks: Optional[str] = None
+    additional_unit_code: Optional[str] = None
 
 
 class DeclarationItemUpdate(BaseModel):
@@ -37,6 +44,10 @@ class DeclarationItemUpdate(BaseModel):
     package_count: Optional[int] = None
     package_type: Optional[str] = None
     commercial_name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    trademark: Optional[str] = None
+    model_name: Optional[str] = None
+    article_number: Optional[str] = None
     hs_code: Optional[str] = None
     hs_code_letters: Optional[str] = None
     hs_code_extra: Optional[str] = None
@@ -55,6 +66,9 @@ class DeclarationItemUpdate(BaseModel):
     customs_value_rub: Optional[Decimal] = None
     statistical_value_usd: Optional[Decimal] = None
     documents_json: Optional[list] = None
+    package_type_code: Optional[str] = None
+    package_marks: Optional[str] = None
+    additional_unit_code: Optional[str] = None
 
 
 class DeclarationItemResponse(BaseModel):
@@ -67,6 +81,10 @@ class DeclarationItemResponse(BaseModel):
     package_count: Optional[int]
     package_type: Optional[str]
     commercial_name: Optional[str]
+    manufacturer: Optional[str] = None
+    trademark: Optional[str] = None
+    model_name: Optional[str] = None
+    article_number: Optional[str] = None
     hs_code: Optional[str]
     hs_code_letters: Optional[str] = None
     hs_code_extra: Optional[str] = None
@@ -85,6 +103,9 @@ class DeclarationItemResponse(BaseModel):
     customs_value_rub: Optional[Decimal]
     statistical_value_usd: Optional[Decimal] = None
     documents_json: Optional[list] = None
+    package_type_code: Optional[str] = None
+    package_marks: Optional[str] = None
+    additional_unit_code: Optional[str] = None
     risk_score: int
     risk_flags: Optional[dict]
     created_at: Optional[datetime]

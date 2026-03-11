@@ -10,7 +10,7 @@ from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, delete
 from sqlalchemy.orm import selectinload
 import httpx
 import structlog
@@ -20,7 +20,9 @@ from app.middleware.auth import get_current_user
 from app.models import (
     Declaration, DeclarationStatus, DeclarationItem,
     Counterparty, Document, DeclarationLog, User, Company, Classifier,
+    CustomsPayment,
 )
+from app.models.declaration_item_document import DeclarationItemDocument
 from app.schemas.declaration import DeclarationResponse
 from app.utils.declaration_helpers import (
     merge_company_inn_kpp as _build_declarant_inn_kpp,
@@ -57,22 +59,70 @@ def _to_decimal(value) -> Optional[Decimal]:
         logger.warning("decimal_parse_failed", raw=value)
         return None
 def _normalize_deal_nature_code(value: Optional[str]) -> Optional[str]:
-    """Store deal nature in the current 2-digit app format (01, 02, 03...)."""
+    """Normalise deal nature to 3-digit format required by ДТ (010, 020, 030...)."""
     digits = _normalize_digits(value)
     if not digits:
         return None
-    if len(digits) >= 2:
-        return digits[:2]
+    if len(digits) >= 3:
+        return digits[:3]
+    if len(digits) == 2:
+        return digits + "0"
+    if len(digits) == 1:
+        return "0" + digits + "0"
     return digits
 
 
 _DOC_CODE_TO_TYPE = {
-    "04021": "invoice",
-    "03011": "contract",
-    "04024": "packing_list",
+    "01401": "certificate_origin",
+    "01402": "certificate_origin",
+    "01404": "certificate_origin",
     "02011": "transport_doc",
+    "02013": "transport_doc",
+    "02015": "transport_doc",
+    "03011": "contract",
+    "03012": "contract",
+    "03031": "payment_order",
+    "04021": "invoice",
+    "04024": "packing_list",
     "04025": "transport_invoice",
+    "04031": "transport_invoice",
+    "04033": "transport_doc",
+    "04091": "specification",
+    "04099": "other",
+    "05011": "tech_description",
+    "05999": "application_statement",
+    "06011": "certificate_origin",
+    "06012": "certificate_origin",
+    "06013": "certificate_origin",
+    "06019": "certificate_origin",
+    "07011": "phytosanitary",
+    "07012": "veterinary",
+    "07013": "sanitary",
+    "09013": "other",
+    "09023": "other",
+    "09034": "other",
     "09999": "application_statement",
+    "01011": "license",
+    "01999": "permit",
+}
+
+_DOC_TYPE_TO_CODE: dict[str, str] = {
+    "invoice": "04021",
+    "contract": "03011",
+    "packing_list": "04024",
+    "transport_doc": "02011",
+    "transport_invoice": "04025",
+    "specification": "04091",
+    "tech_description": "05011",
+    "application_statement": "05999",
+    "certificate_origin": "06019",
+    "payment_order": "03031",
+    "license": "01011",
+    "permit": "01999",
+    "sanitary": "07013",
+    "veterinary": "07012",
+    "phytosanitary": "07011",
+    "other": "09023",
 }
 
 
@@ -94,7 +144,28 @@ def _infer_doc_type_from_text(value: Optional[str]) -> Optional[str]:
         return "tech_description"
     if "application" in text or "заявка" in text:
         return "application_statement"
+    if "платёж" in text or "платеж" in text or "payment order" in text:
+        return "payment_order"
     return None
+
+
+async def _resolve_doc_kind_code(
+    db: AsyncSession,
+    doc_type: Optional[str],
+    doc_code: Optional[str] = None,
+) -> str:
+    """Resolve document kind code for Графа 44 using classifier DB with fallback."""
+    candidate = doc_code or _DOC_TYPE_TO_CODE.get(doc_type or "", "09023")
+    result = await db.execute(
+        select(Classifier.code).where(
+            Classifier.classifier_type == "doc_type",
+            Classifier.code == candidate,
+            Classifier.is_active == True,
+        ).limit(1)
+    )
+    if result.scalar_one_or_none():
+        return candidate
+    return _DOC_TYPE_TO_CODE.get(doc_type or "", candidate)
 
 
 async def _get_exchange_rate(currency: str) -> Optional[Decimal]:
@@ -360,8 +431,11 @@ class ApplyParsedRequest(BaseModel):
     # Из AWB / транспорта
     transport_doc_number: Optional[str] = None
     transport_type: Optional[str] = None  # 40=воздушный, 10=морской, 30=авто
+    transport_type_inland: Optional[str] = None  # Гр. 26: вид транспорта внутри страны (может отличаться от border)
     transport_id: Optional[str] = None   # Гр. 21: идентификатор ТС (номер рейса / рег. номер / судно)
     transport_country_code: Optional[str] = None  # Гр. 21 подраздел 2: страна регистрации ТС
+    vehicle_reg_number: Optional[str] = None  # Гр. 18: бортовой/рег. номер ТС (не номер AWB!)
+    vehicle_country_code: Optional[str] = None  # Гр. 18: код страны регистрации ТС
     delivery_place: Optional[str] = None  # Гр. 20: место поставки по Инкотермс
     customs_office_code: Optional[str] = None  # Код таможенного поста (8 цифр)
     goods_location: Optional[str] = None
@@ -380,12 +454,23 @@ class ApplyParsedRequest(BaseModel):
     responsible_person_matches_declarant: Optional[bool] = True
 
     # Общие
-    deal_nature_code: Optional[str] = "01"  # купля-продажа (2-значный app-format код)
-    type_code: Optional[str] = "IM40"  # импорт по умолчанию
+    deal_nature_code: Optional[str] = "010"
+    deal_specifics_code: Optional[str] = "00"
+    type_code: Optional[str] = "IM40"
 
-    # Транспортные расходы (графа 17)
+    # Транспортные расходы (графа 17 ДТС-1)
     freight_amount: Optional[float] = None
     freight_currency: Optional[str] = None
+
+    # Графа 54: подписант / таможенный представитель
+    signatory_name: Optional[str] = None
+    signatory_position: Optional[str] = None
+    signatory_id_doc: Optional[str] = None
+    signatory_cert_number: Optional[str] = None
+    signatory_power_of_attorney: Optional[str] = None
+    broker_registry_number: Optional[str] = None
+    broker_contract_number: Optional[str] = None
+    broker_contract_date: Optional[str] = None
 
     # Риски
     risk_score: Optional[int] = None
@@ -561,26 +646,30 @@ async def _apply_declaration_header_fields(
     declaration.deal_nature_code = (
         _normalize_deal_nature_code(data.deal_nature_code)
         or _normalize_deal_nature_code(declaration.deal_nature_code)
-        or "01"
+        or "010"
     )
+    if not declaration.deal_specifics_code:
+        declaration.deal_specifics_code = data.deal_specifics_code or "00"
+
     if data.type_code and not declaration.type_code:
         declaration.type_code = str(data.type_code)[:10]
+
+    transport_map = {
+        "air": "40", "sea": "10", "auto": "30", "rail": "20",
+        "40": "40", "10": "10", "30": "30", "20": "20",
+    }
     if data.transport_type:
-        transport_map = {
-            "air": "40",
-            "sea": "10",
-            "auto": "30",
-            "rail": "20",
-            "40": "40",
-            "10": "10",
-            "30": "30",
-            "20": "20",
-        }
         transport_type = transport_map.get(str(data.transport_type).lower().strip(), str(data.transport_type)[:2])
         declaration.transport_type_border = transport_type
-        declaration.transport_type_inland = transport_type
-    if data.transport_doc_number:
-        declaration.transport_at_border = str(data.transport_doc_number)[:100]
+    if data.transport_type_inland:
+        inland = transport_map.get(str(data.transport_type_inland).lower().strip(), str(data.transport_type_inland)[:2])
+        declaration.transport_type_inland = inland
+
+    if data.vehicle_reg_number:
+        declaration.transport_at_border = str(data.vehicle_reg_number)[:100]
+        declaration.transport_reg_number = str(data.vehicle_reg_number)[:50]
+    if data.vehicle_country_code:
+        declaration.transport_nationality_code = str(data.vehicle_country_code)[:2]
     if data.transport_id:
         declaration.transport_on_border_id = str(data.transport_id)[:100]
     if data.delivery_place:
@@ -589,6 +678,26 @@ async def _apply_declaration_header_fields(
         declaration.customs_office_code = _normalize_digits(data.customs_office_code)[:8] or None
     if data.goods_location and not declaration.goods_location:
         declaration.goods_location = data.goods_location.strip()
+
+    # Графа 54: signatory / broker
+    if data.signatory_name:
+        declaration.signatory_name = str(data.signatory_name)[:200]
+    if data.signatory_position:
+        declaration.signatory_position = str(data.signatory_position)[:200]
+    if data.signatory_id_doc:
+        declaration.signatory_id_doc = str(data.signatory_id_doc)[:200]
+    if data.signatory_cert_number:
+        declaration.signatory_cert_number = str(data.signatory_cert_number)[:20]
+    if data.signatory_power_of_attorney:
+        declaration.signatory_power_of_attorney = str(data.signatory_power_of_attorney)[:200]
+    if data.broker_registry_number:
+        declaration.broker_registry_number = str(data.broker_registry_number)[:30]
+    if data.broker_contract_number:
+        declaration.broker_contract_number = str(data.broker_contract_number)[:50]
+    if data.broker_contract_date:
+        parsed_bc_date = _parse_doc_date(data.broker_contract_date)
+        if parsed_bc_date:
+            declaration.broker_contract_date = datetime.combine(parsed_bc_date, datetime.min.time())
 
     freight_dec = _to_decimal(data.freight_amount)
     if freight_dec is not None:
@@ -609,11 +718,13 @@ async def _apply_declaration_header_fields(
         [
             ("country_dispatch_code", 2), ("country_destination_code", 2),
             ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
-            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
-            ("freight_currency", 3), ("customs_office_code", 8), ("type_code", 10),
+            ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
+            ("deal_specifics_code", 2), ("freight_currency", 3),
+            ("customs_office_code", 8), ("type_code", 10),
             ("country_origin_name", 60), ("transport_at_border", 100),
             ("transport_on_border_id", 100), ("delivery_place", 200),
             ("declarant_inn_kpp", 30), ("declarant_ogrn", 15), ("declarant_phone", 20),
+            ("transport_reg_number", 50), ("transport_nationality_code", 2),
         ],
     )
     await _fill_goods_location_from_post(db, declaration)
@@ -681,6 +792,9 @@ async def _create_declaration_items(
         elif item_data.unit_price:
             graph_42 = _to_decimal(item_data.unit_price)
 
+        type_code = (declaration.type_code or "IM40").upper()
+        default_procedure = "4000" if "40" in type_code else "0000"
+
         item = DeclarationItem(
             declaration_id=declaration.id,
             item_no=item_data.line_no,
@@ -695,6 +809,8 @@ async def _create_declaration_items(
             package_type=((item_data.package_type or "")[:50]) or None,
             additional_unit=((item_data.unit or "")[:20]) or None,
             additional_unit_qty=_to_decimal(item_data.quantity),
+            procedure_code=default_procedure,
+            preference_code="0000--00",
             mos_method_code="1",
             risk_score=data.risk_score or 0,
             risk_flags=data.risk_flags,
@@ -707,6 +823,20 @@ async def _create_declaration_items(
         await db.flush()
         created_items.append(item)
         items_created += 1
+
+        for doc_ref in data.documents:
+            normalized_type = _normalize_doc_type(
+                doc_ref.doc_type, doc_ref.doc_code,
+                doc_ref.doc_type_name, doc_ref.original_filename,
+            )
+            doc_kind_code = await _resolve_doc_kind_code(db, normalized_type, doc_ref.doc_code)
+            db.add(DeclarationItemDocument(
+                declaration_item_id=item.id,
+                doc_kind_code=doc_kind_code,
+                doc_number=doc_ref.doc_number,
+                doc_date=_parse_doc_date(doc_ref.doc_date),
+                presenting_kind_code="1",
+            ))
 
         if hs_code and desc_norm and current_user.company_id:
             try:
@@ -967,6 +1097,9 @@ async def apply_parsed_data(
             if company and company.contact_phone:
                 declaration.declarant_phone = str(company.contact_phone)[:20]
 
+        if company and hasattr(company, "broker_license") and company.broker_license and not declaration.broker_registry_number:
+            declaration.broker_registry_number = str(company.broker_license)[:30]
+
         # Графа 8: по умолчанию «СМ. ГРАФУ 14 ДТ» (receiver = declarant)
         # Исключение: трёхсторонний договор — отдельный получатель
         if data.buyer_matches_declarant and declarant_id:
@@ -1014,10 +1147,15 @@ async def apply_parsed_data(
         freight_dec = _to_decimal(data.freight_amount)
         if freight_dec and freight_dec > 0 and created_items:
             freight_rate = Decimal("1")
-            if data.freight_currency and data.freight_currency.upper() != "RUB":
-                fr = await _get_exchange_rate(data.freight_currency)
-                if fr:
-                    freight_rate = fr
+            fc = (data.freight_currency or "").upper()
+            dc = (declaration.currency_code or "").upper()
+            if fc and fc != "RUB":
+                if fc == dc and exchange_rate > 0:
+                    freight_rate = exchange_rate
+                else:
+                    fr = await _get_exchange_rate(fc)
+                    if fr:
+                        freight_rate = fr
             freight_rub = (freight_dec * freight_rate).quantize(Decimal("0.01"))
             declaration.freight_amount = freight_dec
             declaration.freight_currency = data.freight_currency
@@ -1048,6 +1186,92 @@ async def apply_parsed_data(
                             value=float(declaration.total_customs_value),
                             items=len(created_items))
 
+        # --- 3c. Рассчитать и сохранить CustomsPayment (Гр. 47/B) ---
+        await db.execute(
+            delete(CustomsPayment).where(CustomsPayment.declaration_id == declaration.id)
+        )
+        if created_items:
+            try:
+                from app.middleware.logging_middleware import tracing_headers
+                pay_items = []
+                for ci in created_items:
+                    pay_items.append({
+                        "item_no": ci.item_no,
+                        "hs_code": ci.hs_code or "",
+                        "customs_value_rub": float(ci.customs_value_rub or 0),
+                    })
+                async with httpx.AsyncClient(timeout=10) as http:
+                    pay_resp = await http.post(
+                        "http://calc-service:8005/api/v1/calc/payments/calculate",
+                        json={
+                            "items": pay_items,
+                            "currency": declaration.currency_code or "RUB",
+                            "exchange_rate": float(exchange_rate),
+                        },
+                        headers=tracing_headers(),
+                    )
+                    pay_resp.raise_for_status()
+                    pay_data = pay_resp.json()
+
+                totals = pay_data.get("totals", {})
+                _PAYMENT_MAP = [
+                    ("customs_fee", "1010", "customs_fee"),
+                    ("total_duty", "2010", "duty"),
+                    ("total_vat", "5010", "vat"),
+                ]
+                for total_key, code, p_type in _PAYMENT_MAP:
+                    amount = Decimal(str(totals.get(total_key, 0)))
+                    if amount > 0:
+                        db.add(CustomsPayment(
+                            declaration_id=declaration.id,
+                            payment_type=p_type,
+                            payment_type_code=code,
+                            payment_specifics="ИУ",
+                            base_amount=declaration.total_customs_value,
+                            amount=amount,
+                            currency_code="643",
+                        ))
+                for pi in pay_data.get("items", []):
+                    item_no = pi.get("item_no", 0)
+                    matched = next((ci for ci in created_items if ci.item_no == item_no), None)
+                    if not matched:
+                        continue
+                    duty_amt = Decimal(str(pi.get("duty", {}).get("amount", 0)))
+                    vat_amt = Decimal(str(pi.get("vat", {}).get("amount", 0)))
+                    duty_rate = Decimal(str(pi.get("duty", {}).get("rate", 0)))
+                    vat_rate = Decimal(str(pi.get("vat", {}).get("rate", 0)))
+                    if duty_amt > 0:
+                        db.add(CustomsPayment(
+                            declaration_id=declaration.id,
+                            item_id=matched.id,
+                            payment_type="duty",
+                            payment_type_code="2010",
+                            payment_specifics="ИУ",
+                            base_amount=matched.customs_value_rub,
+                            rate=duty_rate,
+                            amount=duty_amt,
+                            currency_code="643",
+                        ))
+                    if vat_amt > 0:
+                        db.add(CustomsPayment(
+                            declaration_id=declaration.id,
+                            item_id=matched.id,
+                            payment_type="vat",
+                            payment_type_code="5010",
+                            payment_specifics="ИУ",
+                            base_amount=(matched.customs_value_rub or Decimal("0")) + duty_amt,
+                            rate=vat_rate,
+                            amount=vat_amt,
+                            currency_code="643",
+                        ))
+                logger.info("customs_payments_created",
+                            declaration_id=str(declaration.id),
+                            customs_fee=float(totals.get("customs_fee", 0)),
+                            total_duty=float(totals.get("total_duty", 0)),
+                            total_vat=float(totals.get("total_vat", 0)))
+            except Exception as pay_err:
+                logger.warning("customs_payment_calc_failed", error=str(pay_err)[:200])
+
         # --- 4. Привязать документы ---
         doc_count, created_docs = _attach_parsed_documents(db, declaration, data.documents)
         counters["documents"] = doc_count
@@ -1076,12 +1300,13 @@ async def apply_parsed_data(
             [
                 ("country_dispatch_code", 2), ("country_destination_code", 2),
                 ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
-                ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 2),
-                ("customs_office_code", 8), ("type_code", 10),
+                ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
+                ("deal_specifics_code", 2), ("customs_office_code", 8), ("type_code", 10),
                 ("country_origin_name", 60), ("transport_at_border", 100),
                 ("transport_on_border_id", 100), ("delivery_place", 200),
                 ("declarant_inn_kpp", 30), ("declarant_ogrn", 15), ("declarant_phone", 20),
                 ("freight_currency", 3),
+                ("transport_reg_number", 50), ("transport_nationality_code", 2),
             ],
         )
 

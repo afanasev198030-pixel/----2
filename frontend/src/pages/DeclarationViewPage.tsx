@@ -67,7 +67,7 @@ const Row = ({ children, thick, h }: { children: React.ReactNode; thick?: boolea
   <div style={{ display: 'flex', borderBottom: thick ? bT : bB, minHeight: h || 20 }}>{children}</div>
 );
 
-const ItemBlock = ({ itm, pi }: { itm: any; pi: any }) => (
+const ItemBlock = ({ itm, pi, docs }: { itm: any; pi: any; docs?: any[] }) => (
   <>
     <div style={{ display: 'flex', borderBottom: bB }}>
       <div style={{ width: '57%', borderRight: bR, minHeight: 140, padding: '1px 3px', fontSize: 10 }}>
@@ -170,12 +170,18 @@ const ItemBlock = ({ itm, pi }: { itm: any; pi: any }) => (
         <span style={{ fontSize: 7, color: '#555', fontWeight: 700 }}>44 </span>
         Дополнит. информация / Представл. документы
         <br />
-        {itm.documents_json?.map((doc: any, i: number) => (
-          <span key={i}>
-            {doc.code}/{doc.marker} {doc.number} {doc.date}
-            <br />
-          </span>
-        ))}
+        {(docs && docs.length > 0 ? docs : itm.documents_json || []).map((doc: any, i: number) => {
+          const code = doc.doc_kind_code || doc.code || '';
+          const num = doc.doc_number || doc.number || '';
+          const dt = doc.doc_date || doc.date || '';
+          const pk = doc.presenting_kind_code || doc.marker || '';
+          return (
+            <span key={i}>
+              {code}{pk ? `/${pk}` : ''} {num} {dt}
+              <br />
+            </span>
+          );
+        })}
       </div>
       <div style={{ width: '43%', display: 'flex', flexDirection: 'column' }}>
         <G w="100%" label="45" bb>
@@ -256,6 +262,7 @@ const DeclarationViewPage = () => {
   const [declarant, setDeclarant] = useState<any>(null);
   const [financial, setFinancial] = useState<any>(null);
   const [payments, setPayments] = useState<PaymentResult | null>(null);
+  const [itemDocsMap, setItemDocsMap] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -269,6 +276,17 @@ const DeclarationViewPage = () => {
         const its = Array.isArray(itemsResp.data) ? itemsResp.data : itemsResp.data?.items || [];
         setDecl(d);
         setItems(its);
+
+        const docsMap: Record<string, any[]> = {};
+        await Promise.all(
+          its.map(async (itm: any) => {
+            try {
+              const r = await client.get(`/declarations/${id}/items/${itm.id}/item-documents/`);
+              if (Array.isArray(r.data) && r.data.length > 0) docsMap[itm.id] = r.data;
+            } catch {}
+          }),
+        );
+        setItemDocsMap(docsMap);
 
         const loadCp = async (cpId: string) => {
           try {
@@ -611,7 +629,7 @@ const DeclarationViewPage = () => {
         </Row>
 
         {/* ── БЛОК ТОВАРА №1 (графы 31-46) ── */}
-        <ItemBlock itm={firstItem} pi={firstPi} />
+        <ItemBlock itm={firstItem} pi={firstPi} docs={itemDocsMap[firstItem?.id]} />
 
         {/* ── Графа 47: Исчисление платежей / 48 / 49 ── */}
         <div style={{ display: 'flex', borderBottom: bB }}>
@@ -770,7 +788,7 @@ const DeclarationViewPage = () => {
               }
               return (
                 <div key={slotIdx} style={{ borderTop: slotIdx === 0 ? bT : undefined }}>
-                  <ItemBlock itm={itm} pi={pi} />
+                  <ItemBlock itm={itm} pi={pi} docs={itemDocsMap[itm?.id]} />
                 </div>
               );
             })}

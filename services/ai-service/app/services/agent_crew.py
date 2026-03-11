@@ -175,6 +175,15 @@ def _detect_doc_type(filename: str, text: str) -> str:
     if any(k in fn_lower for k in ["teh", "тех"]):
         return "tech_description"
 
+    # --- Платёжное поручение (ПП) — до инвойса, чтобы не спутать ---
+    if any(k in fn_lower for k in ["пп", "платеж", "платёж", "payment order"]):
+        return "payment_order"
+    if any(k in text_lower for k in [
+        "платежное поручение", "платёжное поручение", "заявление на перевод",
+        "payment order", "просим списать с", "банк получателя",
+    ]):
+        return "payment_order"
+
     # --- Транспортный инвойс по имени файла (раньше чем обычный invoice) ---
     _transport_invoice_name = any(k in fn_lower for k in [
         "invoice for transport", "transport invoice", "freight invoice",
@@ -621,12 +630,15 @@ contract: {{contract_number, contract_date, seller: {{name, country_code, addres
   is_trilateral: true если договор трёхсторонний (между получателем, декларантом и лицом за фин. урегулирование)
   receiver: получатель груза (графа 8 ДТ) — ТОЛЬКО если отличается от buyer/declarant
   financial_responsible: лицо, ответственное за финансовое урегулирование (графа 9 ДТ) — ТОЛЬКО если отличается от buyer/declarant
-specification: {{items_count, total_amount, currency, total_gross_weight, total_net_weight}}
-tech_description: {{products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
-transport_invoice: {{freight_amount, freight_currency, carrier_name, shipper_name, shipper_address, awb_number, transport_type}}
+specification: {{doc_number, doc_date, items_count, total_amount, currency, total_gross_weight, total_net_weight}}
+  doc_number: номер спецификации / приложения к контракту
+tech_description: {{doc_number, doc_date, products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
+transport_invoice: {{doc_number, doc_date, freight_amount, freight_currency, carrier_name, shipper_name, shipper_address, awb_number, transport_type}}
+  doc_number: номер транспортного инвойса / счёта за перевозку
   shipper_name: отправитель груза — искать "Shipper", "Shipper's Name", "Отправитель", "Consignor"
   shipper_address: адрес отправителя — искать "Shipper's Address", "Адрес отправителя" (улица, город, индекс, страна)
-application_statement: {{forwarding_agent: {{name, address, country_code, inn, kpp, ogrn}}, incoterms, delivery_place, shipper: {{name, address, country_code}}}}
+application_statement: {{doc_number, doc_date, forwarding_agent: {{name, address, country_code, inn, kpp, ogrn}}, incoterms, delivery_place, shipper: {{name, address, country_code}}}}
+  doc_number: номер заявки / поручения экспедитору
   shipper: отправитель груза — искать "Shipper", "Отправитель" и его адрес
 
 Заполни только те разделы, для которых есть документы. Если документа нет — не включай раздел.
@@ -645,9 +657,10 @@ JSON:"""},
             data = _json.loads(text)
 
             # Маппинг результата
-            if data.get("contract"):
-                c = data["contract"]
-                # Создаём объект, совместимый с ContractParsed
+            contract_filename = _first_filename("contract")
+            c = data.get("contract")
+            if c or contract_filename:
+                c = c if isinstance(c, dict) else {}
                 from app.services.contract_parser import ContractParsed, ContractParty
                 seller_party = None
                 buyer_party = None
@@ -679,7 +692,7 @@ JSON:"""},
                     delivery_place=c.get("delivery_place"),
                     payment_terms=c.get("payment_terms"), confidence=0.85,
                 ).model_dump()
-                contract_payload["_filename"] = _first_filename("contract")
+                contract_payload["_filename"] = contract_filename
                 parsed_docs["contract"] = contract_payload
 
             if data.get("specification"):
@@ -852,6 +865,8 @@ JSON:"""},
             elif doc_type in ("contract", "specification", "tech_description", "transport_invoice", "application_statement"):
                 # Собираем для батч-парсинга одним LLM-вызовом
                 secondary_texts.append({"doc_type": doc_type, "filename": filename, "text": text, "file_bytes": file_bytes})
+            elif doc_type == "payment_order":
+                parsed_docs.setdefault("payment_orders", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
             else:
                 parsed_docs.setdefault("other", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
 
@@ -1890,11 +1905,21 @@ JSON:"""},
             "invoice": "04021",
             "contract": "03011",
             "packing": "04024",
-            "specification": "04099",
+            "packing_list": "04024",
+            "specification": "04091",
             "transport_invoice": "04025",
             "transport": "02011",
-            "application_statement": "09999",
-            "tech_description": "04099",
+            "transport_doc": "02011",
+            "application_statement": "05999",
+            "tech_description": "05011",
+            "payment_order": "03031",
+            "certificate_origin": "06019",
+            "license": "01011",
+            "permit": "01999",
+            "sanitary": "07013",
+            "veterinary": "07012",
+            "phytosanitary": "07011",
+            "other": "09023",
         }
         docs: list[dict] = []
 
@@ -1956,8 +1981,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["packing"],
             doc_type_name="Упаковочный лист",
             parsed_source=packing_data,
-            doc_number=packing_data.get("packing_list_number"),
-            doc_date=packing_data.get("packing_list_date"),
+            doc_number=packing_data.get("packing_list_number") or packing_data.get("doc_number"),
+            doc_date=packing_data.get("packing_list_date") or packing_data.get("doc_date"),
         )
         transport_inv_data = parsed_docs.get("transport_invoice") or {}
         _append_doc(
@@ -1965,8 +1990,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["transport_invoice"],
             doc_type_name="Транспортный инвойс (фрахт)",
             parsed_source=transport_inv_data,
-            doc_number=transport_inv_data.get("invoice_number"),
-            doc_date=transport_inv_data.get("invoice_date"),
+            doc_number=transport_inv_data.get("doc_number") or transport_inv_data.get("invoice_number"),
+            doc_date=transport_inv_data.get("doc_date") or transport_inv_data.get("invoice_date"),
         )
 
         specification = parsed_docs.get("specification") or {}
@@ -1975,8 +2000,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["specification"],
             doc_type_name="Спецификация",
             parsed_source=specification,
-            doc_number=None,
-            doc_date=None,
+            doc_number=specification.get("doc_number"),
+            doc_date=specification.get("doc_date"),
         )
 
         application_statement = parsed_docs.get("application_statement") or {}
@@ -1985,8 +2010,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["application_statement"],
             doc_type_name="Заявка / поручение экспедитору",
             parsed_source=application_statement,
-            doc_number=None,
-            doc_date=None,
+            doc_number=application_statement.get("doc_number"),
+            doc_date=application_statement.get("doc_date"),
         )
 
         for tech_desc in parsed_docs.get("tech_descriptions") or []:
@@ -1995,8 +2020,18 @@ JSON:"""},
                 doc_code=_DOC_TYPE_CODES["tech_description"],
                 doc_type_name="Техническое описание",
                 parsed_source=tech_desc,
-                doc_number=None,
-                doc_date=None,
+                doc_number=tech_desc.get("doc_number"),
+                doc_date=tech_desc.get("doc_date"),
+            )
+
+        for pay_order in parsed_docs.get("payment_orders") or []:
+            _append_doc(
+                doc_type="payment_order",
+                doc_code=_DOC_TYPE_CODES["payment_order"],
+                doc_type_name="Платёжное поручение",
+                parsed_source=pay_order,
+                doc_number=pay_order.get("doc_number"),
+                doc_date=pay_order.get("doc_date"),
             )
         return docs
 

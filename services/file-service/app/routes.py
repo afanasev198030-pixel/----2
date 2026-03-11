@@ -1,12 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse, Response
 from io import BytesIO
 import structlog
+import httpx
 from datetime import datetime
 from uuid import uuid4
 import re
 
-from app.storage import upload_file, download_file, delete_file, get_presigned_url
+from app.storage import upload_file, download_file, delete_file, get_presigned_url, file_exists
 from app.config import settings
 
 logger = structlog.get_logger()
@@ -114,6 +115,103 @@ async def upload_file_endpoint(file: UploadFile = File(...)):
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to upload file")
+
+
+@router.head("/check/{file_key:path}")
+@router.get("/check/{file_key:path}")
+async def check_file_exists(file_key: str):
+    """Check if file exists in storage. Returns 200 or 404."""
+    if file_exists(file_key):
+        return {"exists": True, "file_key": file_key}
+    raise HTTPException(status_code=404, detail="File not found")
+
+
+CONVERTIBLE_EXTENSIONS = {
+    ".xlsx", ".xls", ".docx", ".doc", ".odt", ".ods", ".pptx", ".ppt", ".csv", ".rtf",
+}
+
+
+def _is_pdf(file_key: str) -> bool:
+    return file_key.lower().endswith(".pdf")
+
+
+def _is_image(file_key: str) -> bool:
+    return any(file_key.lower().endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"))
+
+
+def _is_convertible(file_key: str) -> bool:
+    return any(file_key.lower().endswith(ext) for ext in CONVERTIBLE_EXTENSIONS)
+
+
+def _cache_key(file_key: str) -> str:
+    return f"{file_key}.pdf"
+
+
+async def _convert_to_pdf(file_data: bytes, filename: str) -> bytes:
+    async with httpx.AsyncClient() as client:
+        files = {"files": (filename, file_data)}
+        response = await client.post(
+            f"{settings.GOTENBERG_URL}/forms/libreoffice/convert",
+            files=files,
+            timeout=120.0,
+        )
+        response.raise_for_status()
+        return response.content
+
+
+@router.get("/pdf-preview/{file_key:path}")
+async def pdf_preview(file_key: str):
+    """
+    Return PDF version of a document. For PDFs — returns as-is.
+    For Office documents — converts via Gotenberg and caches.
+    For images — returns 400 (use direct download instead).
+    """
+    if _is_image(file_key):
+        raise HTTPException(status_code=400, detail="Images should be viewed directly, not converted to PDF")
+
+    if _is_pdf(file_key):
+        try:
+            file_data = download_file(file_key)
+            return Response(content=file_data, media_type="application/pdf")
+        except Exception as e:
+            logger.error("pdf_preview_download_error", file_key=file_key, error=str(e))
+            raise HTTPException(status_code=404, detail="File not found")
+
+    if not _is_convertible(file_key):
+        raise HTTPException(status_code=400, detail=f"Unsupported format for PDF preview")
+
+    cached_key = _cache_key(file_key)
+    if file_exists(cached_key):
+        logger.info("pdf_preview_cache_hit", file_key=file_key, cached_key=cached_key)
+        try:
+            cached_data = download_file(cached_key)
+            return Response(content=cached_data, media_type="application/pdf")
+        except Exception:
+            pass
+
+    try:
+        original_data = download_file(file_key)
+    except Exception as e:
+        logger.error("pdf_preview_original_not_found", file_key=file_key, error=str(e))
+        raise HTTPException(status_code=404, detail="Original file not found")
+
+    filename = file_key.split("/")[-1]
+    try:
+        pdf_bytes = await _convert_to_pdf(original_data, filename)
+    except httpx.HTTPStatusError as e:
+        logger.error("gotenberg_conversion_failed", file_key=file_key, status=e.response.status_code)
+        raise HTTPException(status_code=502, detail="Document conversion failed")
+    except Exception as e:
+        logger.error("gotenberg_connection_error", file_key=file_key, error=str(e))
+        raise HTTPException(status_code=502, detail="Conversion service unavailable")
+
+    try:
+        upload_file(pdf_bytes, cached_key, "application/pdf")
+        logger.info("pdf_preview_cached", file_key=file_key, cached_key=cached_key, pdf_size=len(pdf_bytes))
+    except Exception as e:
+        logger.warning("pdf_preview_cache_write_failed", file_key=file_key, error=str(e))
+
+    return Response(content=pdf_bytes, media_type="application/pdf")
 
 
 @router.get("/download/{file_key:path}")

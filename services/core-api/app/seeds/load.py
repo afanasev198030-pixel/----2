@@ -35,6 +35,7 @@ SEED_FILES = {
     "mos_methods.json": "mos_method",
     "procedures.json": "procedure",
     "customs_posts.json": "customs_post",
+    "doc_type.json": "doc_type",
 }
 
 

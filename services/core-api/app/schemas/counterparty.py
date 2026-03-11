@@ -13,6 +13,16 @@ class CounterpartyCreate(BaseModel):
     tax_number: Optional[str] = None
     address: Optional[str] = None
     company_id: uuid.UUID
+    ogrn: Optional[str] = None
+    kpp: Optional[str] = None
+    postal_code: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    street: Optional[str] = None
+    building: Optional[str] = None
+    room: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class CounterpartyUpdate(BaseModel):
@@ -23,6 +33,16 @@ class CounterpartyUpdate(BaseModel):
     tax_number: Optional[str] = None
     address: Optional[str] = None
     company_id: Optional[uuid.UUID] = None
+    ogrn: Optional[str] = None
+    kpp: Optional[str] = None
+    postal_code: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    street: Optional[str] = None
+    building: Optional[str] = None
+    room: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
 
 
 class CounterpartyResponse(BaseModel):
@@ -36,4 +56,14 @@ class CounterpartyResponse(BaseModel):
     tax_number: Optional[str]
     address: Optional[str]
     company_id: uuid.UUID
+    ogrn: Optional[str] = None
+    kpp: Optional[str] = None
+    postal_code: Optional[str] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    street: Optional[str] = None
+    building: Optional[str] = None
+    room: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
     company: Optional[CompanyResponse] = None

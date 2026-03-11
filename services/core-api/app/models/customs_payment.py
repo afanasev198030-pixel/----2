@@ -1,9 +1,9 @@
 import uuid
 from enum import Enum as PyEnum
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import String, ForeignKey, DateTime, DECIMAL, func
+from sqlalchemy import String, Date, ForeignKey, DateTime, DECIMAL, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -40,6 +40,13 @@ class CustomsPayment(Base):
     amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
     currency_code: Mapped[Optional[str]] = mapped_column(String(3))
     calc_details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    tax_base_currency_code: Mapped[Optional[str]] = mapped_column(String(3))
+    tax_base_unit_code: Mapped[Optional[str]] = mapped_column(String(4))
+    rate_type_code: Mapped[Optional[str]] = mapped_column(String(1))
+    rate_currency_code: Mapped[Optional[str]] = mapped_column(String(3))
+    rate_unit_code: Mapped[Optional[str]] = mapped_column(String(4))
+    weighting_factor: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(19, 6))
+    rate_use_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

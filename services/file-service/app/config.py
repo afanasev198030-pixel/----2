@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET: str = "documents"
     MINIO_SECURE: bool = False
+    GOTENBERG_URL: str = "http://gotenberg:3000"
     SERVICE_NAME: str = "file-service"
     LOG_LEVEL: str = "INFO"
 

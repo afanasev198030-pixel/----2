@@ -33,6 +33,16 @@ export interface Counterparty {
   tax_number?: string;
   address?: string;
   company_id?: string;
+  ogrn?: string;
+  kpp?: string;
+  postal_code?: string;
+  region?: string;
+  city?: string;
+  street?: string;
+  building?: string;
+  room?: string;
+  phone?: string;
+  email?: string;
 }
 
 export type DeclarationStatus =
@@ -63,6 +73,9 @@ export interface EvidenceMapEntry {
   document_id?: string;
   confidence?: number;
   raw_value?: string;
+  value_preview?: string;
+  graph?: number;
+  note?: string;
 }
 
 export interface PreSendCheck {
@@ -147,6 +160,19 @@ export interface Declaration {
   destination_office_code?: string;
   country_first_destination_code?: string;
   guarantee_info?: string;
+  signatory_name?: string;
+  signatory_position?: string;
+  signatory_id_doc?: string;
+  signatory_cert_number?: string;
+  signatory_power_of_attorney?: string;
+  broker_registry_number?: string;
+  broker_contract_number?: string;
+  broker_contract_date?: string;
+  transport_reg_number?: string;
+  transport_nationality_code?: string;
+  goods_location_code?: string;
+  goods_location_customs_code?: string;
+  goods_location_zone_id?: string;
   spot_required?: boolean;
   spot_status?: 'none' | 'required' | 'created' | 'paid' | 'qr_received';
   spot_qr_file_key?: string;
@@ -177,6 +203,10 @@ export interface DeclarationItem {
   package_count?: number;
   package_type?: string;
   commercial_name?: string;
+  manufacturer?: string;
+  trademark?: string;
+  model_name?: string;
+  article_number?: string;
   hs_code?: string;
   hs_code_letters?: string;
   hs_code_extra?: string;
@@ -195,6 +225,9 @@ export interface DeclarationItem {
   customs_value_rub?: number;
   statistical_value_usd?: number;
   documents_json?: Array<{code: string; marker: string; number: string; date: string}>;
+  package_type_code?: string;
+  package_marks?: string;
+  additional_unit_code?: string;
   risk_score?: number;
   risk_flags?: Record<string, unknown>;
   created_at: string;
@@ -252,6 +285,39 @@ export interface PaginatedResponse<T> {
   page: number;
   per_page: number;
   pages: number;
+}
+
+export interface ItemDocument {
+  id: string;
+  declaration_item_id: string;
+  doc_kind_code: string;
+  doc_number?: string;
+  doc_date?: string;
+  doc_validity_date?: string;
+  authority_name?: string;
+  country_code?: string;
+  edoc_code?: string;
+  archive_doc_id?: string;
+  line_id?: string;
+  presenting_kind_code?: string;
+  sort_order: number;
+  created_at?: string;
+}
+
+export interface ItemPrecedingDoc {
+  id: string;
+  declaration_item_id: string;
+  doc_kind_code?: string;
+  doc_name?: string;
+  customs_office_code?: string;
+  doc_date?: string;
+  customs_doc_number?: string;
+  other_doc_number?: string;
+  other_doc_date?: string;
+  goods_number?: number;
+  line_id?: string;
+  sort_order: number;
+  created_at?: string;
 }
 
 export interface LoginResponse {

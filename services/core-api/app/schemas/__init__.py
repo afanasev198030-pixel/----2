@@ -17,6 +17,8 @@ from .declaration_item import (
 from .document import DocumentCreate, DocumentUpdate, DocumentResponse
 from .classifier import ClassifierResponse
 from .broker_client import BrokerClientCreate, BrokerClientUpdate, BrokerClientResponse
+from .item_document import ItemDocumentCreate, ItemDocumentUpdate, ItemDocumentResponse
+from .item_preceding_doc import ItemPrecedingDocCreate, ItemPrecedingDocUpdate, ItemPrecedingDocResponse
 from .common import PaginatedResponse, MessageResponse
 
 __all__ = [
@@ -57,6 +59,14 @@ __all__ = [
     "BrokerClientCreate",
     "BrokerClientUpdate",
     "BrokerClientResponse",
+    # Item Documents (графа 44)
+    "ItemDocumentCreate",
+    "ItemDocumentUpdate",
+    "ItemDocumentResponse",
+    # Item Preceding Docs (графа 40)
+    "ItemPrecedingDocCreate",
+    "ItemPrecedingDocUpdate",
+    "ItemPrecedingDocResponse",
     # Common
     "PaginatedResponse",
     "MessageResponse",
