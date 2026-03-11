@@ -1,18 +1,17 @@
-# Деплой фронта на сервер по SSH при пуше в main.
+# Ручной деплой фронта на сервер по SSH (workflow_dispatch).
 # Секреты в GitHub: Settings → Secrets and variables → Actions:
 #   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
 #   SERVER_HOST — хост (напр. 141.105.65.148)
 #   SERVER_USER — пользователь SSH (напр. root)
+# Опционально: DEPLOY_PATH — каталог на сервере (по умолчанию /home/2/----2)
 
-name: Deploy frontend to server
+name: Manual deploy frontend to server
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'frontend/**'
-      - 'docker-compose.prod.yml'
-      - '.github/workflows/deploy-frontend.yml'
   workflow_dispatch:
 
 jobs:
@@ -26,9 +25,26 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
-            cd /home/2/----2
-            git fetch origin && git reset --hard origin/main
-            docker compose -f docker-compose.prod.yml build frontend --no-cache
-            docker compose -f docker-compose.prod.yml up -d frontend
-            echo "Done. Open http://141.105.65.148/ and Ctrl+F5"
+            set -euo pipefail
+
+            # Simple lock to avoid concurrent deploys on the server
+            (
+              flock -n 9 || { echo "Another deploy is running. Exiting."; exit 1; }
+
+              DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+              if [ -z "${DEPLOY_PATH}" ]; then DEPLOY_PATH="/home/2/----2"; fi
+              cd "${DEPLOY_PATH}"
+
+              echo "==> [1/4] Pulling code..."
+              git fetch origin && git reset --hard origin/main
+
+              DC="docker compose -f docker-compose.prod.yml"
+
+              echo "==> [2/4] Building frontend image..."
+              ${DC} build frontend
+
+              echo "==> [3/4] Restarting frontend container..."
+              ${DC} up -d frontend
+
+              echo "==> [4/4] Done. Open http://141.105.65.148/ and Ctrl+F5"
+            ) 9>/tmp/deploy.lock
