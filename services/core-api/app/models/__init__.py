@@ -19,6 +19,10 @@ from .graph_rule import DeclarationGraphRule
 from .ai_strategy import AiStrategy
 from .hs_code_history import HsCodeHistory
 from .ai_usage_log import AiUsageLog
+from .declaration_item_document import DeclarationItemDocument
+from .declaration_item_preceding_doc import DeclarationItemPrecedingDoc
+from .customs_value_declaration import CustomsValueDeclaration
+from .customs_value_item import CustomsValueItem
 
 __all__ = [
     "Base",
@@ -50,4 +54,8 @@ __all__ = [
     "AiStrategy",
     "HsCodeHistory",
     "AiUsageLog",
+    "DeclarationItemDocument",
+    "DeclarationItemPrecedingDoc",
+    "CustomsValueDeclaration",
+    "CustomsValueItem",
 ]

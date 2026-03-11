@@ -231,22 +231,31 @@ def get_filling_rules_text() -> str:
 # ──────────────────────────────────────────────────────────────
 
 class EvidenceTracker:
-    """Accumulates per-field evidence during _compile_declaration."""
+    """Accumulates per-field evidence during _compile_declaration.
+
+    Each entry stores the source document type, confidence score,
+    and optionally a document_id that links to the specific
+    Document record in core.documents after apply-parsed.
+    """
 
     def __init__(self):
         self._map: dict[str, dict] = {}
 
     def record(self, field: str, value: Any, source: str, confidence: float = 0.7,
-               graph: int | None = None, note: str = ""):
+               graph: int | None = None, note: str = "",
+               document_id: str | None = None):
         if value is None:
             return
-        self._map[field] = {
+        entry: dict = {
             "value_preview": str(value)[:120],
             "source": source,
             "confidence": round(confidence, 2),
             "graph": graph,
             "note": note,
         }
+        if document_id:
+            entry["document_id"] = document_id
+        self._map[field] = entry
 
     def to_dict(self) -> dict:
         return dict(self._map)

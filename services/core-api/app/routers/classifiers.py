@@ -55,6 +55,40 @@ async def list_classifiers(
     return [ClassifierResponse.model_validate(c) for c in classifiers]
 
 
+@router.get("/hs-duty-rate")
+async def get_hs_duty_rate(
+    code: str = Query(..., min_length=2, max_length=10),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return duty_rate from classifier meta for a given HS code (internal, no auth).
+
+    Tries exact code first, then falls back to shorter prefixes (8, 6, 4 digits).
+    """
+    prefixes = [code]
+    if len(code) > 4:
+        for length in (8, 6, 4):
+            if len(code) > length:
+                prefixes.append(code[:length])
+
+    for prefix in prefixes:
+        result = await db.execute(
+            select(Classifier).where(
+                Classifier.classifier_type == "hs_code",
+                Classifier.code == prefix,
+                Classifier.is_active == True,
+            ).limit(1)
+        )
+        row = result.scalar_one_or_none()
+        if row and row.meta and row.meta.get("duty_rate") is not None:
+            return {
+                "code": row.code,
+                "duty_rate": row.meta["duty_rate"],
+                "duty_type": row.meta.get("duty_type", "ad_valorem"),
+            }
+
+    return {"code": code, "duty_rate": None, "duty_type": None}
+
+
 @router.get("/subcodes")
 async def list_subcodes(
     prefix: str = Query(..., min_length=4, max_length=8),

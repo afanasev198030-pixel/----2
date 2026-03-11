@@ -8,6 +8,7 @@ import DeclarationsListPage from './pages/DeclarationsListPage';
 import DeclarationEditPage from './pages/DeclarationEditPage';
 import SettingsPage from './pages/SettingsPage';
 import DeclarationViewPage from './pages/DeclarationViewPage';
+import DtsViewPage from './pages/DtsViewPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminUsersPage from './pages/AdminUsersPage';
 import AdminUserEditPage from './pages/AdminUserEditPage';
@@ -29,6 +30,7 @@ function App() {
         <Route path="/declarations" element={<DeclarationsListPage />} />
         <Route path="/declarations/:id/edit" element={<DeclarationEditPage />} />
         <Route path="/declarations/:id/view" element={<DeclarationViewPage />} />
+        <Route path="/declarations/:id/dts-view" element={<DtsViewPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/admin/dashboard" element={<AdminDashboardPage />} />

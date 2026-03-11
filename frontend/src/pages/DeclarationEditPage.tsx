@@ -5,20 +5,20 @@ import { useForm } from 'react-hook-form';
 import {
   Box, Typography, Button, Container, LinearProgress,
   Stepper, Step, StepLabel, Paper, TextField, Grid,
-  IconButton, Chip, Alert, Snackbar, Divider,
+  Alert, Snackbar, Divider,
   Accordion, AccordionSummary, AccordionDetails,
 } from '@mui/material';
 import {
   Save, AutoAwesome as AiIcon,
-  Visibility as ViewIcon, Delete as DeleteIcon,
+  Visibility as ViewIcon,
   Description as DocsIcon,
   ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
 import {
-  getDeclaration, updateDeclaration,
+  getDeclaration, updateDeclaration, patchEvidenceMap,
 } from '../api/declarations';
-import { getItems, deleteItem } from '../api/items';
+import { getItems } from '../api/items';
 import { getDocuments } from '../api/documents';
 import { calculatePayments, PaymentResult } from '../api/calc';
 import client from '../api/client';
@@ -26,9 +26,8 @@ import StatusChip from '../components/StatusChip';
 import DocumentUploadPanel from '../components/DocumentUploadPanel';
 import DocumentViewer from '../components/DocumentViewer';
 import ClassifierSelect from '../components/ClassifierSelect';
-import HSCodeSuggestions from '../components/HSCodeSuggestions';
-import RequirementsPanel from '../components/RequirementsPanel';
 import RiskPanel from '../components/RiskPanel';
+import ItemEditCard from '../components/ItemEditCard';
 import DeclarationChecklist from '../components/DeclarationChecklist';
 import HistoryPanel from '../components/HistoryPanel';
 import CounterpartyLookup from '../components/CounterpartyLookup';
@@ -36,6 +35,7 @@ import AiExplainPanel from '../components/AiExplainPanel';
 import DeclarationStatusTimeline from '../components/DeclarationStatusTimeline';
 import NextActionsPanel from '../components/NextActionsPanel';
 import ConfidenceBadge from '../components/ConfidenceBadge';
+import DtsPanel from '../components/DtsPanel';
 import { Declaration, DeclarationItem, Document as DocType } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
@@ -96,7 +96,7 @@ const DeclarationEditPage = () => {
 
   const docs: DocType[] = useMemo(() => {
     if (!docsData) return [];
-    return (docsData as any)?.items || (Array.isArray(docsData) ? docsData : []);
+    return Array.isArray(docsData) ? docsData : [];
   }, [docsData]);
 
   const items: DeclarationItem[] = useMemo(() => {
@@ -116,7 +116,7 @@ const DeclarationEditPage = () => {
   // Convert Decimal strings ("870.000") to numbers for form fields
   const normalizeDecl = (d: any) => {
     if (!d) return d;
-    const numFields = ['total_invoice_value','exchange_rate','total_customs_value','total_gross_weight','total_net_weight','spot_amount'];
+    const numFields = ['total_invoice_value','exchange_rate','total_customs_value','total_gross_weight','total_net_weight','spot_amount','freight_amount'];
     const copy = { ...d };
     for (const f of numFields) {
       if (copy[f] !== null && copy[f] !== undefined) {
@@ -183,7 +183,7 @@ const DeclarationEditPage = () => {
 
   const sanitizeData = (d: any) => {
     const copy = { ...d };
-    const numFields = ['total_invoice_value','exchange_rate','total_customs_value','total_gross_weight','total_net_weight','spot_amount'];
+    const numFields = ['total_invoice_value','exchange_rate','total_customs_value','total_gross_weight','total_net_weight','spot_amount','freight_amount'];
     for (const f of numFields) {
       if (typeof copy[f] === 'string') {
         const val = copy[f].replace(/\s/g, '').replace(',', '.');
@@ -317,6 +317,19 @@ const DeclarationEditPage = () => {
     }
   }, [id, pauseAutoSave, reset, queryClient, refetchItems]);
 
+  const handleEvidenceChange = useCallback(async (field: string, patch: Record<string, unknown>) => {
+    if (!id) return;
+    try {
+      const res = await patchEvidenceMap(id, { [field]: patch });
+      queryClient.setQueryData(['declaration', id], (old: any) =>
+        old ? { ...old, evidence_map: res.evidence_map } : old,
+      );
+      setSnackMsg('Источник обновлён');
+    } catch (e: any) {
+      setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
+    }
+  }, [id, queryClient]);
+
   if (!decl) return <Container sx={{ py: 4 }}><Typography>Загрузка...</Typography></Container>;
 
   const totals = payments?.totals;
@@ -337,14 +350,20 @@ const DeclarationEditPage = () => {
         {autoSaveStatus === 'saving' && <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>Сохранение...</Typography>}
         {autoSaveStatus === 'saved' && <Typography variant="caption" color="success.main" sx={{ ml: 1 }}>Сохранено</Typography>}
         <Button startIcon={<ViewIcon />} onClick={() => navigate(`/declarations/${id}/view`)} sx={{ ml: 1 }} variant="outlined">Просмотр ДТ</Button>
-        {docs.length > 0 && (
+        {(docs.length > 0 || decl.evidence_map) && (
           <Button startIcon={<DocsIcon />} onClick={() => setDocViewerOpen(true)} sx={{ ml: 1 }} variant="outlined" color="secondary">
-            Документы ({docs.length})
+            Документы{docs.length > 0 ? ` (${docs.length})` : ''}
           </Button>
         )}
       </Box>
 
-      <DocumentViewer documents={docs} open={docViewerOpen} onClose={() => setDocViewerOpen(false)} />
+      <DocumentViewer
+        documents={docs}
+        open={docViewerOpen}
+        onClose={() => setDocViewerOpen(false)}
+        evidenceMap={decl.evidence_map}
+        onEvidenceChange={handleEvidenceChange}
+      />
 
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <Stepper activeStep={activeStep} sx={{ mb: 3 }}>
@@ -444,6 +463,10 @@ const DeclarationEditPage = () => {
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Внутр. номер" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="declaration_specifics" value={watchedValues.special_ref_code || ''} onChange={(c) => updateField('special_ref_code', c)} label={lbl("Особенности (7)", "special_ref_code")} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label={lbl("Валюта (22)", "currency_code")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Инвойс № (ДТС гр.4)", "invoice_number")} {...register('invoice_number')} InputLabelProps={{ shrink: true }} placeholder="HUAXINAG20251763/25" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Инвойс дата (ДТС гр.4)", "invoice_date")} {...register('invoice_date')} type="date" InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Контракт № (ДТС гр.5)", "contract_number")} {...register('contract_number')} InputLabelProps={{ shrink: true }} placeholder="AG-TIAN-GPB1" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Контракт дата (ДТС гр.5)", "contract_date")} {...register('contract_date')} type="date" InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl(`Сумма инвойса (22) ${watchedValues.currency_code || ''}`, "total_invoice_value")} {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label={lbl("Страна отпр. (15)", "country_dispatch_code")} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_name || ''} onChange={(c) => updateField('country_origin_name', c)} label={lbl("Происхождение (16)", "country_origin_name")} /></Grid>
@@ -468,6 +491,67 @@ const DeclarationEditPage = () => {
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Органы транзита (51)" {...register('transit_offices')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Орган назначения (53)" {...register('destination_office_code')} InputLabelProps={{ shrink: true }} /></Grid>
                 </Grid>
+
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Транспорт и контейнер</Typography>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Транспорт на границе (18)", "transport_at_border")} {...register('transport_at_border')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Контейнер (19)", "container_info")} {...register('container_info')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 1 }} placeholder="0 или 1" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Внутр. транспорт (26)", "transport_type_inland")} {...register('transport_type_inland')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Место погрузки (27)", "loading_place")} {...register('loading_place')} InputLabelProps={{ shrink: true }} /></Grid>
+                </Grid>
+
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Финансы и стоимость</Typography>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Тамож. стоимость итого (12)", "total_customs_value")} {...register('total_customs_value')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Транспортные расходы", "freight_amount")} {...register('freight_amount')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Валюта трансп. расходов", "freight_currency")} {...register('freight_currency')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 3 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Гарантийная информация" {...register('guarantee_info')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={12} md={6}><TextField size="small" fullWidth label={lbl("Фин. банковские сведения (28)", "financial_info")} {...register('financial_info')} InputLabelProps={{ shrink: true }} /></Grid>
+                </Grid>
+
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Количественные данные</Typography>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Всего наименований (5)", "total_items_count")} type="number" {...register('total_items_count')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Кол-во форм ДТ (3)" type="number" {...register('forms_count')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Спецификаций (4)" type="number" {...register('specifications_count')} InputLabelProps={{ shrink: true }} /></Grid>
+                </Grid>
+
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Декларант (дополнительно)</Typography>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="ОГРН декларанта (14)" {...register('declarant_ogrn')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 15 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Телефон декларанта (14)" {...register('declarant_phone')} InputLabelProps={{ shrink: true }} /></Grid>
+                </Grid>
+
+                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Прочие графы</Typography>
+                <Grid container spacing={2} sx={{ mb: 2 }}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Первая страна назначения (17б)", "country_first_destination_code")} {...register('country_first_destination_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 2 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Наименование СВХ (30б)", "warehouse_name")} {...register('warehouse_name')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Место и дата (54)", "place_and_date")} {...register('place_and_date')} InputLabelProps={{ shrink: true }} /></Grid>
+                </Grid>
+
+                {/* --- Блок подписанта и ТП (графа 54, гр. 21, гр. 30) --- */}
+                <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>Подписант и таможенный представитель (гр. 54)</Typography>
+                <Grid container spacing={1}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="ФИО подписанта" {...register('signatory_name')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Должность" {...register('signatory_position')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Квалиф. аттестат" {...register('signatory_cert_number')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Доверенность" {...register('signatory_power_of_attorney')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Док. удостоверяющий личность" {...register('signatory_id_doc')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Номер в реестре ТП" {...register('broker_registry_number')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Договор ТП (номер)" {...register('broker_contract_number')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Договор ТП (дата)" {...register('broker_contract_date')} InputLabelProps={{ shrink: true }} type="date" /></Grid>
+                </Grid>
+
+                <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>Транспорт на границе (гр. 21) и место товаров (гр. 30)</Typography>
+                <Grid container spacing={1}>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Рег. номер ТС на границе (21)" {...register('transport_reg_number')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Страна рег. ТС" {...register('transport_nationality_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 2 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Код места товаров (30)" {...register('goods_location_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 2 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Код ТО места (30)" {...register('goods_location_customs_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 8 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Зона ТК (30)" {...register('goods_location_zone_id')} InputLabelProps={{ shrink: true }} /></Grid>
+                </Grid>
+
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Участники сделки</Typography>
                 <Grid container spacing={2}>
@@ -495,66 +579,38 @@ const DeclarationEditPage = () => {
               <Paper sx={{ p: 2, mb: 2 }}>
                 <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>Товарные позиции ({items.length})</Typography>
                 {items.length === 0 && <Alert severity="warning">Нет товарных позиций. Загрузите документы на шаге 1.</Alert>}
-                {items.map((item: DeclarationItem, idx: number) => (
-                  <Paper key={item.id} variant="outlined" sx={{ p: 2, mb: 2, borderColor: !item.hs_code ? 'error.main' : 'divider' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="subtitle2" fontWeight={700}>Позиция #{item.item_no || idx + 1}</Typography>
-                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        {item.hs_code ? <Chip label={`ТН ВЭД: ${item.hs_code}`} color="success" size="small" sx={{ fontFamily: 'monospace', fontWeight: 700 }} />
-                          : <Chip label="Код не указан" color="error" size="small" />}
-                        <IconButton size="small" onClick={() => { deleteItem(id!, item.id).then(() => refetchItems()); }}><DeleteIcon fontSize="small" /></IconButton>
-                      </Box>
-                    </Box>
-                    <Grid container spacing={1}>
-                      <Grid item xs={3}><Typography variant="caption" color="text.secondary">Описание (31)</Typography><Typography variant="body2" fontWeight={600} sx={{ wordBreak: 'break-word' }}>{item.commercial_name || item.description || '—'}</Typography></Grid>
-                      <Grid item xs={1}><Typography variant="caption" color="text.secondary">Страна</Typography><Typography variant="body2">{item.country_origin_code || '—'}</Typography></Grid>
-                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Кол-во</Typography><Typography variant="body2" noWrap>{item.additional_unit_qty ? Number(item.additional_unit_qty).toLocaleString('ru-RU') : '—'}<br /><Typography component="span" variant="caption" color="text.secondary">{item.additional_unit || 'pcs'}</Typography></Typography></Grid>
-                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Цена ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price ? Number(item.unit_price).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
-                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Сумма ({watchedValues.currency_code || '?'})</Typography><Typography variant="body2">{item.unit_price && item.additional_unit_qty ? (Number(item.unit_price) * Number(item.additional_unit_qty)).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
-                      <Grid item xs={2}><Typography variant="caption" color="text.secondary">Тамож. стоимость (руб)</Typography><Typography variant="body2" fontWeight={600} color="primary.main">{item.customs_value_rub ? Number(item.customs_value_rub).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
-                    </Grid>
-                    <Grid container spacing={1} sx={{ mt: 0.5 }}>
-                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Стат. ст-ть USD (46)</Typography><Typography variant="body2">{item.statistical_value_usd ? Number(item.statistical_value_usd).toLocaleString('ru-RU', { minimumFractionDigits: 2 }) : '—'}</Typography></Grid>
-                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Код 33.2</Typography><Typography variant="body2">{item.hs_code_letters || '—'}</Typography></Grid>
-                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">Код 33.3</Typography><Typography variant="body2">{item.hs_code_extra || '—'}</Typography></Grid>
-                      <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">34b преф.</Typography><Typography variant="body2">{item.country_origin_pref_code || '—'}</Typography></Grid>
-                    </Grid>
-                    {!item.hs_code && <Alert severity="warning" sx={{ mt: 1 }} icon={<AiIcon />}>Нажмите "Подобрать" или введите код вручную.</Alert>}
-                    <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-                      <TextField size="small" label="Код ТН ВЭД (33)" value={item.hs_code || ''} sx={{ width: 200 }}
-                        inputProps={{ style: { fontFamily: 'monospace', fontWeight: 700, fontSize: 16 } }}
-                        error={!item.hs_code || (item.hs_code?.length || 0) < 10}
-                        onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); client.put(`/declarations/${id}/items/${item.id}`, { hs_code: v }).then(() => refetchItems()); }} />
-                      <HSCodeSuggestions description={item.description || item.commercial_name || ''} currentCode={item.hs_code || ''} declarationId={id}
-                        onSelect={(code, name) => { client.put(`/declarations/${id}/items/${item.id}`, { hs_code: code }).then(() => { refetchItems(); setSnackMsg(`ТН ВЭД: ${code}`); }); }} />
-                    </Box>
-                    {item.hs_code && item.hs_code.length >= 4 && (
-                      <RequirementsPanel hsCode={item.hs_code} description={item.description || item.commercial_name || ''} />
-                    )}
-                  </Paper>
+                {items.map((item: DeclarationItem) => (
+                  <ItemEditCard
+                    key={item.id}
+                    item={item}
+                    declarationId={id!}
+                    currencyCode={watchedValues.currency_code}
+                    onSaved={() => refetchItems()}
+                    onDeleted={() => refetchItems()}
+                  />
                 ))}
               </Paper>
 
               {/* Payments */}
               {totals && (
                 <Paper sx={{ p: 2, mb: 2 }}>
-                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Расчёт платежей (графа 47)</Typography>
+                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Исчисление платежей (графа 47)</Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
                       <Typography variant="body2" color="text.secondary">Таможенная стоимость ({watchedValues.currency_code || '?'} {watchedValues.total_invoice_value ? num(watchedValues.total_invoice_value) : '—'} × курс {watchedValues.exchange_rate ? num(watchedValues.exchange_rate, 4) : '—'})</Typography>
                       <Typography variant="body2" fontWeight={700}>{num(totals.total_customs_value)} руб</Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                      <Typography variant="body2" color="text.secondary">Ввозная пошлина ({payments?.items?.[0]?.duty?.rate || 0}%)</Typography>
-                      <Typography variant="body2">{num(totals.total_duty)} руб</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>1010 — Таможенный сбор</Typography>
+                      <Typography variant="body2">{num(totals.customs_fee)} руб <Typography component="span" variant="caption" color="text.disabled">ИУ</Typography></Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                      <Typography variant="body2" color="text.secondary">НДС ({payments?.items?.[0]?.vat?.rate || 20}%)</Typography>
-                      <Typography variant="body2">{num(totals.total_vat)} руб</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>2010 — Ввозная пошлина ({payments?.items?.[0]?.duty?.rate || 0}%)</Typography>
+                      <Typography variant="body2">{num(totals.total_duty)} руб <Typography component="span" variant="caption" color="text.disabled">ИУ</Typography></Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                      <Typography variant="body2" color="text.secondary">Таможенный сбор</Typography>
-                      <Typography variant="body2">{num(totals.customs_fee)} руб</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>5010 — НДС ({payments?.items?.[0]?.vat?.rate || 22}%)</Typography>
+                      <Typography variant="body2">{num(totals.total_vat)} руб <Typography component="span" variant="caption" color="text.disabled">ИУ</Typography></Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: '2px solid', borderColor: 'divider' }}>
                       <Typography variant="subtitle1" fontWeight={700}>ИТОГО к уплате</Typography>
@@ -562,6 +618,13 @@ const DeclarationEditPage = () => {
                     </Box>
                   </Box>
                 </Paper>
+              )}
+
+              {/* ДТС — Декларация таможенной стоимости */}
+              {items.length > 0 && decl && (
+                <Box sx={{ mb: 2 }}>
+                  <DtsPanel declaration={decl} items={items} />
+                </Box>
               )}
 
               {items.length > 0 && (
@@ -627,7 +690,15 @@ const DeclarationEditPage = () => {
                   const a = document.createElement('a'); a.href = u; a.download = `DT_${(id||'').slice(0,8)}.xml`; a.click();
                   setSnackMsg('XML скачан');
                 } catch { setSnackMsg('Ошибка XML'); }
-              }}>Сформировать XML</Button>
+              }}>XML декларации (ДТ)</Button>
+              <Button variant="outlined" color="secondary" onClick={async () => {
+                try {
+                  const r = await client.get(`/integration/export-dts-xml/${id}`, { responseType: 'blob', baseURL: '/api/v1' });
+                  const u = window.URL.createObjectURL(new Blob([r.data], { type: 'application/xml' }));
+                  const a = document.createElement('a'); a.href = u; a.download = `DTS_${(id||'').slice(0,8)}.xml`; a.click();
+                  setSnackMsg('XML ДТС скачан');
+                } catch { setSnackMsg('Ошибка XML ДТС'); }
+              }}>XML стоимости (ДТС)</Button>
               <Button variant="text" color="secondary" size="small" onClick={async () => {
                 try {
                   const r = await client.get(`/integration/validate-xml/${id}`, { baseURL: '/api/v1' });

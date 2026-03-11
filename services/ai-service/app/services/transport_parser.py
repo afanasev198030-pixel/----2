@@ -25,12 +25,16 @@ def parse(file_bytes: bytes, filename: str) -> dict:
         "freight_amount": None,
         "freight_currency": None,
         "carrier_name": None,
-        "shipper_name": None,    # Отправитель груза (для гр. 2)
-        "shipper_address": None, # Адрес отправителя
+        "shipper_name": None,
+        "shipper_address": None,
         "transport_route": None,
         "awb_number": None,
         "flight_number": None,
         "transport_type": None,
+        "insurance_amount": None,
+        "insurance_currency": None,
+        "loading_cost": None,
+        "loading_currency": None,
     }
 
     # Regex fallback: извлечь базовые данные без LLM
@@ -84,6 +88,10 @@ def parse(file_bytes: bytes, filename: str) -> dict:
 - awb_number: номер авианакладной (AWB) или транспортной накладной (только номер, без слова AWB)
 - flight_number: номер рейса (например "CA836", "SU100") — для графы 21 ДТ; null если не авиа
 - transport_type: тип транспорта (40=воздушный, 10=морской, 30=авто, 20=ж/д)
+- insurance_amount: сумма страхования груза (число, null если нет)
+- insurance_currency: валюта страхования (USD, EUR, CNY, RUB)
+- loading_cost: расходы на погрузку/разгрузку (число, null если нет)
+- loading_currency: валюта расходов на погрузку
 
 Текст:
 {raw_text[:8000]}

@@ -106,6 +106,15 @@ def delete_file(file_key: str):
         raise
 
 
+def file_exists(file_key: str) -> bool:
+    """Check if file exists in MinIO without downloading it."""
+    try:
+        minio_client.stat_object(settings.MINIO_BUCKET, file_key)
+        return True
+    except S3Error:
+        return False
+
+
 def get_presigned_url(file_key: str, expires: int = 3600) -> str:
     """
     Get presigned URL for file download.

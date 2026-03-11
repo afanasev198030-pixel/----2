@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict
@@ -102,6 +102,27 @@ class DeclarationUpdate(BaseModel):
     warehouse_requisites: Optional[str] = None
     transit_offices: Optional[str] = None
     destination_office_code: Optional[str] = None
+    country_first_destination_code: Optional[str] = None
+    guarantee_info: Optional[str] = None
+    freight_amount: Optional[Decimal] = None
+    freight_currency: Optional[str] = None
+    signatory_name: Optional[str] = None
+    signatory_position: Optional[str] = None
+    signatory_id_doc: Optional[str] = None
+    signatory_cert_number: Optional[str] = None
+    signatory_power_of_attorney: Optional[str] = None
+    broker_registry_number: Optional[str] = None
+    broker_contract_number: Optional[str] = None
+    broker_contract_date: Optional[datetime] = None
+    transport_reg_number: Optional[str] = None
+    transport_nationality_code: Optional[str] = None
+    goods_location_code: Optional[str] = None
+    goods_location_customs_code: Optional[str] = None
+    goods_location_zone_id: Optional[str] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    contract_number: Optional[str] = None
+    contract_date: Optional[date] = None
 
 
 class DeclarationResponse(BaseModel):
@@ -165,6 +186,23 @@ class DeclarationResponse(BaseModel):
     ai_issues: Optional[list[dict]] = None
     freight_amount: Optional[Decimal] = None
     freight_currency: Optional[str] = None
+    signatory_name: Optional[str] = None
+    signatory_position: Optional[str] = None
+    signatory_id_doc: Optional[str] = None
+    signatory_cert_number: Optional[str] = None
+    signatory_power_of_attorney: Optional[str] = None
+    broker_registry_number: Optional[str] = None
+    broker_contract_number: Optional[str] = None
+    broker_contract_date: Optional[datetime] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    contract_number: Optional[str] = None
+    contract_date: Optional[date] = None
+    transport_reg_number: Optional[str] = None
+    transport_nationality_code: Optional[str] = None
+    goods_location_code: Optional[str] = None
+    goods_location_customs_code: Optional[str] = None
+    goods_location_zone_id: Optional[str] = None
     created_by: uuid.UUID
     created_at: Optional[datetime]
     updated_at: Optional[datetime]

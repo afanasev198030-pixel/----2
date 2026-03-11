@@ -1,16 +1,14 @@
 import client from './client';
-import { Document, PaginatedResponse } from '../types';
+import { Document } from '../types';
 
 export interface GetDocumentsParams {
-  page?: number;
-  per_page?: number;
   declaration_id?: string;
   item_id?: string;
   doc_type?: string;
 }
 
-export const getDocuments = async (params?: GetDocumentsParams): Promise<PaginatedResponse<Document>> => {
-  const response = await client.get<PaginatedResponse<Document>>('/documents/', { params });
+export const getDocuments = async (params?: GetDocumentsParams): Promise<Document[]> => {
+  const response = await client.get<Document[]>('/documents/', { params });
   return response.data;
 };
 
