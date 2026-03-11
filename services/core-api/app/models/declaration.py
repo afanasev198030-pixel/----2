@@ -1,7 +1,7 @@
 import uuid
 from enum import Enum as PyEnum
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy import (
     String,
@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
     ForeignKey,
     DateTime,
+    Date,
     DECIMAL,
     func,
 )
@@ -126,6 +127,11 @@ class Declaration(Base):
     broker_registry_number: Mapped[Optional[str]] = mapped_column(String(30))
     broker_contract_number: Mapped[Optional[str]] = mapped_column(String(50))
     broker_contract_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # ДТС графы 4–5: инвойс и контракт
+    invoice_number: Mapped[Optional[str]] = mapped_column(String(100))
+    invoice_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    contract_number: Mapped[Optional[str]] = mapped_column(String(100))
+    contract_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     transport_reg_number: Mapped[Optional[str]] = mapped_column(String(50))
     transport_nationality_code: Mapped[Optional[str]] = mapped_column(String(2))
     goods_location_code: Mapped[Optional[str]] = mapped_column(String(2))
@@ -188,4 +194,8 @@ class Declaration(Base):
     )
     payments: Mapped[list["CustomsPayment"]] = relationship(
         "CustomsPayment", back_populates="declaration", cascade="all, delete-orphan"
+    )
+    customs_value_declaration: Mapped[Optional["CustomsValueDeclaration"]] = relationship(
+        "CustomsValueDeclaration", back_populates="declaration", uselist=False,
+        cascade="all, delete-orphan",
     )

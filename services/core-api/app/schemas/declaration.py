@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict
@@ -119,6 +119,10 @@ class DeclarationUpdate(BaseModel):
     goods_location_code: Optional[str] = None
     goods_location_customs_code: Optional[str] = None
     goods_location_zone_id: Optional[str] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    contract_number: Optional[str] = None
+    contract_date: Optional[date] = None
 
 
 class DeclarationResponse(BaseModel):
@@ -190,6 +194,10 @@ class DeclarationResponse(BaseModel):
     broker_registry_number: Optional[str] = None
     broker_contract_number: Optional[str] = None
     broker_contract_date: Optional[datetime] = None
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    contract_number: Optional[str] = None
+    contract_date: Optional[date] = None
     transport_reg_number: Optional[str] = None
     transport_nationality_code: Optional[str] = None
     goods_location_code: Optional[str] = None

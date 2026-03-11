@@ -12,6 +12,7 @@ from fastapi.responses import Response
 from app.config import get_settings
 from app.services.xml_builder import build_declaration_xml
 from app.services.xml_validator import validate_declaration_xml
+from app.services.dts_xml_builder import build_dts_xml
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -171,3 +172,44 @@ async def validate_xml(declaration_id: uuid.UUID, request: Request):
                 warnings_count=len(result["warnings"]))
 
     return result
+
+
+# ───── ДТС XML export ─────
+
+async def _fetch_dts(declaration_id: uuid.UUID, headers: dict[str, str]) -> dict | None:
+    url = f"{settings.CORE_API_URL}/api/v1/declarations/{declaration_id}/dts/"
+    return await _fetch_json(url, headers, "customs-value-declaration")
+
+
+@router.get("/export-dts-xml/{declaration_id}")
+async def export_dts_xml(declaration_id: uuid.UUID, request: Request):
+    """Build ДТС-1 XML and return as downloadable file."""
+    headers = await _headers_from_request(request)
+
+    decl = await _fetch_declaration(declaration_id, headers)
+    dts = await _fetch_dts(declaration_id, headers)
+    if dts is None:
+        raise HTTPException(status_code=404, detail="Customs value declaration not found. Generate DTS first.")
+
+    sender = await _fetch_counterparty(decl.get("sender_counterparty_id"), headers)
+    receiver = await _fetch_counterparty(decl.get("receiver_counterparty_id"), headers)
+    declarant = await _fetch_counterparty(decl.get("declarant_counterparty_id"), headers)
+
+    xml_string = build_dts_xml(
+        decl=decl,
+        dts=dts,
+        sender=sender,
+        receiver=receiver,
+        declarant=declarant,
+    )
+
+    number = decl.get("number_internal") or str(declaration_id)[:8]
+    filename = f"dts_{number}.xml"
+
+    logger.info("dts_xml_exported", declaration_id=str(declaration_id))
+
+    return Response(
+        content=xml_string,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

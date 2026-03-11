@@ -168,6 +168,10 @@ export interface Declaration {
   broker_registry_number?: string;
   broker_contract_number?: string;
   broker_contract_date?: string;
+  invoice_number?: string;
+  invoice_date?: string;
+  contract_number?: string;
+  contract_date?: string;
   transport_reg_number?: string;
   transport_nationality_code?: string;
   goods_location_code?: string;
@@ -318,6 +322,66 @@ export interface ItemPrecedingDoc {
   line_id?: string;
   sort_order: number;
   created_at?: string;
+}
+
+export interface CustomsValueItem {
+  id: string;
+  customs_value_declaration_id: string;
+  declaration_item_id: string;
+  item_no: number;
+  hs_code?: string;
+  invoice_price_foreign?: number;
+  invoice_price_national?: number;
+  indirect_payments?: number;
+  base_total?: number;
+  broker_commission?: number;
+  packaging_cost?: number;
+  raw_materials?: number;
+  tools_molds?: number;
+  consumed_materials?: number;
+  design_engineering?: number;
+  license_payments?: number;
+  seller_income?: number;
+  transport_cost?: number;
+  loading_unloading?: number;
+  insurance_cost?: number;
+  additions_total?: number;
+  construction_after_import?: number;
+  inland_transport?: number;
+  duties_taxes?: number;
+  deductions_total?: number;
+  customs_value_national?: number;
+  customs_value_usd?: number;
+  currency_conversions?: Array<Record<string, unknown>>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface CustomsValueDeclaration {
+  id: string;
+  declaration_id: string;
+  form_type: string;
+  related_parties: boolean;
+  related_price_impact: boolean;
+  related_verification: boolean;
+  restrictions: boolean;
+  price_conditions: boolean;
+  ip_license_payments: boolean;
+  sale_depends_on_income: boolean;
+  income_to_seller: boolean;
+  additional_docs?: string;
+  additional_data?: string;
+  filler_name?: string;
+  filler_date?: string;
+  filler_document?: string;
+  filler_contacts?: string;
+  filler_position?: string;
+  transport_carrier_name?: string;
+  transport_destination?: string;
+  usd_exchange_rate?: number;
+  created_at?: string;
+  updated_at?: string;
+  items: CustomsValueItem[];
 }
 
 export interface LoginResponse {

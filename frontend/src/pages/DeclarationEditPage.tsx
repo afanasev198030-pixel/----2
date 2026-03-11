@@ -35,6 +35,7 @@ import AiExplainPanel from '../components/AiExplainPanel';
 import DeclarationStatusTimeline from '../components/DeclarationStatusTimeline';
 import NextActionsPanel from '../components/NextActionsPanel';
 import ConfidenceBadge from '../components/ConfidenceBadge';
+import DtsPanel from '../components/DtsPanel';
 import { Declaration, DeclarationItem, Document as DocType } from '../types';
 
 const STEPS = ['Загрузка документов', 'Проверка данных', 'Готово'];
@@ -462,6 +463,10 @@ const DeclarationEditPage = () => {
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Внутр. номер" {...register('number_internal')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="declaration_specifics" value={watchedValues.special_ref_code || ''} onChange={(c) => updateField('special_ref_code', c)} label={lbl("Особенности (7)", "special_ref_code")} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="currency" value={watchedValues.currency_code || ''} onChange={(c) => updateField('currency_code', c)} label={lbl("Валюта (22)", "currency_code")} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Инвойс № (ДТС гр.4)", "invoice_number")} {...register('invoice_number')} InputLabelProps={{ shrink: true }} placeholder="HUAXINAG20251763/25" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Инвойс дата (ДТС гр.4)", "invoice_date")} {...register('invoice_date')} type="date" InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Контракт № (ДТС гр.5)", "contract_number")} {...register('contract_number')} InputLabelProps={{ shrink: true }} placeholder="AG-TIAN-GPB1" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Контракт дата (ДТС гр.5)", "contract_date")} {...register('contract_date')} type="date" InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl(`Сумма инвойса (22) ${watchedValues.currency_code || ''}`, "total_invoice_value")} {...register('total_invoice_value')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_dispatch_code || ''} onChange={(c) => updateField('country_dispatch_code', c)} label={lbl("Страна отпр. (15)", "country_dispatch_code")} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_origin_name || ''} onChange={(c) => updateField('country_origin_name', c)} label={lbl("Происхождение (16)", "country_origin_name")} /></Grid>
@@ -615,6 +620,13 @@ const DeclarationEditPage = () => {
                 </Paper>
               )}
 
+              {/* ДТС — Декларация таможенной стоимости */}
+              {items.length > 0 && decl && (
+                <Box sx={{ mb: 2 }}>
+                  <DtsPanel declaration={decl} items={items} />
+                </Box>
+              )}
+
               {items.length > 0 && (
                 <Accordion disableGutters sx={{ mb: 2, '&:before': { display: 'none' } }}>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -678,7 +690,15 @@ const DeclarationEditPage = () => {
                   const a = document.createElement('a'); a.href = u; a.download = `DT_${(id||'').slice(0,8)}.xml`; a.click();
                   setSnackMsg('XML скачан');
                 } catch { setSnackMsg('Ошибка XML'); }
-              }}>Сформировать XML</Button>
+              }}>XML декларации (ДТ)</Button>
+              <Button variant="outlined" color="secondary" onClick={async () => {
+                try {
+                  const r = await client.get(`/integration/export-dts-xml/${id}`, { responseType: 'blob', baseURL: '/api/v1' });
+                  const u = window.URL.createObjectURL(new Blob([r.data], { type: 'application/xml' }));
+                  const a = document.createElement('a'); a.href = u; a.download = `DTS_${(id||'').slice(0,8)}.xml`; a.click();
+                  setSnackMsg('XML ДТС скачан');
+                } catch { setSnackMsg('Ошибка XML ДТС'); }
+              }}>XML стоимости (ДТС)</Button>
               <Button variant="text" color="secondary" size="small" onClick={async () => {
                 try {
                   const r = await client.get(`/integration/validate-xml/${id}`, { baseURL: '/api/v1' });

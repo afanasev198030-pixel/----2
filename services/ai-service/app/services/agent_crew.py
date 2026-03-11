@@ -1859,6 +1859,10 @@ JSON:"""},
             "documents": self._build_documents_list(parsed_docs, inv, contract, awb_number),
             "freight_amount": transport_inv.get("freight_amount"),
             "freight_currency": transport_inv.get("freight_currency"),
+            "insurance_amount": transport_inv.get("insurance_amount"),
+            "insurance_currency": transport_inv.get("insurance_currency"),
+            "loading_cost": transport_inv.get("loading_cost"),
+            "loading_currency": transport_inv.get("loading_currency"),
         }
 
         buyer_src = "trilateral_contract" if (is_trilateral and not buyer_matches_declarant) else "default_see_graph_14"

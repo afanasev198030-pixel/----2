@@ -361,6 +361,12 @@ const DeclarationViewPage = () => {
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2, gap: 1 }} className="no-print">
         <Button
           variant="outlined"
+          onClick={() => navigate(`/declarations/${id}/dts-view`)}
+        >
+          Просмотр ДТС
+        </Button>
+        <Button
+          variant="outlined"
           startIcon={<EditIcon />}
           onClick={() => navigate(`/declarations/${id}/edit`)}
         >

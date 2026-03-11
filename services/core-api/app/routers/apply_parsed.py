@@ -462,6 +462,12 @@ class ApplyParsedRequest(BaseModel):
     freight_amount: Optional[float] = None
     freight_currency: Optional[str] = None
 
+    # Дополнительные расходы для ДТС
+    insurance_amount: Optional[float] = None
+    insurance_currency: Optional[str] = None
+    loading_cost: Optional[float] = None
+    loading_currency: Optional[str] = None
+
     # Графа 54: подписант / таможенный представитель
     signatory_name: Optional[str] = None
     signatory_position: Optional[str] = None
@@ -698,6 +704,20 @@ async def _apply_declaration_header_fields(
         parsed_bc_date = _parse_doc_date(data.broker_contract_date)
         if parsed_bc_date:
             declaration.broker_contract_date = datetime.combine(parsed_bc_date, datetime.min.time())
+
+    # ДТС графы 4–5: инвойс и контракт
+    if data.invoice_number:
+        declaration.invoice_number = str(data.invoice_number)[:100]
+    if data.invoice_date:
+        inv_date = _parse_doc_date(data.invoice_date)
+        if inv_date:
+            declaration.invoice_date = inv_date
+    if data.contract_number:
+        declaration.contract_number = str(data.contract_number)[:100]
+    if data.contract_date:
+        cntr_date = _parse_doc_date(data.contract_date)
+        if cntr_date:
+            declaration.contract_date = cntr_date
 
     freight_dec = _to_decimal(data.freight_amount)
     if freight_dec is not None:
@@ -1185,6 +1205,69 @@ async def apply_parsed_data(
                 logger.info("total_customs_value_calculated",
                             value=float(declaration.total_customs_value),
                             items=len(created_items))
+
+        # --- 3b-dts. Обновить ДТС, если она уже существует ---
+        try:
+            from app.models.customs_value_declaration import CustomsValueDeclaration
+            from app.models.customs_value_item import CustomsValueItem as CVItem
+            cvd_result = await db.execute(
+                select(CustomsValueDeclaration)
+                .where(CustomsValueDeclaration.declaration_id == declaration.id)
+            )
+            cvd = cvd_result.scalar_one_or_none()
+            if cvd and created_items:
+                total_gross_dts = declaration.total_gross_weight or Decimal("0")
+                insurance_dec = _to_decimal(data.insurance_amount)
+                loading_dec = _to_decimal(data.loading_cost)
+
+                for ci in created_items:
+                    cvi_result = await db.execute(
+                        select(CVItem).where(CVItem.declaration_item_id == ci.id)
+                    )
+                    cvi = cvi_result.scalar_one_or_none()
+                    if not cvi:
+                        continue
+
+                    weight_share = (
+                        Decimal(str(ci.gross_weight or 0)) / total_gross_dts
+                        if total_gross_dts > 0 else Decimal(0)
+                    )
+
+                    if insurance_dec and insurance_dec > 0:
+                        ins_rub = (insurance_dec * exchange_rate).quantize(Decimal("0.01"))
+                        cvi.insurance_cost = (ins_rub * weight_share).quantize(Decimal("0.01"))
+                    if loading_dec and loading_dec > 0:
+                        load_rub = (loading_dec * exchange_rate).quantize(Decimal("0.01"))
+                        cvi.loading_unloading = (load_rub * weight_share).quantize(Decimal("0.01"))
+
+                    ipn = cvi.invoice_price_national or Decimal("0")
+                    ip = cvi.indirect_payments or Decimal("0")
+                    cvi.base_total = (ipn + ip).quantize(Decimal("0.01"))
+
+                    additions = sum(
+                        Decimal(str(getattr(cvi, f) or 0))
+                        for f in [
+                            "broker_commission", "packaging_cost", "raw_materials",
+                            "tools_molds", "consumed_materials", "design_engineering",
+                            "license_payments", "seller_income", "transport_cost",
+                            "loading_unloading", "insurance_cost",
+                        ]
+                    )
+                    cvi.additions_total = additions.quantize(Decimal("0.01"))
+                    deductions = sum(
+                        Decimal(str(getattr(cvi, f) or 0))
+                        for f in ["construction_after_import", "inland_transport", "duties_taxes"]
+                    )
+                    cvi.deductions_total = deductions.quantize(Decimal("0.01"))
+                    cvi.customs_value_national = (
+                        cvi.base_total + cvi.additions_total - cvi.deductions_total
+                    ).quantize(Decimal("0.01"))
+                    if usd_rate and usd_rate > 0:
+                        cvi.customs_value_usd = (cvi.customs_value_national / usd_rate).quantize(Decimal("0.01"))
+
+                logger.info("dts_updated_from_parsed", declaration_id=str(declaration.id))
+        except Exception as exc:
+            logger.warning("dts_update_from_parsed_failed", error=str(exc))
 
         # --- 3c. Рассчитать и сохранить CustomsPayment (Гр. 47/B) ---
         await db.execute(

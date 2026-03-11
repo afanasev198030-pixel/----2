@@ -19,6 +19,13 @@ from .classifier import ClassifierResponse
 from .broker_client import BrokerClientCreate, BrokerClientUpdate, BrokerClientResponse
 from .item_document import ItemDocumentCreate, ItemDocumentUpdate, ItemDocumentResponse
 from .item_preceding_doc import ItemPrecedingDocCreate, ItemPrecedingDocUpdate, ItemPrecedingDocResponse
+from .customs_value_declaration import (
+    CustomsValueDeclarationUpdate,
+    CustomsValueDeclarationResponse,
+    CustomsValueItemCreate,
+    CustomsValueItemUpdate,
+    CustomsValueItemResponse,
+)
 from .common import PaginatedResponse, MessageResponse
 
 __all__ = [
@@ -67,6 +74,12 @@ __all__ = [
     "ItemPrecedingDocCreate",
     "ItemPrecedingDocUpdate",
     "ItemPrecedingDocResponse",
+    # Customs Value Declaration (ДТС)
+    "CustomsValueDeclarationUpdate",
+    "CustomsValueDeclarationResponse",
+    "CustomsValueItemCreate",
+    "CustomsValueItemUpdate",
+    "CustomsValueItemResponse",
     # Common
     "PaginatedResponse",
     "MessageResponse",

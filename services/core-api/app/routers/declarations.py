@@ -622,6 +622,10 @@ async def duplicate_declaration(
         spot_status=original.spot_status,
         spot_qr_file_key=original.spot_qr_file_key,
         spot_amount=original.spot_amount,
+        invoice_number=original.invoice_number,
+        invoice_date=original.invoice_date,
+        contract_number=original.contract_number,
+        contract_date=original.contract_date,
     )
     
     db.add(new_declaration)
