@@ -488,7 +488,8 @@ class DeclarationCrew:
             ])
             tech_lines = "\n".join([
                 f"[{i + 1}] name={tp.get('product_name', '')}  purpose={tp.get('purpose', '')}  "
-                f"specs={tp.get('technical_specs', '')}  hs_desc={tp.get('suggested_hs_description', '')}"
+                f"materials={tp.get('materials', '')}  specs={tp.get('technical_specs', '')}  "
+                f"hs_desc={tp.get('suggested_hs_description', '')}"
                 for i, tp in enumerate(tech_products)
             ])
 
@@ -512,14 +513,20 @@ class DeclarationCrew:
 Для каждой позиции инвойса верни:
 - invoice_index: номер позиции инвойса (1-based)
 - tech_index: номер из тех.описания (1-based, null если нет совпадения)
-- description_ru: полное название товара для графы 31 ДТ (из тех.описания, на русском)
+- commercial_name_ru: краткое коммерческое/фирменное наименование товара на русском (марка, модель, артикул)
+- description_ru: ПОЛНОЕ описание товара для графы 31 ДТ на русском языке. \
+Обязательно включить ВСЕ доступные сведения из тех.описания: \
+наименование, назначение/область применения, основные материалы (материал корпуса, покрытия и т.д.), \
+технические характеристики (мощность, напряжение, размеры, вес, частота, степень защиты и т.д.), \
+марку, модель, артикул, товарный знак, производителя — если указаны. \
+Формат: одно связное предложение или перечисление через запятую. НЕ сокращать, НЕ обобщать.
 - hs_description: описание для классификации ТН ВЭД (из suggested_hs_description или составь сам — материал + назначение + тип)
 - match_confidence: уверенность совпадения (0.0–1.0)
 
 JSON: {{"matches": [...]}}"""},
                 ],
                 temperature=0,
-                max_tokens=2000,
+                max_tokens=4000,
             )
 
             text = strip_code_fences(resp.choices[0].message.content)
@@ -531,19 +538,20 @@ JSON: {{"matches": [...]}}"""},
                 if not (0 <= idx < len(result)):
                     continue
                 desc_ru = (m.get("description_ru") or "").strip()
+                comm_name = (m.get("commercial_name_ru") or "").strip()
                 hs_desc = (m.get("hs_description") or "").strip()
                 conf = float(m.get("match_confidence") or 0.5)
                 if desc_ru:
                     result[idx]["description_invoice"] = result[idx].get("description", "")
                     result[idx]["description"] = desc_ru
-                    result[idx]["commercial_name"] = desc_ru
+                    result[idx]["commercial_name"] = comm_name or desc_ru
                     result[idx]["description_source"] = "tech_description"
                 if hs_desc:
                     result[idx]["hs_description_for_classification"] = hs_desc
                 result[idx]["techop_match_confidence"] = conf
                 logger.info("techop_matched",
                             invoice_desc=(invoice_items[idx].get("description") or "")[:40],
-                            tech_desc=desc_ru[:60], confidence=conf)
+                            tech_desc=desc_ru[:80], confidence=conf)
             return result
 
         except Exception as e:
@@ -813,8 +821,8 @@ JSON:"""},
                 if prev_inv:
                     prev_score = _invoice_score(prev_inv)
                     new_score = _invoice_score(new_inv)
-                    prev_good, prev_total, _ = prev_score
-                    new_good, new_total, _ = new_score
+                    prev_good, _, _, prev_total = prev_score
+                    new_good, _, _, new_total = new_score
                     if new_score > prev_score:
                         parsed_docs["invoice"] = new_inv
                         logger.info("invoice_replaced",
@@ -1462,6 +1470,23 @@ JSON:"""},
                     item["package_type"] = packing.get("package_type")
 
         logger.info("packaging_assigned", items_with_pkg=pkg_assigned, total_items=len(items))
+
+        # ── Гр. 31: формируем полное описание (пункт 1 + пункт 2) ──
+        # Пункт 1: наименование товара (уже в description — из тех.описания или инвойса)
+        # Пункт 2: грузовые места и упаковка из PL
+        for item in items:
+            pkg_parts = []
+            pc = item.get("package_count")
+            pt = item.get("package_type")
+            if pc:
+                pkg_parts.append(f"{pc}")
+            if pt:
+                pkg_parts.append(pt)
+            if pkg_parts:
+                pkg_line = "2. Грузовые места: " + ", ".join(pkg_parts)
+                desc = item.get("description") or ""
+                if desc and pkg_line not in desc:
+                    item["description"] = f"1. {desc}\n{pkg_line}"
 
         # Суммарные веса из позиций
         if items and (total_gross is None or total_net is None):
