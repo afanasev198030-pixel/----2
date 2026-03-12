@@ -386,6 +386,34 @@ const ItemEditCard = ({ item, declarationId, currencyCode, onSaved, onDeleted }:
           Нажмите «Подобрать» или введите код вручную.
         </Alert>
       )}
+      {item.drift_status && (
+        <Alert severity="warning" sx={{ mb: 1 }}>
+          {item.drift_message || `Возможный drift: исторический код ${item.historical_hs_code || '—'} отличается от текущего ${item.hs_code || '—'}.`}
+          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                if (!item.historical_hs_code) return;
+                handleHsCodeSelect(item.historical_hs_code);
+              }}
+            >
+              Вернуть {item.historical_hs_code || 'исторический код'}
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="warning"
+              onClick={() => {
+                // Just dismiss or handle locally if needed. 
+                // For now, it just serves as an acknowledgment.
+              }}
+            >
+              Оставить {fields.hs_code || 'текущий код'}
+            </Button>
+          </Box>
+        </Alert>
+      )}
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <HSCodeSuggestions
           description={fields.description || fields.commercial_name || ''}

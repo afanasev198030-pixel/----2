@@ -11,6 +11,7 @@ const client: AxiosInstance = axios.create({
   },
 });
 
+
 const generateRequestId = (): string => {
   const cryptoApi = globalThis.crypto;
 
@@ -51,9 +52,15 @@ client.interceptors.request.use(
 client.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Only redirect if it's a 401 and we're not already on the login page
+    // and the request wasn't to the login endpoint itself
+    if (
+      error.response?.status === 401 && 
+      window.location.pathname !== '/' &&
+      !error.config?.url?.includes('/auth/login')
+    ) {
       localStorage.removeItem('token');
-      window.location.href = '/login';
+      window.location.href = '/';
     }
     return Promise.reject(error);
   }

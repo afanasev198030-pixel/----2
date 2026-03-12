@@ -270,7 +270,7 @@ const DeclarationViewPage = () => {
       try {
         const [declResp, itemsResp] = await Promise.all([
           client.get(`/declarations/${id}`),
-          client.get(`/declarations/${id}/items/`),
+          client.get(`/declarations/${id}/items`),
         ]);
         const d = declResp.data;
         const its = Array.isArray(itemsResp.data) ? itemsResp.data : itemsResp.data?.items || [];

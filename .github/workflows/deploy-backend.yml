@@ -1,21 +1,19 @@
-# Деплой бэкенда на сервер по SSH при пуше в main.
-# Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service, integration-service.
+# Ручной деплой бэкенда на сервер по SSH (workflow_dispatch).
+# Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service.
 # Секреты в GitHub: Settings → Secrets and variables → Actions:
 #   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
 #   SERVER_HOST     — хост (напр. 141.105.65.148)
 #   SERVER_USER     — пользователь SSH (напр. root)
+# Опционально:
+#   DEPLOY_PATH      — каталог на сервере (по умолчанию /home/2/----2)
 
-name: Deploy backend to server
+name: Manual deploy backend to server
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'services/**'
-      - 'scripts/**'
-      - 'docker-compose.prod.yml'
-      - 'docs/**'
-      - '.github/workflows/deploy-backend.yml'
   workflow_dispatch:
 
 jobs:
@@ -30,47 +28,61 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 15m
           script: |
-            set -e
-            cd /home/2/----2
+            set -euo pipefail
 
-            echo "==> [1/5] Pulling latest code from main..."
-            git fetch origin && git reset --hard origin/main
+            # Simple lock to avoid concurrent deploys on the server
+            (
+              flock -n 9 || { echo "Another deploy is running. Exiting."; exit 1; }
 
-            echo "==> [2/6] Ensuring infrastructure and backend base services are up..."
-            docker compose -f docker-compose.prod.yml up -d postgres redis minio chromadb core-api
+              DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+              if [ -z "${DEPLOY_PATH}" ]; then DEPLOY_PATH="/home/2/----2"; fi
+              cd "${DEPLOY_PATH}"
 
-            echo "==> [3/6] Running DB migrations..."
-            docker compose -f docker-compose.prod.yml exec -T core-api alembic upgrade head
+              echo "==> [1/8] Pulling latest code from main..."
+              git fetch origin && git reset --hard origin/main
 
-            echo "==> [4/6] Loading graph rules into DB (upsert — safe to run always)..."
-            docker compose -f docker-compose.prod.yml exec -T core-api \
-              python -m app.seeds.load_graph_rules || echo "Seed skipped (non-critical)"
+              DC="docker compose -f docker-compose.prod.yml"
 
-            echo "==> [5/6] Rebuilding backend images..."
-            docker compose -f docker-compose.prod.yml build \
-              core-api ai-service file-service calc-service integration-service --no-cache
+              echo "==> [2/8] Building backend images..."
+              ${DC} build core-api ai-service file-service calc-service integration-service --no-cache
 
-            echo "==> [6/6] Restarting backend containers..."
-            docker compose -f docker-compose.prod.yml up -d --force-recreate \
-              core-api ai-service file-service calc-service integration-service
+              echo "==> [3/8] Ensuring dependencies are up..."
+              ${DC} up -d postgres redis minio chromadb
 
-            echo "==> [7/8] Waiting for core-api and ai-service health..."
-            for i in $(seq 1 30); do
-              if curl -sf http://localhost:8001/health >/dev/null && curl -sf http://localhost:8003/health >/dev/null; then
-                echo "Health checks passed."
-                break
-              fi
-              if [ "$i" -eq 30 ]; then
-                echo "Health checks did not pass in time."
-                exit 1
-              fi
-              sleep 5
-            done
+              echo "==> [4/8] Running DB migrations (from fresh image)..."
+              ${DC} run --rm core-api alembic upgrade head
 
-            echo "==> [8/8] Running digital broker smoke test..."
-            BASE_URL=http://localhost:8001 \
-            AI_BASE_URL=http://localhost:8003 \
-            INTEGRATION_BASE_URL=http://localhost:8004 \
-            python3 scripts/smoke_digital_broker_flow.py --folder "3 dek" --allow-blocking
+              echo "==> [5/8] Loading graph rules into DB (upsert — safe to run always)..."
+              ${DC} run --rm core-api python -m app.seeds.load_graph_rules || echo "Seed skipped (non-critical)"
 
-            echo "==> Done. Backend deployed successfully."
+              echo "==> [6/9] Restarting backend containers..."
+              ${DC} up -d --force-recreate core-api ai-service file-service calc-service integration-service
+
+              echo "==> [7/9] Waiting for core-api and ai-service health..."
+              for i in $(seq 1 30); do
+                if curl -sf http://localhost:8001/health >/dev/null && curl -sf http://localhost:8003/health >/dev/null; then
+                  echo "Health checks passed."
+                  break
+                fi
+                if [ "$i" -eq 30 ]; then
+                  echo "Health checks did not pass in time."
+                  exit 1
+                fi
+                sleep 5
+              done
+
+              echo "==> [8/9] Running digital broker smoke test..."
+              BASE_URL=http://localhost:8001 \
+              AI_BASE_URL=http://localhost:8003 \
+              INTEGRATION_BASE_URL=http://localhost:8004 \
+              python3 scripts/smoke_digital_broker_flow.py --folder "3 dek" --allow-blocking
+
+              echo "==> [9/9] Running AI offline eval gate..."
+              ${DC} exec -T ai-service \
+                python -m app.services.offline_eval \
+                --dataset /app/app/ml_models/hs_offline_eval_dataset.jsonl \
+                --min-accuracy 0.85 \
+                --limit 1000
+
+              echo "==> Done. Backend deployed successfully."
+            ) 9>/tmp/deploy.lock

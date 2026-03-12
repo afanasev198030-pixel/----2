@@ -15,7 +15,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
-@router.get("/", response_model=list[DocumentResponse])
+@router.get("", response_model=list[DocumentResponse])
 async def list_documents(
     declaration_id: Optional[uuid.UUID] = None,
     item_id: Optional[uuid.UUID] = None,
@@ -54,7 +54,7 @@ async def list_documents(
     return [DocumentResponse.model_validate(doc) for doc in documents]
 
 
-@router.post("/", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def create_document(
     data: DocumentCreate,
     db: AsyncSession = Depends(get_db),

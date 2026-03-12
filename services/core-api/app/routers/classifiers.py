@@ -14,7 +14,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/classifiers", tags=["classifiers"])
 
 
-@router.get("/", response_model=list[ClassifierResponse])
+@router.get("", response_model=list[ClassifierResponse])
 async def list_classifiers(
     classifier_type: str = Query(..., description="Type of classifier (required)"),
     q: Optional[str] = Query(None, description="Search query"),

@@ -100,6 +100,14 @@ async def startup_event():
         logger.info("eec_classifier_sync_scheduler_started",
                      interval_hours=settings.EEC_SYNC_INTERVAL_HOURS)
 
+    if settings.AI_TRAINING_SYNC_ENABLED:
+        asyncio.create_task(_ai_training_sync_loop())
+        logger.info(
+            "ai_training_sync_scheduler_started",
+            interval_hours=settings.AI_TRAINING_SYNC_INTERVAL_HOURS,
+            declaration_limit=settings.AI_TRAINING_SYNC_DECL_LIMIT,
+        )
+
 
 async def _classifier_sync_loop():
     """Background loop that syncs EEC classifiers on a schedule."""
@@ -115,6 +123,32 @@ async def _classifier_sync_loop():
             logger.error("eec_scheduled_sync_failed", error=str(exc))
 
         await asyncio.sleep(settings.EEC_SYNC_INTERVAL_HOURS * 3600)
+
+
+async def _ai_training_sync_loop():
+    """Background loop for syncing approved HS examples into ai-service."""
+    await asyncio.sleep(90)
+    while True:
+        try:
+            from app.database import async_sessionmaker
+            from app.services.ai_training import run_hs_training_sync
+
+            async with async_sessionmaker() as session:
+                result = await run_hs_training_sync(
+                    db=session,
+                    ai_service_url=settings.AI_SERVICE_URL,
+                    limit_declarations=settings.AI_TRAINING_SYNC_DECL_LIMIT,
+                )
+            logger.info(
+                "ai_training_scheduled_sync_done",
+                prepared_examples=result.prepared_examples,
+                sent_examples=result.sent_examples,
+                dropped_examples=result.dropped_examples,
+            )
+        except Exception as exc:
+            logger.error("ai_training_scheduled_sync_failed", error=str(exc), exc_info=True)
+
+        await asyncio.sleep(settings.AI_TRAINING_SYNC_INTERVAL_HOURS * 3600)
 
 
 # Add CORS middleware

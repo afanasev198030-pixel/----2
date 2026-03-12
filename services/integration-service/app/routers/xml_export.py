@@ -51,7 +51,7 @@ async def _fetch_declaration(declaration_id: uuid.UUID, headers: dict[str, str])
 
 
 async def _fetch_items(declaration_id: uuid.UUID, headers: dict[str, str]) -> list[dict]:
-    url = f"{settings.CORE_API_URL}/api/v1/declarations/{declaration_id}/items/"
+    url = f"{settings.CORE_API_URL}/api/v1/declarations/{declaration_id}/items"
     return await _fetch_json(url, headers, "items") or []
 
 

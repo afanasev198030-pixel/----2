@@ -295,6 +295,67 @@ class FeedbackRequest(BaseModel):
     description: Optional[str] = None
 
 
+class TrainBatchExample(BaseModel):
+    declaration_id: Optional[str] = None
+    item_id: Optional[str] = None
+    company_id: Optional[str] = None
+    description: str
+    actual_hs_code: str
+    context: Optional[dict] = None
+    source: Optional[str] = None
+    captured_at: Optional[str] = None
+
+
+class TrainBatchRequest(BaseModel):
+    examples: list[TrainBatchExample]
+
+
+@router.post("/train-batch")
+async def train_batch(data: TrainBatchRequest):
+    """Принять батч обучающих примеров и сохранить в eval-датасет + прецеденты."""
+    from app.services.index_manager import get_index_manager
+    from app.services.training_dataset import append_examples, dataset_path
+
+    idx = get_index_manager()
+    raw_examples = [e.model_dump() for e in data.examples]
+    accepted_dataset = append_examples(raw_examples)
+
+    accepted_precedents = 0
+    for ex in raw_examples:
+        description = (ex.get("description") or "").strip()
+        hs_code = (ex.get("actual_hs_code") or "").strip()
+        if len(description) < 3 or len(hs_code) < 6:
+            continue
+        try:
+            idx.add_precedent(
+                description,
+                hs_code[:10],
+                metadata={
+                    "source": ex.get("source") or "approved_declaration",
+                    "declaration_id": ex.get("declaration_id") or "",
+                    "item_id": ex.get("item_id") or "",
+                    "company_id": ex.get("company_id") or "",
+                },
+            )
+            accepted_precedents += 1
+        except Exception as exc:
+            logger.warning("train_batch_precedent_failed", error=str(exc)[:120])
+
+    logger.info(
+        "train_batch_completed",
+        requested=len(raw_examples),
+        accepted_dataset=accepted_dataset,
+        accepted_precedents=accepted_precedents,
+    )
+    return {
+        "status": "ok",
+        "requested": len(raw_examples),
+        "accepted": accepted_dataset,
+        "precedents_added": accepted_precedents,
+        "dataset_path": dataset_path(),
+    }
+
+
 @router.post("/feedback")
 async def submit_feedback(data: FeedbackRequest):
     """Принять feedback для DSPy авто-оптимизации + сохранить прецедент."""

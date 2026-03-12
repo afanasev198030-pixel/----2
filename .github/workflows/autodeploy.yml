@@ -1,0 +1,131 @@
+name: Auto deploy to server
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+
+    steps:
+      - name: Checkout deployed commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Detect changes (frontend/backend)
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # For the commit being deployed, compare against its first parent.
+          # Works for merge commits and squash merges.
+          BASE="$(git rev-parse HEAD^)"
+          HEAD="$(git rev-parse HEAD)"
+
+          echo "Base: $BASE"
+          echo "Head: $HEAD"
+
+          CHANGED="$(git diff --name-only "$BASE" "$HEAD" || true)"
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          frontend_changed=false
+          backend_changed=false
+          compose_changed=false
+
+          if echo "$CHANGED" | grep -qE '^frontend/|^infrastructure/nginx/'; then
+            frontend_changed=true
+          fi
+
+          if echo "$CHANGED" | grep -qE '^services/'; then
+            backend_changed=true
+          fi
+
+          if echo "$CHANGED" | grep -qE '^docker-compose\.prod\.yml$'; then
+            compose_changed=true
+          fi
+
+          # If prod compose changed, do full deploy
+          if [ "$compose_changed" = true ]; then
+            frontend_changed=true
+            backend_changed=true
+          fi
+
+          echo "frontend_changed=$frontend_changed" >> "$GITHUB_OUTPUT"
+          echo "backend_changed=$backend_changed" >> "$GITHUB_OUTPUT"
+          echo "compose_changed=$compose_changed" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy via SSH (conditional)
+        if: ${{ steps.changes.outputs.frontend_changed == 'true' || steps.changes.outputs.backend_changed == 'true' }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+
+            (
+              flock -n 9 || { echo "Another deploy is running. Exiting."; exit 1; }
+
+              DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+              if [ -z "${DEPLOY_PATH}" ]; then DEPLOY_PATH="/home/2/----2"; fi
+              cd "${DEPLOY_PATH}"
+
+              echo "==> Pulling code..."
+              SHA="${{ github.event.workflow_run.head_sha }}"
+              git fetch origin "${SHA}" && git reset --hard "${SHA}"
+
+              DC="docker compose -f docker-compose.prod.yml"
+
+              FRONTEND_CHANGED="${{ steps.changes.outputs.frontend_changed }}"
+              BACKEND_CHANGED="${{ steps.changes.outputs.backend_changed }}"
+
+              echo "==> Plan: frontend=${FRONTEND_CHANGED}, backend=${BACKEND_CHANGED}"
+
+              if [ "${BACKEND_CHANGED}" = "true" ]; then
+                echo "==> [backend] Building images..."
+                ${DC} build core-api ai-service file-service calc-service integration-service
+
+                echo "==> [backend] Ensuring dependencies are up..."
+                ${DC} up -d postgres redis minio chromadb
+
+                echo "==> [backend] Running DB migrations (from fresh image)..."
+                ${DC} run --rm core-api alembic upgrade head
+
+                echo "==> [backend] Loading graph rules (non-critical)..."
+                ${DC} run --rm core-api python -m app.seeds.load_graph_rules || echo "Seed skipped (non-critical)"
+
+                echo "==> [backend] Restarting backend containers..."
+                ${DC} up -d core-api ai-service file-service calc-service integration-service
+              fi
+
+              if [ "${FRONTEND_CHANGED}" = "true" ]; then
+                echo "==> [frontend] Building image..."
+                ${DC} build frontend
+
+                echo "==> [frontend] Restarting container..."
+                ${DC} up -d frontend
+              fi
+
+              echo "==> Done."
+            ) 9>/tmp/deploy.lock
+
+      - name: Skip deploy (no relevant changes)
+        if: ${{ steps.changes.outputs.frontend_changed != 'true' && steps.changes.outputs.backend_changed != 'true' }}
+        run: echo "No frontend/backend changes detected — skipping deploy."

@@ -41,7 +41,7 @@ const Root = () => {
   return (
     <ThemeToggleContext.Provider value={{ toggleTheme, mode }}>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <ThemeProvider theme={theme}>
             <CssBaseline />
             <AuthProvider>

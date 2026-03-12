@@ -148,6 +148,10 @@ class SyncRequest(BaseModel):
     force_full: bool = False
 
 
+class AITrainingSyncRequest(BaseModel):
+    declaration_limit: int = 200
+
+
 @router.post("/classifiers-sync")
 async def trigger_classifier_sync(
     body: SyncRequest,
@@ -183,6 +187,34 @@ async def trigger_classifier_sync(
         "classifier_types": body.classifier_types or list(EEC_CLASSIFIERS.keys()),
         "force_full": body.force_full,
     }
+
+
+@router.post("/ai-training-sync")
+async def trigger_ai_training_sync(
+    body: AITrainingSyncRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+):
+    """Запустить сбор и отправку обучающих примеров ТН ВЭД в ai-service."""
+    from app.config import settings
+    from app.database import async_sessionmaker
+    from app.services.ai_training import run_hs_training_sync
+
+    declaration_limit = max(10, min(body.declaration_limit, 2000))
+
+    async def _run_training_sync():
+        try:
+            async with async_sessionmaker() as session:
+                await run_hs_training_sync(
+                    db=session,
+                    ai_service_url=settings.AI_SERVICE_URL,
+                    limit_declarations=declaration_limit,
+                )
+        except Exception as exc:
+            logger.error("ai_training_sync_failed", error=str(exc), exc_info=True)
+
+    background_tasks.add_task(_run_training_sync)
+    return {"status": "started", "declaration_limit": declaration_limit}
 
 
 @router.get("/classifiers-sync/status")
