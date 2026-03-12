@@ -267,8 +267,10 @@ def _build_goods_shipment(
     gs = _el(root, None, "ESADout_CUGoodsShipment")
 
     origin_code = decl.get("country_dispatch_code")
+    raw_origin_name = decl.get("country_origin_name")
+    resolved_origin_name = _country_name(raw_origin_name) if raw_origin_name and len(raw_origin_name) <= 3 else raw_origin_name
     _txt(gs, NS_CATESAD, "OriginCountryName",
-         decl.get("country_origin_name") or _country_name(origin_code))
+         resolved_origin_name or _country_name(origin_code))
     _txt(gs, NS_CATESAD, "OriginCountryCode", origin_code)
     _txt(gs, NS_CATESAD, "TotalGoodsNumber",
          decl.get("total_items_count") or len(items))
@@ -467,8 +469,10 @@ def _build_consignment(parent: etree._Element, decl: dict) -> None:
     cons = _el(parent, None, "ESADout_CUConsigment")
     _txt(cons, NS_CATESAD, "ContainerIndicator", container)
     _txt(cons, NS_CATESAD, "DispatchCountryCode", dispatch_code)
+    raw_name = decl.get("country_origin_name")
+    dispatch_name = _country_name(raw_name) if raw_name and len(raw_name) <= 3 else raw_name
     _txt(cons, NS_CATESAD, "DispatchCountryName",
-         decl.get("country_origin_name") or _country_name(dispatch_code))
+         dispatch_name or _country_name(dispatch_code))
     _txt(cons, NS_CATESAD, "DestinationCountryCode", dest_code)
     _txt(cons, NS_CATESAD, "DestinationCountryName", _country_name(dest_code))
 
