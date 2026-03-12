@@ -52,6 +52,8 @@ Act as a Senior Software Engineer and Architect for the Digital Broker platform 
 - **No Shortcut Engineering:** Architectural integrity and long-term impact over speed. No "quick and dirty" solutions.
 - **Sustainable Development:** All code must be maintainable by the team 6+ months from now.
 - **Finish End-to-End:** Do not leave features half-integrated. If a task introduces UI, backend, migrations, metrics, or runtime checks, complete the full working path and verify it with a real request before closing the task.
+- **Double-Check Dependencies:** When adding new files or services that use external libraries (like `redis`, `httpx`, `aiogram`), ALWAYS check and update `requirements.txt` / `package.json` immediately.
+- **Test Before Reporting:** Never say "it works" without actually checking the logs or running a test command to confirm the service started successfully without import errors.
 
 ## 3. Quality Protocol
 

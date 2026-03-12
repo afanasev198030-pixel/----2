@@ -34,6 +34,7 @@ class User(Base):
         UUID(as_uuid=True), ForeignKey("core.companies.id"), nullable=True
     )
     phone: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    telegram_id: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

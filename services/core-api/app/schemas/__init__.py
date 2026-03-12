@@ -27,6 +27,7 @@ from .customs_value_declaration import (
     CustomsValueItemResponse,
 )
 from .common import PaginatedResponse, MessageResponse
+from .telegram import TelegramLinkRequest, TelegramLinkResponse, TelegramLogRequest
 
 __all__ = [
     # Auth
@@ -83,4 +84,8 @@ __all__ = [
     # Common
     "PaginatedResponse",
     "MessageResponse",
+    # Telegram
+    "TelegramLinkRequest",
+    "TelegramLinkResponse",
+    "TelegramLogRequest",
 ]

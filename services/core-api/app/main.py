@@ -17,6 +17,7 @@ from app.routers import (
     documents,
     classifiers,
     users,
+    telegram,
 )
 from app.routers import apply_parsed, broker_clients
 from app.routers import settings as settings_router
@@ -291,6 +292,7 @@ app.include_router(hs_history_router.router)
 app.include_router(item_documents_router.router)
 app.include_router(item_preceding_docs_router.router)
 app.include_router(customs_value_router.router)
+app.include_router(telegram.router)
 
 
 if __name__ == "__main__":

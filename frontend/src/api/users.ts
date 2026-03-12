@@ -37,7 +37,7 @@ export const getUsers = async (params: {
   role?: string;
   is_active?: boolean;
 }): Promise<UsersListResponse> => {
-  const resp = await client.get('/users/', { params });
+  const resp = await client.get('/users', { params });
   return resp.data;
 };
 
@@ -69,8 +69,10 @@ export const getAuditLog = async (params: {
   return resp.data;
 };
 
-export const getUserAudit = async (userId: string, page = 1): Promise<AuditListResponse> => {
-  const resp = await client.get(`/admin/users/${userId}/audit`, { params: { page } });
+export const getUserAudit = async (userId: string, page = 1, action?: string): Promise<AuditListResponse> => {
+  const params: any = { page };
+  if (action) params.action = action;
+  const resp = await client.get(`/admin/users/${userId}/audit`, { params });
   return resp.data;
 };
 

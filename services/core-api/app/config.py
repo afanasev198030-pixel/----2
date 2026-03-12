@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     AI_TRAINING_SYNC_INTERVAL_HOURS: int = 24
     AI_TRAINING_SYNC_DECL_LIMIT: int = 200
 
+    # Telegram
+    TELEGRAM_BOT_USERNAME: str = "DigitalBrokerBot"
+
     @property
     def database_url(self) -> str:
         """Returns async PostgreSQL connection URL."""

@@ -78,6 +78,7 @@ const AdminUsersPage = () => {
                 <TableCell sx={{ fontWeight: 700 }}>ФИО</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Телефон</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Роль</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Telegram</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Статус</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Регистрация</TableCell>
                 <TableCell />
@@ -98,6 +99,13 @@ const AdminUsersPage = () => {
                     />
                   </TableCell>
                   <TableCell>
+                    {user.telegram_id ? (
+                      <Chip label="Привязан" size="small" color="info" variant="outlined" />
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">—</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
                     {user.is_active
                       ? <Chip label="Активен" size="small" color="success" icon={<ActiveIcon />} />
                       : <Chip label="Деактивирован" size="small" color="default" icon={<BlockIcon />} />}
@@ -113,7 +121,7 @@ const AdminUsersPage = () => {
                 </TableRow>
               ))}
               {!loading && (!data?.items || data.items.length === 0) && (
-                <TableRow><TableCell colSpan={7} align="center">Нет пользователей</TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} align="center">Нет пользователей</TableCell></TableRow>
               )}
             </TableBody>
           </Table>

@@ -33,6 +33,9 @@ const ACTION_LABELS: Record<string, string> = {
   upload_document: 'Загрузка документа',
   update_profile: 'Обновление профиля',
   admin_update_user: 'Изменение админом',
+  telegram_message_received: 'Сообщение в Telegram',
+  telegram_document_received: 'Документ в Telegram',
+  telegram_bot_replied: 'Ответ бота',
 };
 
 const AdminUserEditPage = () => {
@@ -41,10 +44,11 @@ const AdminUserEditPage = () => {
   const { isAdmin } = useAuth();
 
   const [user, setUser] = useState<User | null>(null);
-  const [form, setForm] = useState({ full_name: '', email: '', phone: '', role: 'client', is_active: true, company_id: '' });
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', role: 'client', is_active: true, company_id: '', telegram_id: '' });
   const [audit, setAudit] = useState<AuditLogEntry[]>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [auditPage, setAuditPage] = useState(1);
+  const [auditActionFilter, setAuditActionFilter] = useState('');
   const [snack, setSnack] = useState('');
   const [error, setError] = useState('');
 
@@ -61,6 +65,7 @@ const AdminUserEditPage = () => {
           role: u.role,
           is_active: u.is_active,
           company_id: u.company_id || '',
+          telegram_id: u.telegram_id || '',
         });
       } catch { navigate('/admin/users'); }
     };
@@ -69,11 +74,11 @@ const AdminUserEditPage = () => {
 
   useEffect(() => {
     if (!id) return;
-    getUserAudit(id, auditPage).then((resp) => {
+    getUserAudit(id, auditPage, auditActionFilter).then((resp) => {
       setAudit(resp.items);
       setAuditTotal(resp.total);
     }).catch(() => {});
-  }, [id, auditPage]);
+  }, [id, auditPage, auditActionFilter]);
 
   const handleSave = async () => {
     if (!id) return;
@@ -85,6 +90,7 @@ const AdminUserEditPage = () => {
         phone: form.phone || undefined,
         role: form.role,
         is_active: form.is_active,
+        telegram_id: form.telegram_id || null,
       } as any);
       setUser(updated);
       setSnack('Пользователь обновлён');
@@ -125,6 +131,11 @@ const AdminUserEditPage = () => {
                   <TextField size="small" fullWidth label="Телефон" value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })} />
                 </Grid>
+                <Grid item xs={12}>
+                  <TextField size="small" fullWidth label="Telegram ID" value={form.telegram_id || ''}
+                    onChange={(e) => setForm({ ...form, telegram_id: e.target.value })} 
+                    helperText="Оставьте пустым для отвязки" />
+                </Grid>
                 <Grid item xs={6}>
                   <FormControl size="small" fullWidth>
                     <InputLabel>Роль</InputLabel>
@@ -151,37 +162,60 @@ const AdminUserEditPage = () => {
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Информация</Typography>
               <Typography variant="body2" color="text.secondary">ID: {user.id}</Typography>
               <Typography variant="body2" color="text.secondary">Компания: {user.company_id || '—'}</Typography>
+              <Typography variant="body2" color="text.secondary">Telegram ID: {user.telegram_id || 'Не привязан'}</Typography>
               <Typography variant="body2" color="text.secondary">Дата регистрации: {dayjs(user.created_at).format('DD.MM.YYYY HH:mm')}</Typography>
             </Paper>
           </Grid>
 
           <Grid item xs={12} md={6}>
             <Paper sx={{ p: 3 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>
-                Действия пользователя ({auditTotal})
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  Действия пользователя ({auditTotal})
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel>Фильтр</InputLabel>
+                  <Select
+                    value={auditActionFilter}
+                    label="Фильтр"
+                    onChange={(e) => {
+                      setAuditActionFilter(e.target.value);
+                      setAuditPage(1);
+                    }}
+                  >
+                    <MenuItem value="">Все действия</MenuItem>
+                    {Object.entries(ACTION_LABELS).map(([val, lbl]) => (
+                      <MenuItem key={val} value={val}>{lbl}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
               <Table size="small">
                 <TableHead>
                   <TableRow>
                     <TableCell sx={{ fontWeight: 600 }}>Дата</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>Действие</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Ресурс</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>IP</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Детали</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {audit.map((log) => (
                     <TableRow key={log.id}>
-                      <TableCell>{log.created_at ? dayjs(log.created_at).format('DD.MM HH:mm') : '—'}</TableCell>
+                      <TableCell sx={{ whiteSpace: 'nowrap' }}>{log.created_at ? dayjs(log.created_at).format('DD.MM HH:mm') : '—'}</TableCell>
                       <TableCell>
                         <Chip label={ACTION_LABELS[log.action] || log.action} size="small" variant="outlined" />
                       </TableCell>
-                      <TableCell>{log.resource_type ? `${log.resource_type}` : '—'}</TableCell>
-                      <TableCell>{log.ip_address || '—'}</TableCell>
+                      <TableCell>
+                        {log.details ? (
+                          <Typography variant="caption" sx={{ display: 'block', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={JSON.stringify(log.details)}>
+                            {log.details.text || log.details.filename || JSON.stringify(log.details)}
+                          </Typography>
+                        ) : '—'}
+                      </TableCell>
                     </TableRow>
                   ))}
                   {audit.length === 0 && (
-                    <TableRow><TableCell colSpan={4} align="center">Нет действий</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={3} align="center">Нет действий</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

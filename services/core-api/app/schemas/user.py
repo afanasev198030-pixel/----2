@@ -19,6 +19,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     company_id: Optional[uuid.UUID] = None
+    telegram_id: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -31,4 +32,5 @@ class UserResponse(BaseModel):
     role: str
     company_id: Optional[uuid.UUID]
     is_active: bool
+    telegram_id: Optional[str] = None
     created_at: Optional[datetime]
