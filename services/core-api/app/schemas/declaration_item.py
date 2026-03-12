@@ -106,6 +106,10 @@ class DeclarationItemResponse(BaseModel):
     package_type_code: Optional[str] = None
     package_marks: Optional[str] = None
     additional_unit_code: Optional[str] = None
+    goods_marking: Optional[str] = None
+    serial_number: Optional[str] = None
+    intellect_property_sign: Optional[str] = None
+    goods_transfer_feature: Optional[str] = None
     risk_score: int
     risk_flags: Optional[dict]
     drift_status: bool = False

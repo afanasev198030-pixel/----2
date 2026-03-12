@@ -57,6 +57,10 @@ class DeclarationItem(Base):
     package_type_code: Mapped[Optional[str]] = mapped_column(String(5))
     package_marks: Mapped[Optional[str]] = mapped_column(String(500))
     additional_unit_code: Mapped[Optional[str]] = mapped_column(String(4))
+    goods_marking: Mapped[Optional[str]] = mapped_column(String(200))
+    serial_number: Mapped[Optional[str]] = mapped_column(String(200))
+    intellect_property_sign: Mapped[Optional[str]] = mapped_column(String(1))
+    goods_transfer_feature: Mapped[Optional[str]] = mapped_column(String(3))
     risk_score: Mapped[int] = mapped_column(Integer, default=0)
     risk_flags: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(

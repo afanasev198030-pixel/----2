@@ -1,4 +1,4 @@
-"""XML export & validation endpoints for customs declarations (EEC R.055)."""
+"""XML export & validation endpoints for customs declarations (ESADout_CU 5.24.0)."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ async def _gather_data(declaration_id: uuid.UUID, request: Request):
 
 @router.get("/export-xml/{declaration_id}")
 async def export_xml(declaration_id: uuid.UUID, request: Request):
-    """Build EEC R.055 XML for a declaration and return it as a downloadable file."""
+    """Build ESADout_CU XML for a declaration and return it as a downloadable file."""
     (decl, items, declarant, sender, receiver,
      financial, payments, item_documents, item_preceding_docs) = await _gather_data(declaration_id, request)
 
@@ -129,7 +129,7 @@ async def export_xml(declaration_id: uuid.UUID, request: Request):
                        errors=validation["errors"])
 
     number = decl.get("number_internal") or str(declaration_id)[:8]
-    filename = f"declaration_{number}.xml"
+    filename = f"DT_{number}.xml"
 
     logger.info("xml_exported",
                 declaration_id=str(declaration_id),
