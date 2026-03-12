@@ -15,7 +15,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/companies", tags=["companies"])
 
 
-@router.get("/", response_model=list[CompanyResponse])
+@router.get("", response_model=list[CompanyResponse])
 async def list_companies(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -24,7 +24,7 @@ async def list_companies(
     return [CompanyResponse.model_validate(c) for c in result.scalars().all()]
 
 
-@router.post("/", response_model=CompanyResponse, status_code=201)
+@router.post("", response_model=CompanyResponse, status_code=201)
 async def create_company(
     data: CompanyCreate,
     db: AsyncSession = Depends(get_db),

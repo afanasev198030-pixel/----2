@@ -197,6 +197,11 @@ export interface DeclarationItem {
   documents_json?: Array<{code: string; marker: string; number: string; date: string}>;
   risk_score?: number;
   risk_flags?: Record<string, unknown>;
+  drift_status?: boolean;
+  historical_hs_code?: string;
+  historical_usage_count?: number;
+  drift_similarity?: number;
+  drift_message?: string;
   created_at: string;
   updated_at?: string;
 }

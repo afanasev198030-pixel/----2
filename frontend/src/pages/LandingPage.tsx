@@ -63,7 +63,9 @@ const Page = styled(Box)({
   },
 });
 
-const GlowOrb = styled(Box)<{ color: string; size: number; top: string; left: string; delay?: number }>(
+const GlowOrb = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'color' && prop !== 'size' && prop !== 'top' && prop !== 'left' && prop !== 'delay',
+})<{ color: string; size: number; top: string; left: string; delay?: number }>(
   ({ color, size, top, left, delay = 0 }) => ({
     position: 'absolute',
     width: size,
@@ -101,7 +103,9 @@ const GlassCard = styled(Box)({
   },
 });
 
-const AccentBadge = styled(Box)<{ bg?: string }>(({ bg = C.accent }) => ({
+const AccentBadge = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'bg',
+})<{ bg?: string }>(({ bg = C.accent }) => ({
   display: 'inline-block',
   padding: '6px 18px',
   borderRadius: 20,
@@ -114,7 +118,9 @@ const AccentBadge = styled(Box)<{ bg?: string }>(({ bg = C.accent }) => ({
   marginBottom: 16,
 }));
 
-const FlowStep = styled(Box)<{ accentColor: string }>(({ accentColor }) => ({
+const FlowStep = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'accentColor',
+})<{ accentColor: string }>(({ accentColor }) => ({
   position: 'relative',
   textAlign: 'center',
   padding: 24,
@@ -166,7 +172,9 @@ const SecondaryBtn = styled(Button)({
   },
 });
 
-const MetricBar = styled(Box)<{ pct: number; barColor: string }>(({ pct, barColor }) => ({
+const MetricBar = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'pct' && prop !== 'barColor',
+})<{ pct: number; barColor: string }>(({ pct, barColor }) => ({
   height: 8,
   borderRadius: 4,
   background: 'rgba(255,255,255,0.06)',
@@ -249,7 +257,8 @@ export default function LandingPage() {
     try {
       setAuthError(null);
       await login(data.email, data.password);
-      reload();
+      // Wait for reload to complete before navigating
+      await reload();
       navigate('/dashboard');
     } catch (err: any) {
       setAuthError(err instanceof Error ? err.message : 'Неверный email или пароль');

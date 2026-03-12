@@ -54,7 +54,7 @@ async def _fetch_declaration(declaration_id: uuid.UUID, headers: dict[str, str])
 
 async def _fetch_items(declaration_id: uuid.UUID, headers: dict[str, str]) -> list[dict]:
     """GET /api/v1/declarations/{id}/items/ from core-api."""
-    url = f"{settings.CORE_API_URL}/api/v1/declarations/{declaration_id}/items/"
+    url = f"{settings.CORE_API_URL}/api/v1/declarations/{declaration_id}/items"
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.get(url, headers=headers)
     if resp.status_code != 200:

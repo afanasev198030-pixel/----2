@@ -32,6 +32,7 @@ from app.services.rules_engine import (
     build_graph_rules_prompt, get_source_priority_map,
     build_full_rules_for_llm, build_strategies_prompt,
 )
+from app.services.escalation_agents import ReconciliationAgent, ReviewerAgent
 
 
 def _classify_invoice_content(text: str, filename: str = "") -> str:
@@ -396,6 +397,8 @@ class DeclarationCrew:
         self.hs_classifier = HSCodeClassifier()
         self.risk_analyzer = RiskAnalyzer()
         self.index_manager = get_index_manager()
+        self.reconciliation_agent = ReconciliationAgent()
+        self.reviewer_agent = ReviewerAgent()
         self._progress_callback = None
 
     def _progress(self, step: str, detail: str, pct: int):
@@ -404,6 +407,55 @@ class DeclarationCrew:
                 self._progress_callback(step, detail, pct)
             except Exception:
                 pass
+
+    @staticmethod
+    def _needs_escalation(result: dict) -> tuple[bool, list[str]]:
+        confidence = float(result.get("confidence") or 0.0)
+        issues = result.get("issues") or []
+        has_blocking = any(
+            bool(i.get("blocking")) or str(i.get("severity", "")).lower() == "error"
+            for i in issues
+            if isinstance(i, dict)
+        )
+        has_drift = any(
+            bool(it.get("drift_status"))
+            for it in (result.get("items") or [])
+            if isinstance(it, dict)
+        )
+
+        reasons: list[str] = []
+        if confidence < 0.8:
+            reasons.append("low_confidence")
+        if has_blocking:
+            reasons.append("blocking_issues")
+        if has_drift:
+            reasons.append("drift_status")
+        return bool(reasons), reasons
+
+    def _run_escalation(self, result: dict) -> dict:
+        """Запуск lightweight-агентов эскалации по triage-правилам."""
+        should_run, reasons = self._needs_escalation(result)
+        if not should_run:
+            return {"enabled": False, "reasons": [], "runs": []}
+
+        runs = [
+            self.reconciliation_agent.run(result),
+            self.reviewer_agent.run(result),
+        ]
+
+        merged_issues = list(result.get("issues") or [])
+        for run in runs:
+            for issue in run.get("issues", []):
+                merged_issues.append(issue)
+        result["issues"] = merged_issues
+        result["agent_escalation"] = {"enabled": True, "reasons": reasons, "runs": runs}
+        logger.info(
+            "agent_escalation_completed",
+            reasons=reasons,
+            runs=len(runs),
+            new_issues=sum(len(r.get("issues", [])) for r in runs),
+        )
+        return result["agent_escalation"]
 
     def _run_crewai(self, parsed_docs: dict, result: dict) -> dict:
         """Запустить CrewAI мультиагентную оркестрацию."""
@@ -986,6 +1038,10 @@ JSON:"""},
         ]
         non_zero = [c for c in confidences if c > 0]
         result["confidence"] = sum(non_zero) / len(non_zero) if non_zero else 0.0
+
+        # --- Шаг 5.5: Agent escalation layer (только для конфликтных кейсов) ---
+        self._progress("escalation", "Проверка условий эскалации агентов...", 95)
+        self._run_escalation(result)
 
         items_count = len(result.get("items", []))
         logger.info(

@@ -8,6 +8,7 @@ import structlog
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import Declaration, DeclarationItem, DeclarationStatus, User
+from app.models.hs_code_history import HsCodeHistory
 from app.schemas import (
     DeclarationItemCreate,
     DeclarationItemUpdate,
@@ -20,6 +21,68 @@ router = APIRouter(
     prefix="/api/v1/declarations/{declaration_id}/items",
     tags=["declaration-items"],
 )
+
+
+async def _build_drift_data(
+    db: AsyncSession,
+    item: DeclarationItem,
+    company_id: uuid.UUID | None,
+) -> dict:
+    if not company_id:
+        return {"drift_status": False}
+
+    hs_code = (item.hs_code or "").strip()
+    description = (item.description or item.commercial_name or "").strip().lower()
+    if not hs_code or not description:
+        return {"drift_status": False}
+
+    result = await db.execute(
+        select(HsCodeHistory)
+        .where(
+            HsCodeHistory.company_id == company_id,
+            func.similarity(HsCodeHistory.description_trgm, description[:300]) > 0.3,
+        )
+        .order_by(
+            func.similarity(HsCodeHistory.description_trgm, description[:300]).desc(),
+            HsCodeHistory.usage_count.desc(),
+        )
+        .limit(1)
+    )
+    best = result.scalar_one_or_none()
+    if not best:
+        return {"drift_status": False}
+
+    sim_result = await db.execute(
+        select(func.similarity(HsCodeHistory.description_trgm, description[:300]))
+        .where(HsCodeHistory.id == best.id)
+    )
+    similarity = sim_result.scalar() or 0.0
+    historical_hs = (best.hs_code or "").strip()
+    usage_count = int(best.usage_count or 0)
+    drift = historical_hs != hs_code and usage_count >= 2
+
+    payload = {
+        "drift_status": bool(drift),
+        "historical_hs_code": historical_hs or None,
+        "historical_usage_count": usage_count,
+        "drift_similarity": round(float(similarity), 3),
+    }
+    if drift:
+        payload["drift_message"] = (
+            f"Текущий код {hs_code} отличается от исторического {historical_hs} "
+            f"(использовался {usage_count} раз(а))."
+        )
+    return payload
+
+
+async def _serialize_item_with_drift(
+    db: AsyncSession,
+    item: DeclarationItem,
+    company_id: uuid.UUID | None,
+) -> DeclarationItemResponse:
+    base = DeclarationItemResponse.model_validate(item).model_dump()
+    base.update(await _build_drift_data(db, item, company_id))
+    return DeclarationItemResponse(**base)
 
 
 async def get_declaration_or_404(
@@ -54,7 +117,7 @@ async def get_declaration_or_404(
     return declaration
 
 
-@router.get("/", response_model=list[DeclarationItemResponse])
+@router.get("", response_model=list[DeclarationItemResponse])
 async def list_items(
     declaration_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -69,11 +132,14 @@ async def list_items(
         .order_by(DeclarationItem.item_no)
     )
     items = result.scalars().all()
-    
-    return [DeclarationItemResponse.model_validate(item) for item in items]
+
+    return [
+        await _serialize_item_with_drift(db, item, declaration.company_id)
+        for item in items
+    ]
 
 
-@router.post("/", response_model=DeclarationItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DeclarationItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_item(
     declaration_id: uuid.UUID,
     data: DeclarationItemCreate,
@@ -140,7 +206,7 @@ async def create_item(
         user_id=str(current_user.id),
     )
     
-    return DeclarationItemResponse.model_validate(item)
+    return await _serialize_item_with_drift(db, item, declaration.company_id)
 
 
 @router.get("/{item_id}", response_model=DeclarationItemResponse)
@@ -167,7 +233,7 @@ async def get_item(
             detail="Item not found",
         )
     
-    return DeclarationItemResponse.model_validate(item)
+    return await _serialize_item_with_drift(db, item, declaration.company_id)
 
 
 @router.put("/{item_id}", response_model=DeclarationItemResponse)
@@ -238,7 +304,7 @@ async def update_item(
         except Exception as e:
             logger.debug("hs_feedback_failed", error=str(e)[:100])
     
-    return DeclarationItemResponse.model_validate(item)
+    return await _serialize_item_with_drift(db, item, declaration.company_id)
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

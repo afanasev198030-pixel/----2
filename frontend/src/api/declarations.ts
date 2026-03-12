@@ -19,7 +19,7 @@ export interface GetDeclarationsParams {
 export const getDeclarations = async (
   params?: GetDeclarationsParams
 ): Promise<PaginatedResponse<Declaration>> => {
-  const response = await client.get<PaginatedResponse<Declaration>>('/declarations/', { params });
+  const response = await client.get<PaginatedResponse<Declaration>>('/declarations', { params });
   return response.data;
 };
 
@@ -29,7 +29,7 @@ export const getDeclaration = async (id: string): Promise<Declaration> => {
 };
 
 export const createDeclaration = async (data: Partial<Declaration>): Promise<Declaration> => {
-  const response = await client.post<Declaration>('/declarations/', data);
+  const response = await client.post<Declaration>('/declarations', data);
   return response.data;
 };
 
@@ -49,7 +49,7 @@ export const changeStatus = async (
   id: string,
   newStatus: string
 ): Promise<any> => {
-  const response = await client.post(`/declarations/${id}/status/`, {
+  const response = await client.post(`/declarations/${id}/status`, {
     new_status: newStatus,
   });
   return response.data;

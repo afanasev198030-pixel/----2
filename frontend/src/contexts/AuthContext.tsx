@@ -6,14 +6,14 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
-  reload: () => void;
+  reload: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   isAdmin: false,
-  reload: () => {},
+  reload: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -44,9 +44,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     load();
   }, []);
 
-  const reload = () => {
+  const reload = async () => {
     setLoading(true);
-    load();
+    await load();
   };
 
   return (

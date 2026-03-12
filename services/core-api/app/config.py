@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     EEC_SYNC_ENABLED: bool = True
     EEC_SYNC_INTERVAL_HOURS: int = 24
 
+    # AI training sync
+    AI_SERVICE_URL: str = "http://ai-service:8003"
+    AI_TRAINING_SYNC_ENABLED: bool = True
+    AI_TRAINING_SYNC_INTERVAL_HOURS: int = 24
+    AI_TRAINING_SYNC_DECL_LIMIT: int = 200
+
     @property
     def database_url(self) -> str:
         """Returns async PostgreSQL connection URL."""

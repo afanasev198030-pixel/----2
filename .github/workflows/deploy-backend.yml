@@ -73,4 +73,11 @@ jobs:
             INTEGRATION_BASE_URL=http://localhost:8004 \
             python3 scripts/smoke_digital_broker_flow.py --folder "3 dek" --allow-blocking
 
+            echo "==> [9/9] Running AI offline eval gate..."
+            docker compose -f docker-compose.prod.yml exec -T ai-service \
+              python -m app.services.offline_eval \
+              --dataset /app/app/ml_models/hs_offline_eval_dataset.jsonl \
+              --min-accuracy 0.85 \
+              --limit 1000
+
             echo "==> Done. Backend deployed successfully."

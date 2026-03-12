@@ -71,7 +71,7 @@ async def _set_setting(db: AsyncSession, key: str, value: str):
     await db.commit()
 
 
-@router.get("/", response_model=SettingsResponse)
+@router.get("", response_model=SettingsResponse)
 async def get_settings(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

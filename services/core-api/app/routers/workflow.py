@@ -618,7 +618,7 @@ async def pre_send_check_endpoint(
     return check_result
 
 
-@router.post("/status/", response_model=dict)
+@router.post("/status", response_model=dict)
 async def change_status(
     declaration_id: uuid.UUID,
     data: StatusChangeRequest,

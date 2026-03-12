@@ -18,7 +18,7 @@ import AppLayout from '../components/AppLayout';
 import {
   getDeclaration, updateDeclaration,
 } from '../api/declarations';
-import { getItems, deleteItem } from '../api/items';
+import { getItems, deleteItem, updateItem } from '../api/items';
 import { getDocuments } from '../api/documents';
 import { calculatePayments, PaymentResult } from '../api/calc';
 import client from '../api/client';
@@ -520,13 +520,43 @@ const DeclarationEditPage = () => {
                       <Grid item xs={1.5}><Typography variant="caption" color="text.secondary">34b преф.</Typography><Typography variant="body2">{item.country_origin_pref_code || '—'}</Typography></Grid>
                     </Grid>
                     {!item.hs_code && <Alert severity="warning" sx={{ mt: 1 }} icon={<AiIcon />}>Нажмите "Подобрать" или введите код вручную.</Alert>}
+                    {item.drift_status && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        {item.drift_message || `Возможный drift: исторический код ${item.historical_hs_code || '—'} отличается от текущего ${item.hs_code || '—'}.`}
+                        <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => {
+                              if (!item.historical_hs_code) return;
+                              updateItem(id!, item.id, { hs_code: item.historical_hs_code }).then(() => {
+                                refetchItems();
+                                setSnackMsg(`Возвращён исторический код: ${item.historical_hs_code}`);
+                              });
+                            }}
+                          >
+                            Вернуть {item.historical_hs_code || 'исторический код'}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            color="warning"
+                            onClick={() => {
+                              setSnackMsg('Вы оставили текущий код несмотря на drift');
+                            }}
+                          >
+                            Оставить {item.hs_code || 'текущий код'}
+                          </Button>
+                        </Box>
+                      </Alert>
+                    )}
                     <Box sx={{ mt: 1, display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                       <TextField size="small" label="Код ТН ВЭД (33)" value={item.hs_code || ''} sx={{ width: 200 }}
                         inputProps={{ style: { fontFamily: 'monospace', fontWeight: 700, fontSize: 16 } }}
                         error={!item.hs_code || (item.hs_code?.length || 0) < 10}
-                        onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); client.put(`/declarations/${id}/items/${item.id}`, { hs_code: v }).then(() => refetchItems()); }} />
+                        onChange={(e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 10); updateItem(id!, item.id, { hs_code: v }).then(() => refetchItems()); }} />
                       <HSCodeSuggestions description={item.description || item.commercial_name || ''} currentCode={item.hs_code || ''} declarationId={id}
-                        onSelect={(code, name) => { client.put(`/declarations/${id}/items/${item.id}`, { hs_code: code }).then(() => { refetchItems(); setSnackMsg(`ТН ВЭД: ${code}`); }); }} />
+                        onSelect={(code, name) => { updateItem(id!, item.id, { hs_code: code }).then(() => { refetchItems(); setSnackMsg(`ТН ВЭД: ${code}`); }); }} />
                     </Box>
                     {item.hs_code && item.hs_code.length >= 4 && (
                       <RequirementsPanel hsCode={item.hs_code} description={item.description || item.commercial_name || ''} />

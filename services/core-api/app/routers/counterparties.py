@@ -16,7 +16,7 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/counterparties", tags=["counterparties"])
 
 
-@router.get("/", response_model=list[CounterpartyResponse])
+@router.get("", response_model=list[CounterpartyResponse])
 async def list_counterparties(
     q: Optional[str] = None,
     type: Optional[str] = None,
@@ -39,7 +39,7 @@ async def list_counterparties(
     return [CounterpartyResponse.model_validate(c) for c in result.scalars().all()]
 
 
-@router.post("/", response_model=CounterpartyResponse, status_code=201)
+@router.post("", response_model=CounterpartyResponse, status_code=201)
 async def create_counterparty(
     data: CounterpartyCreate,
     db: AsyncSession = Depends(get_db),

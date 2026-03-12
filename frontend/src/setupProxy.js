@@ -1,6 +1,7 @@
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 module.exports = function(app) {
+
   // AI service: keep full path /api/v1/ai/*
   app.use(createProxyMiddleware({
     target: 'http://ai-service:8003',

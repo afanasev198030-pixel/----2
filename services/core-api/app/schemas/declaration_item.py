@@ -87,5 +87,10 @@ class DeclarationItemResponse(BaseModel):
     documents_json: Optional[list] = None
     risk_score: int
     risk_flags: Optional[dict]
+    drift_status: bool = False
+    historical_hs_code: Optional[str] = None
+    historical_usage_count: Optional[int] = None
+    drift_similarity: Optional[float] = None
+    drift_message: Optional[str] = None
     created_at: Optional[datetime]
     updated_at: Optional[datetime]

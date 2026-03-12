@@ -102,7 +102,7 @@ def _strip_suspicious_sparse_update(
     return []
 
 
-@router.get("/", response_model=PaginatedResponse)
+@router.get("", response_model=PaginatedResponse)
 async def list_declarations(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -190,7 +190,7 @@ async def list_declarations(
     )
 
 
-@router.post("/", response_model=DeclarationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=DeclarationResponse, status_code=status.HTTP_201_CREATED)
 async def create_declaration(
     data: DeclarationCreate,
     request: Request,
