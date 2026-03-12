@@ -32,6 +32,7 @@ class DocumentType(str, PyEnum):
     SANITARY = "sanitary"
     VETERINARY = "veterinary"
     PHYTOSANITARY = "phytosanitary"
+    PAYMENT_ORDER = "payment_order"
     OTHER = "other"
 
 

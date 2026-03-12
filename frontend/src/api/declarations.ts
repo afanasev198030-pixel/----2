@@ -6,6 +6,7 @@ import {
   DeclarationLogEntry,
   DeclarationStatusHistoryEntry,
   PreSendResult,
+  FieldEvidence,
 } from '../types';
 
 export interface GetDeclarationsParams {
@@ -67,5 +68,13 @@ export const getDeclarationLogs = async (id: string): Promise<DeclarationLogEntr
 
 export const getDeclarationStatusHistory = async (id: string): Promise<DeclarationStatusHistoryEntry[]> => {
   const response = await client.get<DeclarationStatusHistoryEntry[]>(`/declarations/${id}/status-history`);
+  return response.data;
+};
+
+export const patchEvidenceMap = async (
+  id: string,
+  fields: Record<string, Partial<FieldEvidence>>,
+): Promise<{ status: string; fields_updated: string[]; evidence_map: Record<string, FieldEvidence> }> => {
+  const response = await client.patch(`/declarations/${id}/evidence`, { fields });
   return response.data;
 };

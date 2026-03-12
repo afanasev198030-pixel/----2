@@ -1,7 +1,7 @@
 import uuid
 from enum import Enum as PyEnum
 from typing import Optional
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy import (
     String,
@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
     ForeignKey,
     DateTime,
+    Date,
     DECIMAL,
     func,
 )
@@ -76,7 +77,7 @@ class Declaration(Base):
     currency_code: Mapped[Optional[str]] = mapped_column(String(3))
     total_invoice_value: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
     exchange_rate: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 6))
-    deal_nature_code: Mapped[Optional[str]] = mapped_column(String(2))
+    deal_nature_code: Mapped[Optional[str]] = mapped_column(String(3))
     transport_type_border: Mapped[Optional[str]] = mapped_column(String(2))
     transport_type_inland: Mapped[Optional[str]] = mapped_column(String(2))
     loading_place: Mapped[Optional[str]] = mapped_column(String(200))
@@ -118,6 +119,24 @@ class Declaration(Base):
     guarantee_info: Mapped[Optional[str]] = mapped_column(String(500))              # Графа 52
     freight_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2))
     freight_currency: Mapped[Optional[str]] = mapped_column(String(3))
+    signatory_name: Mapped[Optional[str]] = mapped_column(String(200))
+    signatory_position: Mapped[Optional[str]] = mapped_column(String(200))
+    signatory_id_doc: Mapped[Optional[str]] = mapped_column(String(200))
+    signatory_cert_number: Mapped[Optional[str]] = mapped_column(String(20))
+    signatory_power_of_attorney: Mapped[Optional[str]] = mapped_column(String(200))
+    broker_registry_number: Mapped[Optional[str]] = mapped_column(String(30))
+    broker_contract_number: Mapped[Optional[str]] = mapped_column(String(50))
+    broker_contract_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # ДТС графы 4–5: инвойс и контракт
+    invoice_number: Mapped[Optional[str]] = mapped_column(String(100))
+    invoice_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    contract_number: Mapped[Optional[str]] = mapped_column(String(100))
+    contract_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    transport_reg_number: Mapped[Optional[str]] = mapped_column(String(50))
+    transport_nationality_code: Mapped[Optional[str]] = mapped_column(String(2))
+    goods_location_code: Mapped[Optional[str]] = mapped_column(String(2))
+    goods_location_customs_code: Mapped[Optional[str]] = mapped_column(String(8))
+    goods_location_zone_id: Mapped[Optional[str]] = mapped_column(String(50))
 
     evidence_map: Mapped[Optional[dict]] = mapped_column(
         JSONB, nullable=True,
@@ -175,4 +194,8 @@ class Declaration(Base):
     )
     payments: Mapped[list["CustomsPayment"]] = relationship(
         "CustomsPayment", back_populates="declaration", cascade="all, delete-orphan"
+    )
+    customs_value_declaration: Mapped[Optional["CustomsValueDeclaration"]] = relationship(
+        "CustomsValueDeclaration", back_populates="declaration", uselist=False,
+        cascade="all, delete-orphan",
     )

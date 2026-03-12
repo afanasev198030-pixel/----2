@@ -106,6 +106,7 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET}
       MINIO_SECURE: "false"
+      GOTENBERG_URL: http://gotenberg:3000
     env_file:
       - .env
     healthcheck:
@@ -221,6 +222,15 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - WDS_SOCKET_PORT=3000
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: customs-gotenberg
+    command:
+      - "gotenberg"
+      - "--api-timeout=120s"
+    expose:
+      - "3000"
 
   chromadb:
     image: chromadb/chroma:latest

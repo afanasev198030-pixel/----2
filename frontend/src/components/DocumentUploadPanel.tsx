@@ -37,6 +37,7 @@ import {
   Add as AddIcon,
 } from '@mui/icons-material';
 import { parseSmartDocument, ParseSmartResult, classifyHS, HSSuggestion } from '../api/ai';
+import { uploadFile } from '../api/documents';
 import client from '../api/client';
 
 interface DocumentUploadPanelProps {
@@ -110,10 +111,20 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
     }, 1000);
 
     try {
-      // Start parse (this returns immediately with request_id or blocks)
+      // Upload files to file-service (MinIO) in parallel with AI parsing
+      const uploadPromise = Promise.all(
+        selectedFiles.map(async (file) => {
+          try {
+            const res = await uploadFile(file);
+            return { filename: file.name, ...res };
+          } catch {
+            return { filename: file.name, file_key: '', original_filename: file.name, mime_type: '', file_size: 0 };
+          }
+        }),
+      );
+
       const parsePromise = parseSmartDocument(selectedFiles, declarationId);
 
-      // Poll progress every 2 seconds
       let requestId = '';
       const pollInterval = setInterval(async () => {
         if (!requestId) return;
@@ -123,10 +134,9 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
           if (p.progress > 0) setProgress(p.progress);
           if (p.step) setProgressStep(p.step);
           if (p.detail) setProgressDetail(p.detail);
-        } catch (e) { /* ignore poll errors */ }
+        } catch { /* ignore poll errors */ }
       }, 2000);
 
-      // Simulate initial progress while waiting
       setProgress(10);
       setProgressDetail('Отправка файлов...');
       setTimeout(() => { setProgress(15); setProgressDetail('Сервер обрабатывает документы...'); }, 3000);
@@ -138,7 +148,42 @@ const DocumentUploadPanel = ({ declarationId, onParsedData, onCreateDeclaration 
       setTimeout(() => { setProgress(75); setProgressDetail('Оценка рисков СУР...'); }, 70000);
       setTimeout(() => { setProgress(85); setProgressDetail('Поиск прецедентов...'); }, 90000);
 
-      const parsed = await parsePromise;
+      const [parsed, uploadedFiles] = await Promise.all([parsePromise, uploadPromise]);
+
+      // Build filename→file_key map from uploaded files
+      const fileKeyMap = new Map<string, { file_key: string; mime_type: string; file_size: number }>();
+      for (const uf of uploadedFiles) {
+        if (uf.file_key) {
+          fileKeyMap.set(uf.filename, { file_key: uf.file_key, mime_type: uf.mime_type, file_size: uf.file_size });
+        }
+      }
+
+      // Enrich parsed documents with file_keys from MinIO
+      if (parsed.documents) {
+        for (const doc of parsed.documents) {
+          if (!doc.file_key && doc.original_filename) {
+            const match = fileKeyMap.get(doc.original_filename);
+            if (match) {
+              doc.file_key = match.file_key;
+              doc.mime_type = doc.mime_type || match.mime_type;
+              doc.file_size = doc.file_size || match.file_size;
+            }
+          }
+        }
+      }
+
+      // If AI didn't produce documents list, create from uploaded files
+      if (!parsed.documents || parsed.documents.length === 0) {
+        parsed.documents = uploadedFiles
+          .filter((uf) => uf.file_key)
+          .map((uf) => ({
+            doc_type: 'other',
+            original_filename: uf.original_filename || uf.filename,
+            file_key: uf.file_key,
+            mime_type: uf.mime_type,
+            file_size: uf.file_size,
+          }));
+      }
 
       clearInterval(pollInterval);
       if (parsed.request_id) requestId = parsed.request_id;

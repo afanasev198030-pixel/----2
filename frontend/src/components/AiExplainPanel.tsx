@@ -36,6 +36,7 @@ const SOURCE_LABELS: Record<string, string> = {
   specification: 'Спецификация',
   tech_description: 'Тех. описание',
   techop: 'Тех. описание',
+  payment_order: 'Платёжное поручение',
   ai: 'AI',
   history: 'История',
   manual: 'Вручную',
@@ -61,7 +62,9 @@ export default function AiExplainPanel({ declaration, items }: AiExplainPanelPro
       field,
       source: info?.source || 'unknown',
       confidence: info?.confidence,
-      rawValue: info?.raw_value,
+      rawValue: info?.value_preview || info?.raw_value,
+      graph: info?.graph,
+      documentId: info?.document_id,
     }));
   }, [evidenceMap]);
 
@@ -121,10 +124,20 @@ export default function AiExplainPanel({ declaration, items }: AiExplainPanelPro
             Источники данных
           </Typography>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            {evidenceFields.slice(0, 12).map((ev) => (
-              <Tooltip key={ev.field} title={ev.rawValue ? `Исходное: ${ev.rawValue}` : ev.field}>
+            {evidenceFields.slice(0, 20).map((ev) => (
+              <Tooltip
+                key={ev.field}
+                title={
+                  <Box sx={{ fontSize: 11 }}>
+                    {ev.graph && <div><b>Графа {ev.graph}</b></div>}
+                    <div><b>Источник:</b> {SOURCE_LABELS[ev.source] || ev.source}</div>
+                    {ev.confidence != null && <div><b>Уверенность:</b> {Math.round(ev.confidence * 100)}%</div>}
+                    {ev.rawValue && <div><b>Значение:</b> {ev.rawValue}</div>}
+                  </Box>
+                }
+              >
                 <Chip
-                  label={`${ev.field}: ${SOURCE_LABELS[ev.source] || ev.source}${ev.confidence ? ` ${Math.round(ev.confidence * 100)}%` : ''}`}
+                  label={`${ev.graph ? `Гр.${ev.graph} ` : ''}${ev.field}: ${SOURCE_LABELS[ev.source] || ev.source}${ev.confidence ? ` ${Math.round(ev.confidence * 100)}%` : ''}`}
                   size="small"
                   variant="outlined"
                   sx={{ fontSize: 10, height: 22 }}

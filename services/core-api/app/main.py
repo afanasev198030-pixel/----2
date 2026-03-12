@@ -27,6 +27,9 @@ from app.routers import knowledge as knowledge_router
 from app.routers import graph_rules as graph_rules_router
 from app.routers import ai_strategies as ai_strategies_router
 from app.routers import hs_history as hs_history_router
+from app.routers import item_documents as item_documents_router
+from app.routers import item_preceding_docs as item_preceding_docs_router
+from app.routers import customs_value as customs_value_router
 
 # Setup logging
 setup_logging()
@@ -285,6 +288,9 @@ app.include_router(knowledge_router.router)
 app.include_router(graph_rules_router.router)
 app.include_router(ai_strategies_router.router)
 app.include_router(hs_history_router.router)
+app.include_router(item_documents_router.router)
+app.include_router(item_preceding_docs_router.router)
+app.include_router(customs_value_router.router)
 
 
 if __name__ == "__main__":

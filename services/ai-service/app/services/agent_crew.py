@@ -176,6 +176,15 @@ def _detect_doc_type(filename: str, text: str) -> str:
     if any(k in fn_lower for k in ["teh", "тех"]):
         return "tech_description"
 
+    # --- Платёжное поручение (ПП) — до инвойса, чтобы не спутать ---
+    if any(k in fn_lower for k in ["пп", "платеж", "платёж", "payment order"]):
+        return "payment_order"
+    if any(k in text_lower for k in [
+        "платежное поручение", "платёжное поручение", "заявление на перевод",
+        "payment order", "просим списать с", "банк получателя",
+    ]):
+        return "payment_order"
+
     # --- Транспортный инвойс по имени файла (раньше чем обычный invoice) ---
     _transport_invoice_name = any(k in fn_lower for k in [
         "invoice for transport", "transport invoice", "freight invoice",
@@ -540,7 +549,8 @@ class DeclarationCrew:
             ])
             tech_lines = "\n".join([
                 f"[{i + 1}] name={tp.get('product_name', '')}  purpose={tp.get('purpose', '')}  "
-                f"specs={tp.get('technical_specs', '')}  hs_desc={tp.get('suggested_hs_description', '')}"
+                f"materials={tp.get('materials', '')}  specs={tp.get('technical_specs', '')}  "
+                f"hs_desc={tp.get('suggested_hs_description', '')}"
                 for i, tp in enumerate(tech_products)
             ])
 
@@ -564,14 +574,20 @@ class DeclarationCrew:
 Для каждой позиции инвойса верни:
 - invoice_index: номер позиции инвойса (1-based)
 - tech_index: номер из тех.описания (1-based, null если нет совпадения)
-- description_ru: полное название товара для графы 31 ДТ (из тех.описания, на русском)
+- commercial_name_ru: краткое коммерческое/фирменное наименование товара на русском (марка, модель, артикул)
+- description_ru: ПОЛНОЕ описание товара для графы 31 ДТ на русском языке. \
+Обязательно включить ВСЕ доступные сведения из тех.описания: \
+наименование, назначение/область применения, основные материалы (материал корпуса, покрытия и т.д.), \
+технические характеристики (мощность, напряжение, размеры, вес, частота, степень защиты и т.д.), \
+марку, модель, артикул, товарный знак, производителя — если указаны. \
+Формат: одно связное предложение или перечисление через запятую. НЕ сокращать, НЕ обобщать.
 - hs_description: описание для классификации ТН ВЭД (из suggested_hs_description или составь сам — материал + назначение + тип)
 - match_confidence: уверенность совпадения (0.0–1.0)
 
 JSON: {{"matches": [...]}}"""},
                 ],
                 temperature=0,
-                max_tokens=2000,
+                max_tokens=4000,
             )
 
             text = strip_code_fences(resp.choices[0].message.content)
@@ -583,19 +599,20 @@ JSON: {{"matches": [...]}}"""},
                 if not (0 <= idx < len(result)):
                     continue
                 desc_ru = (m.get("description_ru") or "").strip()
+                comm_name = (m.get("commercial_name_ru") or "").strip()
                 hs_desc = (m.get("hs_description") or "").strip()
                 conf = float(m.get("match_confidence") or 0.5)
                 if desc_ru:
                     result[idx]["description_invoice"] = result[idx].get("description", "")
                     result[idx]["description"] = desc_ru
-                    result[idx]["commercial_name"] = desc_ru
+                    result[idx]["commercial_name"] = comm_name or desc_ru
                     result[idx]["description_source"] = "tech_description"
                 if hs_desc:
                     result[idx]["hs_description_for_classification"] = hs_desc
                 result[idx]["techop_match_confidence"] = conf
                 logger.info("techop_matched",
                             invoice_desc=(invoice_items[idx].get("description") or "")[:40],
-                            tech_desc=desc_ru[:60], confidence=conf)
+                            tech_desc=desc_ru[:80], confidence=conf)
             return result
 
         except Exception as e:
@@ -665,12 +682,15 @@ contract: {{contract_number, contract_date, seller: {{name, country_code, addres
   is_trilateral: true если договор трёхсторонний (между получателем, декларантом и лицом за фин. урегулирование)
   receiver: получатель груза (графа 8 ДТ) — ТОЛЬКО если отличается от buyer/declarant
   financial_responsible: лицо, ответственное за финансовое урегулирование (графа 9 ДТ) — ТОЛЬКО если отличается от buyer/declarant
-specification: {{items_count, total_amount, currency, total_gross_weight, total_net_weight}}
-tech_description: {{products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
-transport_invoice: {{freight_amount, freight_currency, carrier_name, shipper_name, shipper_address, awb_number, transport_type}}
+specification: {{doc_number, doc_date, items_count, total_amount, currency, total_gross_weight, total_net_weight}}
+  doc_number: номер спецификации / приложения к контракту
+tech_description: {{doc_number, doc_date, products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
+transport_invoice: {{doc_number, doc_date, freight_amount, freight_currency, carrier_name, shipper_name, shipper_address, awb_number, transport_type}}
+  doc_number: номер транспортного инвойса / счёта за перевозку
   shipper_name: отправитель груза — искать "Shipper", "Shipper's Name", "Отправитель", "Consignor"
   shipper_address: адрес отправителя — искать "Shipper's Address", "Адрес отправителя" (улица, город, индекс, страна)
-application_statement: {{forwarding_agent: {{name, address, country_code, inn, kpp, ogrn}}, incoterms, delivery_place, shipper: {{name, address, country_code}}}}
+application_statement: {{doc_number, doc_date, forwarding_agent: {{name, address, country_code, inn, kpp, ogrn}}, incoterms, delivery_place, shipper: {{name, address, country_code}}}}
+  doc_number: номер заявки / поручения экспедитору
   shipper: отправитель груза — искать "Shipper", "Отправитель" и его адрес
 
 Заполни только те разделы, для которых есть документы. Если документа нет — не включай раздел.
@@ -689,9 +709,10 @@ JSON:"""},
             data = _json.loads(text)
 
             # Маппинг результата
-            if data.get("contract"):
-                c = data["contract"]
-                # Создаём объект, совместимый с ContractParsed
+            contract_filename = _first_filename("contract")
+            c = data.get("contract")
+            if c or contract_filename:
+                c = c if isinstance(c, dict) else {}
                 from app.services.contract_parser import ContractParsed, ContractParty
                 seller_party = None
                 buyer_party = None
@@ -723,7 +744,7 @@ JSON:"""},
                     delivery_place=c.get("delivery_place"),
                     payment_terms=c.get("payment_terms"), confidence=0.85,
                 ).model_dump()
-                contract_payload["_filename"] = _first_filename("contract")
+                contract_payload["_filename"] = contract_filename
                 parsed_docs["contract"] = contract_payload
 
             if data.get("specification"):
@@ -865,8 +886,8 @@ JSON:"""},
                 if prev_inv:
                     prev_score = _invoice_score(prev_inv)
                     new_score = _invoice_score(new_inv)
-                    prev_good, prev_total, _ = prev_score
-                    new_good, new_total, _ = new_score
+                    prev_good, _, _, prev_total = prev_score
+                    new_good, _, _, new_total = new_score
                     if new_score > prev_score:
                         parsed_docs["invoice"] = new_inv
                         logger.info("invoice_replaced",
@@ -896,6 +917,8 @@ JSON:"""},
             elif doc_type in ("contract", "specification", "tech_description", "transport_invoice", "application_statement"):
                 # Собираем для батч-парсинга одним LLM-вызовом
                 secondary_texts.append({"doc_type": doc_type, "filename": filename, "text": text, "file_bytes": file_bytes})
+            elif doc_type == "payment_order":
+                parsed_docs.setdefault("payment_orders", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
             else:
                 parsed_docs.setdefault("other", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
 
@@ -1519,6 +1542,23 @@ JSON:"""},
 
         logger.info("packaging_assigned", items_with_pkg=pkg_assigned, total_items=len(items))
 
+        # ── Гр. 31: формируем полное описание (пункт 1 + пункт 2) ──
+        # Пункт 1: наименование товара (уже в description — из тех.описания или инвойса)
+        # Пункт 2: грузовые места и упаковка из PL
+        for item in items:
+            pkg_parts = []
+            pc = item.get("package_count")
+            pt = item.get("package_type")
+            if pc:
+                pkg_parts.append(f"{pc}")
+            if pt:
+                pkg_parts.append(pt)
+            if pkg_parts:
+                pkg_line = "2. Грузовые места: " + ", ".join(pkg_parts)
+                desc = item.get("description") or ""
+                if desc and pkg_line not in desc:
+                    item["description"] = f"1. {desc}\n{pkg_line}"
+
         # Суммарные веса из позиций
         if items and (total_gross is None or total_net is None):
             gross_sum = sum((_safe_float(it.get("gross_weight")) or 0.0) for it in items)
@@ -1875,6 +1915,10 @@ JSON:"""},
             "documents": self._build_documents_list(parsed_docs, inv, contract, awb_number),
             "freight_amount": transport_inv.get("freight_amount"),
             "freight_currency": transport_inv.get("freight_currency"),
+            "insurance_amount": transport_inv.get("insurance_amount"),
+            "insurance_currency": transport_inv.get("insurance_currency"),
+            "loading_cost": transport_inv.get("loading_cost"),
+            "loading_currency": transport_inv.get("loading_currency"),
         }
 
         buyer_src = "trilateral_contract" if (is_trilateral and not buyer_matches_declarant) else "default_see_graph_14"
@@ -1921,11 +1965,21 @@ JSON:"""},
             "invoice": "04021",
             "contract": "03011",
             "packing": "04024",
-            "specification": "04099",
+            "packing_list": "04024",
+            "specification": "04091",
             "transport_invoice": "04025",
             "transport": "02011",
-            "application_statement": "09999",
-            "tech_description": "04099",
+            "transport_doc": "02011",
+            "application_statement": "05999",
+            "tech_description": "05011",
+            "payment_order": "03031",
+            "certificate_origin": "06019",
+            "license": "01011",
+            "permit": "01999",
+            "sanitary": "07013",
+            "veterinary": "07012",
+            "phytosanitary": "07011",
+            "other": "09023",
         }
         docs: list[dict] = []
 
@@ -1987,8 +2041,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["packing"],
             doc_type_name="Упаковочный лист",
             parsed_source=packing_data,
-            doc_number=packing_data.get("packing_list_number"),
-            doc_date=packing_data.get("packing_list_date"),
+            doc_number=packing_data.get("packing_list_number") or packing_data.get("doc_number"),
+            doc_date=packing_data.get("packing_list_date") or packing_data.get("doc_date"),
         )
         transport_inv_data = parsed_docs.get("transport_invoice") or {}
         _append_doc(
@@ -1996,8 +2050,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["transport_invoice"],
             doc_type_name="Транспортный инвойс (фрахт)",
             parsed_source=transport_inv_data,
-            doc_number=transport_inv_data.get("invoice_number"),
-            doc_date=transport_inv_data.get("invoice_date"),
+            doc_number=transport_inv_data.get("doc_number") or transport_inv_data.get("invoice_number"),
+            doc_date=transport_inv_data.get("doc_date") or transport_inv_data.get("invoice_date"),
         )
 
         specification = parsed_docs.get("specification") or {}
@@ -2006,8 +2060,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["specification"],
             doc_type_name="Спецификация",
             parsed_source=specification,
-            doc_number=None,
-            doc_date=None,
+            doc_number=specification.get("doc_number"),
+            doc_date=specification.get("doc_date"),
         )
 
         application_statement = parsed_docs.get("application_statement") or {}
@@ -2016,8 +2070,8 @@ JSON:"""},
             doc_code=_DOC_TYPE_CODES["application_statement"],
             doc_type_name="Заявка / поручение экспедитору",
             parsed_source=application_statement,
-            doc_number=None,
-            doc_date=None,
+            doc_number=application_statement.get("doc_number"),
+            doc_date=application_statement.get("doc_date"),
         )
 
         for tech_desc in parsed_docs.get("tech_descriptions") or []:
@@ -2026,8 +2080,18 @@ JSON:"""},
                 doc_code=_DOC_TYPE_CODES["tech_description"],
                 doc_type_name="Техническое описание",
                 parsed_source=tech_desc,
-                doc_number=None,
-                doc_date=None,
+                doc_number=tech_desc.get("doc_number"),
+                doc_date=tech_desc.get("doc_date"),
+            )
+
+        for pay_order in parsed_docs.get("payment_orders") or []:
+            _append_doc(
+                doc_type="payment_order",
+                doc_code=_DOC_TYPE_CODES["payment_order"],
+                doc_type_name="Платёжное поручение",
+                parsed_source=pay_order,
+                doc_number=pay_order.get("doc_number"),
+                doc_date=pay_order.get("doc_date"),
             )
         return docs
 
@@ -2167,6 +2231,7 @@ JSON:"""
         # Поля, вычисленные в _compile_declaration со строгим приоритетом
         # источников, защищены от перезаписи LLM (если уже имеют значение).
         _PRIORITY_FIELDS = {
+            "type_code", "deal_nature_code",
             "seller", "buyer", "buyer_matches_declarant",
             "responsible_person", "responsible_person_matches_declarant",
             "transport_id", "transport_doc_number",

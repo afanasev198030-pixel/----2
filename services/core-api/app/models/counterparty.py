@@ -31,6 +31,16 @@ class Counterparty(Base):
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.companies.id")
     )
+    ogrn: Mapped[Optional[str]] = mapped_column(String(15))
+    kpp: Mapped[Optional[str]] = mapped_column(String(9))
+    postal_code: Mapped[Optional[str]] = mapped_column(String(6))
+    region: Mapped[Optional[str]] = mapped_column(String(100))
+    city: Mapped[Optional[str]] = mapped_column(String(100))
+    street: Mapped[Optional[str]] = mapped_column(String(200))
+    building: Mapped[Optional[str]] = mapped_column(String(20))
+    room: Mapped[Optional[str]] = mapped_column(String(20))
+    phone: Mapped[Optional[str]] = mapped_column(String(30))
+    email: Mapped[Optional[str]] = mapped_column(String(100))
 
     # Relationships
     company: Mapped["Company"] = relationship(
