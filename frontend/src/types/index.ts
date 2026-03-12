@@ -6,6 +6,7 @@ export interface User {
   role: 'client' | 'ved_specialist' | 'head' | 'accountant' | 'lawyer' | 'broker' | 'admin';
   company_id: string;
   is_active: boolean;
+  telegram_id?: string;
   created_at: string;
 }
 

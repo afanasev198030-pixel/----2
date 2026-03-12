@@ -5,6 +5,7 @@ import structlog
 from app.config import get_settings
 from app.routers import parser, classifier, risk
 from app.routers import smart_parser
+from app.routers import chat
 from app.middleware.tracing import TracingMiddleware
 
 logger = structlog.get_logger()
@@ -32,6 +33,7 @@ app.include_router(risk.router)
 
 # New RAG/LLM router
 app.include_router(smart_parser.router)
+app.include_router(chat.router)
 
 
 @app.get("/health")

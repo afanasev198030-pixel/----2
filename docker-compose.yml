@@ -1,4 +1,22 @@
 services:
+  bot-service:
+    build:
+      context: ./services/bot-service
+    container_name: customs-bot-service
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/1
+      - CORE_API_URL=http://core-api:8001
+      - FILE_SERVICE_URL=http://file-service:8002
+      - AI_SERVICE_URL=http://ai-service:8003
+    depends_on:
+      redis:
+        condition: service_healthy
+      core-api:
+        condition: service_started
+
   postgres:
     image: postgres:15
     container_name: customs-postgres

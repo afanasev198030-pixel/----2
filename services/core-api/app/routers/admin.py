@@ -104,12 +104,17 @@ async def get_user_audit(
     user_id: uuid.UUID,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
+    action: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN)),
 ):
     """Get audit log for specific user."""
     query = select(AuditLog).where(AuditLog.user_id == user_id)
     count_query = select(func.count()).select_from(AuditLog).where(AuditLog.user_id == user_id)
+
+    if action:
+        query = query.where(AuditLog.action == action)
+        count_query = count_query.where(AuditLog.action == action)
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0

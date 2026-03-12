@@ -20,6 +20,13 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"])
 
 
+@router.get("/internal/telegram-config")
+async def get_telegram_config_internal(db: AsyncSession = Depends(get_db)):
+    """Internal endpoint (no auth) for bot-service to fetch bot token on startup."""
+    bot_token = await _get_setting(db, "telegram_bot_token") or ""
+    bot_username = await _get_setting(db, "telegram_bot_username") or ""
+    return {"bot_token": bot_token, "bot_username": bot_username}
+
 @router.get("/internal/llm-config")
 async def get_llm_config_internal(db: AsyncSession = Depends(get_db)):
     """Internal endpoint (no auth) for ai-service to fetch LLM config on startup."""
@@ -35,6 +42,10 @@ class SettingUpdate(BaseModel):
     value: str
     provider: Optional[str] = None
     base_url: Optional[str] = None
+
+class TelegramConfigUpdate(BaseModel):
+    bot_token: str
+    bot_username: str
 
 
 class ServiceStatus(BaseModel):
@@ -53,6 +64,7 @@ class SettingsResponse(BaseModel):
     rag_available: bool
     ai_status: str
     ai_message: str
+    telegram_bot_username: Optional[str] = None
     services: list[ServiceStatus] = []
     db_stats: dict = {}
 
@@ -212,10 +224,31 @@ async def get_settings(
         rag_available=rag_available,
         ai_status=ai_status,
         ai_message=ai_message,
+        telegram_bot_username=await _get_setting(db, "telegram_bot_username") or os.environ.get("TELEGRAM_BOT_USERNAME", "YourBrokerBot"),
         services=services,
         db_stats=db_stats,
     )
 
+
+@router.post("/telegram-config")
+async def set_telegram_config(
+    data: TelegramConfigUpdate,
+    current_user: User = Depends(require_role(UserRole.ADMIN)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Установить настройки Telegram бота."""
+    await _set_setting(db, "telegram_bot_token", data.bot_token)
+    await _set_setting(db, "telegram_bot_username", data.bot_username)
+    
+    # Update current process environment so other routers (like telegram.py) can use it
+    import os
+    os.environ["TELEGRAM_BOT_TOKEN"] = data.bot_token
+    os.environ["TELEGRAM_BOT_USERNAME"] = data.bot_username
+    
+    # In a real microservices architecture, we would notify bot-service to restart/reload
+    # For now, we just save it to DB
+    
+    return {"status": "ok", "message": "Настройки Telegram сохранены"}
 
 @router.post("/openai-key")
 async def set_openai_key(
