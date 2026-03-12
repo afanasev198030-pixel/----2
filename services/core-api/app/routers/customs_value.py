@@ -180,12 +180,42 @@ async def generate_dts(
     db.add(cvd)
     await db.flush()
 
-    for item in sorted(decl.items, key=lambda i: i.item_no or 0):
-        item_price_foreign = _d(item.unit_price) * _d(item.additional_unit_qty or 1)
+    items_sorted = sorted(decl.items, key=lambda i: i.item_no or 0)
+    currency = decl.currency_code or "USD"
+
+    for item in items_sorted:
+        # Графа 11(а): unit_price уже хранит графу 42 ДТ (итого стоимость товара)
+        if item.unit_price:
+            item_price_foreign = _d(item.unit_price)
+        elif len(items_sorted) == 1 and decl.total_invoice_value:
+            item_price_foreign = _d(decl.total_invoice_value)
+        else:
+            item_price_foreign = Decimal(0)
+
         item_price_national = (item_price_foreign * exchange_rate).quantize(Q2, ROUND_HALF_UP)
 
         weight_share = _d(item.gross_weight) / total_gross if total_gross else Decimal(0)
         transport = (freight_rub * weight_share).quantize(Q2, ROUND_HALF_UP)
+
+        # Пересчёт валют (раздел * ДТС-1)
+        conversions: list[dict] = []
+        if item_price_foreign > 0 and currency != "RUB":
+            conversions.append({
+                "item_no": item.item_no or 0,
+                "graph": "11",
+                "currency_code": currency,
+                "amount_foreign": float(item_price_foreign.quantize(Q2, ROUND_HALF_UP)),
+                "exchange_rate": float(exchange_rate),
+            })
+        if transport > 0 and decl.freight_amount and decl.freight_currency and decl.freight_currency != "RUB":
+            freight_foreign_share = (_d(decl.freight_amount) * weight_share).quantize(Q2, ROUND_HALF_UP)
+            conversions.append({
+                "item_no": item.item_no or 0,
+                "graph": "17",
+                "currency_code": decl.freight_currency,
+                "amount_foreign": float(freight_foreign_share),
+                "exchange_rate": float(exchange_rate),
+            })
 
         cvi = CustomsValueItem(
             customs_value_declaration_id=cvd.id,
@@ -196,6 +226,7 @@ async def generate_dts(
             invoice_price_national=item_price_national,
             indirect_payments=Decimal(0),
             transport_cost=transport,
+            currency_conversions=conversions if conversions else None,
         )
         _recalc_item(cvi)
 

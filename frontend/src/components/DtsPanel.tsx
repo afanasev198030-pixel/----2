@@ -337,6 +337,8 @@ const DtsPanel = ({ declaration, items }: DtsPanelProps) => {
               key={cvi.id}
               item={cvi}
               description={itemDescMap[cvi.declaration_item_id]}
+              currencyCode={declaration.currency_code || undefined}
+              exchangeRate={declaration.exchange_rate != null ? Number(declaration.exchange_rate) : undefined}
               onChange={handleItemChange}
             />
           ))}
