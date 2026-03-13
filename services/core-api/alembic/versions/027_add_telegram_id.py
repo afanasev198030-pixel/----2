@@ -19,9 +19,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add telegram_id column to core.users
-    op.add_column('users', sa.Column('telegram_id', sa.String(length=50), nullable=True), schema='core')
-    op.create_unique_constraint('uq_users_telegram_id', 'users', ['telegram_id'], schema='core')
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = 'core' AND table_name = 'users' AND column_name = 'telegram_id'"
+    ))
+    if result.fetchone() is None:
+        op.add_column('users', sa.Column('telegram_id', sa.String(length=50), nullable=True), schema='core')
+        op.create_unique_constraint('uq_users_telegram_id', 'users', ['telegram_id'], schema='core')
 
 
 def downgrade() -> None:
