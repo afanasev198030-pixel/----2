@@ -160,6 +160,16 @@ def _detect_doc_type(filename: str, text: str) -> str:
     if ("inv" in fn_lower and "pl" in fn_lower) or ("инвойс" in fn_lower and "упаков" in fn_lower):
         return "invoice"
 
+    # --- Эталонная ГТД (reference GTD) ---
+    if any(k in fn_lower for k in ["gtd", "гтд", "декларация на товары"]):
+        return "reference_gtd"
+    if re.search(r'\d{8}[_\-]\d{6}[_\-]\d{7}', fn_lower):
+        return "reference_gtd"
+
+    # --- Документ СВХ (склад временного хранения) ---
+    if any(k in fn_lower for k in ["cbx", "свх", "свх_", "warehouse"]):
+        return "svh_doc"
+
     # --- По имени файла: однозначные типы ---
     if any(k in fn_lower for k in ["contract", "договор", "контракт"]):
         return "contract"
@@ -249,7 +259,89 @@ def _detect_doc_type(filename: str, text: str) -> str:
                                       "заявка на экспедирование", "отправитель груза", "shipper details"]):
         return "application_statement"
 
+    # Эталонная ГТД (по содержимому)
+    if any(k in text_lower for k in [
+        "декларация на товары", "грузовая таможенная",
+        "графа 31", "графа 33", "графа 44",
+    ]) and re.search(r'\d{8}/\d{6}/\d{7}', text_lower):
+        return "reference_gtd"
+
+    # Документ СВХ (по содержимому)
+    if any(k in text_lower for k in [
+        "склад временного хранения", "свидетельство о включении в реестр",
+        "документ о принятии на хранение", "отчёт о принятии на хранение",
+        "отчет о принятии на хранение", "до-1", "до1",
+    ]):
+        return "svh_doc"
+
     return "other"
+
+
+def _parse_svh_doc(text: str, filename: str) -> dict:
+    """Извлечь данные СВХ (склада временного хранения) из текста документа.
+
+    Ищет номер документа СВХ (ДО-1 / отчёт), название склада,
+    дату помещения и регистрационный номер.
+    """
+    result: dict = {
+        "svh_number": None,
+        "warehouse_name": None,
+        "warehouse_license": None,
+        "placement_date": None,
+    }
+
+    if not text:
+        return result
+
+    text_search = text[:5000]
+
+    # Номер документа СВХ: CBX..., ДО-1 №..., рег.номер
+    # CBX-формат: CBX + дата + порядковый номер
+    cbx_m = re.search(r'(CBX\d{10,20})', text_search, re.IGNORECASE)
+    if cbx_m:
+        result["svh_number"] = cbx_m.group(1).upper()
+    else:
+        # ДО-1 / отчёт формат
+        do_m = re.search(r'(?:ДО[-\s]?1|отчёт|отчет)[\s№#:]*\s*([A-ZА-Яа-я0-9/\-]{4,30})',
+                         text_search, re.IGNORECASE)
+        if do_m:
+            result["svh_number"] = do_m.group(1).strip()
+
+    # Fallback: из имени файла
+    if not result["svh_number"]:
+        fn_m = re.search(r'(CBX\d{10,20})', filename, re.IGNORECASE)
+        if fn_m:
+            result["svh_number"] = fn_m.group(1).upper()
+
+    # Название СВХ
+    wh_m = re.search(
+        r'(?:склад\s+временного\s+хранения|СВХ)\s*[:\-«"]?\s*(.{5,100}?)(?:[»"\n]|,\s*расположен)',
+        text_search, re.IGNORECASE,
+    )
+    if wh_m:
+        result["warehouse_name"] = wh_m.group(1).strip().rstrip('.,;')
+
+    # Лицензия / свидетельство СВХ
+    lic_m = re.search(
+        r'(?:свидетельство|лицензия|разрешение)[\s№#:]*\s*([A-ZА-Яа-я0-9/\-]{4,30})',
+        text_search, re.IGNORECASE,
+    )
+    if lic_m:
+        result["warehouse_license"] = lic_m.group(1).strip()
+
+    # Дата помещения
+    date_m = re.search(
+        r'(?:дата\s+(?:помещения|принятия|поступления)|помещ[её]н|принят)\s*[:\-]?\s*(\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4})',
+        text_search, re.IGNORECASE,
+    )
+    if date_m:
+        result["placement_date"] = date_m.group(1).strip()
+
+    logger.debug("svh_parse_result", filename=filename,
+                 svh_number=result["svh_number"],
+                 warehouse_name=result["warehouse_name"])
+
+    return result
 
 
 # Кэш парсинга по MD5 хэшу файла (in-memory, до перезапуска)
@@ -919,6 +1011,26 @@ JSON:"""},
                 secondary_texts.append({"doc_type": doc_type, "filename": filename, "text": text, "file_bytes": file_bytes})
             elif doc_type == "payment_order":
                 parsed_docs.setdefault("payment_orders", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
+            elif doc_type == "reference_gtd":
+                self._progress("parsing", f"[{i+1}/{total_files}] AI: эталонная ГТД...", pct)
+                from app.services.gtd_reference_extractor import extract_gtd_reference
+                gtd_ref = extract_gtd_reference(file_bytes, filename)
+                gtd_ref["_filename"] = filename
+                gtd_ref["doc_type"] = "reference_gtd"
+                parsed_docs["reference_gtd"] = gtd_ref
+                logger.info("reference_gtd_parsed", filename=filename,
+                            items_count=len(gtd_ref.get("items", [])),
+                            customs_office=gtd_ref.get("header", {}).get("customs_office_code"))
+            elif doc_type == "svh_doc":
+                self._progress("parsing", f"[{i+1}/{total_files}] Извлечение данных СВХ...", pct)
+                svh_data = _parse_svh_doc(text, filename)
+                svh_data["raw_text"] = text
+                svh_data["_filename"] = filename
+                svh_data["doc_type"] = "svh_doc"
+                parsed_docs["svh_doc"] = svh_data
+                logger.info("svh_doc_parsed", filename=filename,
+                            svh_number=svh_data.get("svh_number"),
+                            warehouse_name=svh_data.get("warehouse_name"))
             else:
                 parsed_docs.setdefault("other", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
 
@@ -1118,6 +1230,8 @@ JSON:"""},
         transport_inv = parsed_docs.get("transport_invoice", {})
         transport = parsed_docs.get("transport", {})
         application = parsed_docs.get("application_statement", {})
+        reference_gtd = parsed_docs.get("reference_gtd", {})
+        svh_doc = parsed_docs.get("svh_doc", {})
 
         # ── Seller/Buyer: извлечение из источников с дополнением пробелов ──
         def _extract_party(sources, party_type):
@@ -1921,6 +2035,48 @@ JSON:"""},
             "loading_currency": transport_inv.get("loading_currency"),
         }
 
+        # ── СВХ: данные склада временного хранения (гр. 30 / 49) ──
+        if svh_doc:
+            svh_number = svh_doc.get("svh_number")
+            if svh_number:
+                result["warehouse_requisites"] = svh_number
+                result["goods_location_svh_doc_id"] = svh_number
+                ev.record("warehouse_requisites", svh_number, "svh_doc", confidence=0.9, graph=49)
+            wh_name = svh_doc.get("warehouse_name")
+            if wh_name:
+                result["warehouse_name"] = wh_name
+                ev.record("warehouse_name", wh_name, "svh_doc", confidence=0.85, graph=30)
+            logger.info("svh_integrated",
+                        svh_number=svh_number, warehouse_name=wh_name)
+
+        # ── Эталонная ГТД: reference data для перекрёстной проверки ──
+        if reference_gtd:
+            gtd_header = reference_gtd.get("header", {})
+            gtd_items = reference_gtd.get("items", [])
+            result["reference_gtd"] = {
+                "filename": reference_gtd.get("filename"),
+                "header": gtd_header,
+                "items_count": len(gtd_items),
+            }
+            # Обогащение: если основные документы не дали HS-кодов — подтянуть из эталона
+            if gtd_items and items:
+                for item in items:
+                    if item.get("hs_code"):
+                        continue
+                    desc = (item.get("description") or "").lower()
+                    for g_item in gtd_items:
+                        g_desc = (g_item.get("description") or "").lower()
+                        if desc and g_desc and (desc[:30] in g_desc or g_desc[:30] in desc):
+                            item["hs_code"] = g_item.get("hs_code", "")
+                            item["hs_confidence"] = 0.75
+                            item["hs_reasoning"] = f"Из эталонной ГТД: {reference_gtd.get('filename', '')}"
+                            logger.info("hs_from_reference_gtd",
+                                        description=desc[:50],
+                                        hs_code=item["hs_code"])
+                            break
+            ev.record("reference_gtd", reference_gtd.get("filename"), "reference_gtd",
+                      confidence=0.95, graph=0)
+
         buyer_src = "trilateral_contract" if (is_trilateral and not buyer_matches_declarant) else "default_see_graph_14"
         ev.record("buyer", buyer if not buyer_matches_declarant else "СМ. ГРАФУ 14 ДТ",
                   buyer_src, confidence=0.95, graph=8)
@@ -1973,6 +2129,8 @@ JSON:"""},
             "application_statement": "05999",
             "tech_description": "05011",
             "payment_order": "03031",
+            "reference_gtd": "09013",
+            "svh_doc": "09023",
             "certificate_origin": "06019",
             "license": "01011",
             "permit": "01999",
@@ -2093,6 +2251,29 @@ JSON:"""},
                 doc_number=pay_order.get("doc_number"),
                 doc_date=pay_order.get("doc_date"),
             )
+
+        ref_gtd = parsed_docs.get("reference_gtd") or {}
+        if ref_gtd:
+            _append_doc(
+                doc_type="reference_gtd",
+                doc_code=_DOC_TYPE_CODES["reference_gtd"],
+                doc_type_name="Эталонная ГТД (справочно)",
+                parsed_source=ref_gtd,
+                doc_number=ref_gtd.get("header", {}).get("customs_office_code"),
+                doc_date=None,
+            )
+
+        svh = parsed_docs.get("svh_doc") or {}
+        if svh:
+            _append_doc(
+                doc_type="svh_doc",
+                doc_code=_DOC_TYPE_CODES["svh_doc"],
+                doc_type_name="Документ СВХ",
+                parsed_source=svh,
+                doc_number=svh.get("svh_number"),
+                doc_date=svh.get("placement_date"),
+            )
+
         return docs
 
     def _compile_by_rules(self, parsed_docs: dict, base_result: dict) -> dict:
