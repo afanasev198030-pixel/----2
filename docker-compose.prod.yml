@@ -21,6 +21,8 @@ services:
         condition: service_healthy
       core-api:
         condition: service_started
+    networks:
+      - customs-net
 
   postgres:
     image: postgres:15

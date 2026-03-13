@@ -134,7 +134,11 @@ const DeclarationsListPage = () => {
   });
 
   const handleCreate = () => {
-    if (!meData?.company_id) return;
+    if (!meData?.company_id) {
+      setSnackbar({ open: true, message: 'Ваш аккаунт не привязан к компании. Обратитесь к администратору.', severity: 'error' });
+      setCreateDialogOpen(false);
+      return;
+    }
     createMutation.mutate({ type_code: newTypeCode, company_id: meData.company_id });
   };
 
@@ -646,9 +650,11 @@ const DeclarationsListPage = () => {
                       <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
                         {searchQuery || statusFilter
                           ? 'Попробуйте изменить параметры поиска'
-                          : 'Создайте первую декларацию — загрузите PDF-документы и AI заполнит все данные'}
+                          : !meData?.company_id
+                            ? 'Ваш аккаунт не привязан к компании. Обратитесь к администратору для привязки.'
+                            : 'Создайте первую декларацию — загрузите PDF-документы и AI заполнит все данные'}
                       </Typography>
-                      {!searchQuery && !statusFilter && (
+                      {!searchQuery && !statusFilter && meData?.company_id && (
                         <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateDialogOpen(true)}>
                           Создать декларацию
                         </Button>

@@ -451,12 +451,18 @@ const DeclarationViewPage = () => {
           <G w="50%" label="8" h={60} br>
             Получатель
             <br />
-            <b>{cpLine(receiver)}</b>
+            <b>
+              {decl.receiver_counterparty_id && decl.declarant_counterparty_id && decl.receiver_counterparty_id !== decl.declarant_counterparty_id
+                ? cpLine(receiver)
+                : 'СМ. ГРАФУ 14 ДТ'}
+            </b>
           </G>
           <G w="25%" label="9" br>
             Лицо, ответственное за финансовое урегулирование
             <br />
-            {financial ? cpLine(financial) : ''}
+            {decl.financial_counterparty_id && decl.declarant_counterparty_id && decl.financial_counterparty_id !== decl.declarant_counterparty_id
+              ? cpLine(financial)
+              : 'СМ. ГРАФУ 14 ДТ'}
           </G>
           <div style={{ width: '25%' }} />
         </Row>
@@ -752,7 +758,11 @@ const DeclarationViewPage = () => {
               <G w="40%" label="8" h={36} br>
                 Получатель
                 <br />
-                <b>{receiver?.name || 'НЕ УКАЗАН'}</b>
+                <b>
+                  {decl.receiver_counterparty_id && decl.declarant_counterparty_id && decl.receiver_counterparty_id !== decl.declarant_counterparty_id
+                    ? (receiver?.name || 'НЕ УКАЗАН')
+                    : 'СМ. ГРАФУ 14 ДТ'}
+                </b>
               </G>
               <G w="20%" label="3">
                 Формы

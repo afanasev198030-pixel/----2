@@ -43,11 +43,12 @@ def parse_inn_kpp(raw_value: Optional[str]) -> tuple[Optional[str], Optional[str
 
 
 def merge_company_inn_kpp(company: Optional[Company], raw_value: Optional[str]) -> Optional[str]:
+    """Мёрдж ИНН/КПП: приоритет контракт/инвойс (raw_value) > профиль компании."""
     parsed_inn, parsed_kpp = parse_inn_kpp(raw_value)
     company_inn = normalize_digits(company.inn) if company and company.inn else ""
     company_kpp = normalize_digits(company.kpp) if company and company.kpp else ""
-    inn = company_inn or (parsed_inn or "")
-    kpp = company_kpp or (parsed_kpp or "")
+    inn = (parsed_inn or "") or company_inn
+    kpp = (parsed_kpp or "") or company_kpp
     if inn and kpp:
         return f"{inn}/{kpp}"
     if inn:

@@ -135,8 +135,8 @@ def _build_dt1(decl, items, sender, receiver, declarant, financial) -> str:
     <tr></tr>
     <!-- 8 / 9 -->
     <tr>
-      <td colspan="2" style="min-height:40px"><span class="lbl">8 </span>Получатель<br><b>{_cp_line(receiver)}</b></td>
-      <td><span class="lbl">9 </span>Лицо, ответственное за финансовое урегулирование<br>{_cp_line(financial) if financial else ''}</td>
+      <td colspan="2" style="min-height:40px"><span class="lbl">8 </span>Получатель<br><b>{_cp_line(receiver) if decl.receiver_counterparty_id and decl.declarant_counterparty_id and decl.receiver_counterparty_id != decl.declarant_counterparty_id else 'СМ. ГРАФУ 14 ДТ'}</b></td>
+      <td><span class="lbl">9 </span>Лицо, ответственное за финансовое урегулирование<br>{_cp_line(financial) if financial and decl.financial_counterparty_id and decl.declarant_counterparty_id and decl.financial_counterparty_id != decl.declarant_counterparty_id else 'СМ. ГРАФУ 14 ДТ'}</td>
       <td></td>
     </tr>
     <!-- 10 / 11 / 12 / 13 -->
@@ -240,7 +240,7 @@ def _build_dt2(decl, sheet_items, sheet_number, total_forms, sender, receiver) -
     </tr>
     <tr>
       <td><span class="lbl">2 </span>Отправитель<br><b>{(sender.name if sender else 'НЕ УКАЗАН').upper()}</b></td>
-      <td><span class="lbl">8 </span>Получатель<br><b>{(receiver.name if receiver else 'НЕ УКАЗАН').upper()}</b></td>
+      <td><span class="lbl">8 </span>Получатель<br><b>{(receiver.name if receiver else 'НЕ УКАЗАН').upper() if decl.receiver_counterparty_id and decl.declarant_counterparty_id and decl.receiver_counterparty_id != decl.declarant_counterparty_id else 'СМ. ГРАФУ 14 ДТ'}</b></td>
       <td colspan="2"><span class="lbl">3 </span>Формы<br><b>{sheet_number}/{total_forms}</b></td>
     </tr>
     {items_html}

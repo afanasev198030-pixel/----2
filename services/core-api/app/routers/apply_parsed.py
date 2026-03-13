@@ -251,9 +251,47 @@ def _default_doc_filename(doc_type: str, doc_number: Optional[str]) -> str:
     return f"{doc_type}_{suffix or 'без_номера'}.pdf"
 
 
+def _has_cyrillic(text: Optional[str]) -> bool:
+    """Проверяет, содержит ли текст кириллические символы."""
+    if not text:
+        return False
+    return bool(re.search(r'[а-яА-ЯёЁ]', text))
+
+
+def _prefer_russian(variant_a: Optional[str], variant_b: Optional[str]) -> Optional[str]:
+    """Выбирает русский (кириллический) вариант, если доступен.
+
+    Если variant_a — латиница, а variant_b — кириллица, берём variant_b.
+    Иначе стандартный приоритет: variant_a > variant_b.
+    """
+    if variant_a and variant_b and not _has_cyrillic(variant_a) and _has_cyrillic(variant_b):
+        return variant_b
+    return variant_a or variant_b
+
+
 def _is_placeholder_party(value: Optional[str]) -> bool:
     normalized = (value or "").strip().upper()
     return normalized in {"СМ. ГРАФУ 14 ДТ", "SEE GRAPH 14", "SEE BOX 14"}
+
+
+_TRILATERAL_KEYWORDS = (
+    "trilateral", "трёхсторонн", "трехсторонн", "three-party",
+    "three_party", "трёхсторон", "трехсторон",
+)
+
+
+def _has_trilateral_contract(documents: list) -> bool:
+    """Проверить наличие трёхстороннего договора среди загруженных документов."""
+    for doc in documents:
+        for text in (
+            getattr(doc, "doc_type", None) or "",
+            getattr(doc, "doc_type_name", None) or "",
+            getattr(doc, "original_filename", None) or "",
+        ):
+            lower = text.lower()
+            if any(kw in lower for kw in _TRILATERAL_KEYWORDS):
+                return True
+    return False
 
 
 _CURRENCY_ALIASES = {
@@ -1085,16 +1123,21 @@ async def apply_parsed_data(
             )
             counters["counterparties"] += 1
 
-        # Графа 14: декларант — приоритет: Профиль компании > Контракт (buyer)
-        # Каждое поле: если в профиле заполнено — берём из профиля, если пусто — из контракта
-        c = company
-        bp = data.buyer
-        decl_name = (c.name if c else None) or (bp.name if bp else None)
-        decl_address = (c.address if c else None) or (bp.address if bp else None)
-        decl_country = (c.country_code if c else None) or (bp.country_code if bp else None) or "RU"
-        decl_inn = (c.inn if c else None) or (bp.inn if bp else None)
-        decl_kpp = (c.kpp if c else None) or (bp.kpp if bp else None)
-        decl_ogrn = (c.ogrn if c else None) or (bp.ogrn if bp else None)
+        # Графа 14: декларант — приоритет: Контракт/Инвойс (buyer) > Профиль компании
+        # Имя и адрес: предпочитаем русский (кириллический) вариант (ДТ заполняется на русском).
+        # ИНН/КПП/ОГРН: приоритет контракт → инвойс → профиль.
+        bp = data.buyer   # данные из контракта/инвойса (AI извлекает в порядке приоритета)
+        c = company       # профиль компании (fallback)
+        bp_name = bp.name if bp else None
+        c_name = c.name if c else None
+        decl_name = _prefer_russian(bp_name, c_name)
+        bp_addr = bp.address if bp else None
+        c_addr = c.address if c else None
+        decl_address = _prefer_russian(bp_addr, c_addr)
+        decl_country = (bp.country_code if bp else None) or (c.country_code if c else None) or "RU"
+        decl_inn = (bp.inn if bp else None) or (c.inn if c else None)
+        decl_kpp = (bp.kpp if bp else None) or (c.kpp if c else None)
+        decl_ogrn = (bp.ogrn if bp else None) or (c.ogrn if c else None)
 
         if decl_name:
             declarant_cp = ParsedCounterparty(
@@ -1120,26 +1163,33 @@ async def apply_parsed_data(
         if company and hasattr(company, "broker_license") and company.broker_license and not declaration.broker_registry_number:
             declaration.broker_registry_number = str(company.broker_license)[:30]
 
-        # Графа 8: по умолчанию «СМ. ГРАФУ 14 ДТ» (receiver = declarant)
-        # Исключение: трёхсторонний договор — отдельный получатель
-        if data.buyer_matches_declarant and declarant_id:
-            receiver_id = declarant_id
-        elif data.buyer and data.buyer.name:
+        # Детекция трёхстороннего договора среди загруженных документов
+        has_trilateral = _has_trilateral_contract(data.documents)
+        if has_trilateral:
+            logger.info("trilateral_contract_detected", declaration_id=str(declaration.id))
+
+        # Графа 8: «СМ. ГРАФУ 14 ДТ» по умолчанию.
+        # Отдельный получатель — ТОЛЬКО при наличии трёхстороннего договора.
+        if has_trilateral and data.buyer and data.buyer.name and not _is_placeholder_party(data.buyer.name):
             receiver_id = await _find_or_create_counterparty(
                 db, data.buyer, "buyer", current_user.company_id
             )
             counters["counterparties"] += 1
+            logger.info("graph_8_from_trilateral", receiver_name=data.buyer.name)
+        elif declarant_id:
+            receiver_id = declarant_id
 
-        # Графа 9: по умолчанию «СМ. ГРАФУ 14 ДТ» (financial = declarant)
-        # Исключение: трёхсторонний договор — отдельное ответственное лицо
+        # Графа 9: «СМ. ГРАФУ 14 ДТ» по умолчанию.
+        # Отдельное фин. ответственное лицо — ТОЛЬКО при наличии трёхстороннего договора.
         financial_id = None
-        if data.responsible_person_matches_declarant and declarant_id:
-            financial_id = declarant_id
-        elif isinstance(responsible_person_data, ParsedCounterparty) and responsible_person_data.name:
+        if has_trilateral and isinstance(responsible_person_data, ParsedCounterparty) and responsible_person_data.name:
             financial_id = await _find_or_create_counterparty(
                 db, responsible_person_data, "financial", current_user.company_id
             )
             counters["counterparties"] += 1
+            logger.info("graph_9_from_trilateral", financial_name=responsible_person_data.name)
+        elif declarant_id:
+            financial_id = declarant_id
 
         # --- 2. Обновить поля декларации ---
         if sender_id:
