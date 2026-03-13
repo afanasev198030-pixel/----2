@@ -234,7 +234,7 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 // ── Login/Register forms ─────────────────────────────────────────
 interface LoginForm { email: string; password: string; }
 interface RegisterForm {
-  full_name: string; email: string; password: string;
+  full_name: string; email: string; password: string; company_name: string;
 }
 
 // ── Page Component ──────────────────────────────────────────────────
@@ -272,6 +272,7 @@ export default function LandingPage() {
       setAuthError(null);
       const resp = await client.post('/auth/register-public', {
         full_name: data.full_name, email: data.email, password: data.password,
+        company_name: data.company_name,
       });
       if (resp.data.access_token) {
         localStorage.setItem('token', resp.data.access_token);
@@ -476,6 +477,8 @@ export default function LandingPage() {
             <form onSubmit={regForm.handleSubmit(onRegister)}>
               <TextField {...regForm.register('full_name', { required: 'Имя обязательно' })} label="Имя" fullWidth size="small" sx={fieldSx}
                 error={!!regForm.formState.errors.full_name} helperText={regForm.formState.errors.full_name?.message} />
+              <TextField {...regForm.register('company_name', { required: 'Название компании обязательно' })} label="Название компании" fullWidth size="small" sx={fieldSx}
+                error={!!regForm.formState.errors.company_name} helperText={regForm.formState.errors.company_name?.message} />
               <TextField {...regForm.register('email', { required: 'Email обязателен', pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Неверный формат' }})}
                 label="Email" type="email" fullWidth size="small" sx={fieldSx}
                 error={!!regForm.formState.errors.email} helperText={regForm.formState.errors.email?.message} />
@@ -511,6 +514,8 @@ export default function LandingPage() {
           <form onSubmit={regForm.handleSubmit(onRegister)}>
             <TextField {...regForm.register('full_name', { required: 'Имя обязательно' })} label="Имя" fullWidth size="small" sx={fieldSx}
               error={!!regForm.formState.errors.full_name} helperText={regForm.formState.errors.full_name?.message} />
+            <TextField {...regForm.register('company_name', { required: 'Название компании обязательно' })} label="Название компании" fullWidth size="small" sx={fieldSx}
+              error={!!regForm.formState.errors.company_name} helperText={regForm.formState.errors.company_name?.message} />
             <TextField {...regForm.register('email', { required: 'Email обязателен', pattern: { value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i, message: 'Неверный формат' }})}
               label="Email" type="email" fullWidth size="small" sx={fieldSx}
               error={!!regForm.formState.errors.email} helperText={regForm.formState.errors.email?.message} />

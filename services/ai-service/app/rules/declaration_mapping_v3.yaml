@@ -191,14 +191,24 @@ header_graphs:
     target:
       kind: core_declaration_relation
       field: receiver_counterparty_id
-      counterparty_type: buyer
-      extracted_object: buyer
-    sources: [company_profile, contract, invoice]
+      counterparty_type: receiver
+      extracted_object: receiver
+    sources: [trilateral_contract]
     source_notes:
-      company_profile: "Наивысший приоритет — брать из профиля компании в системе."
-      contract: "Раздел «Buyer» / «Покупатель». Предпочитать русскоязычные реквизиты."
-      invoice: "Поле «Buyer» / «Покупатель» в инвойсе на товары (не транспортном). Предпочитать русскоязычные реквизиты."
-    language_priority: "ru > en — если одни и те же реквизиты присутствуют на русском и английском, использовать русский вариант"
+      trilateral_contract: |
+        Трёхсторонний договор — раздел «Получатель» / «Consignee» / «Receiver».
+        Единственный источник данных для отдельного получателя.
+        Извлечь: наименование, адрес, ИНН/КПП, ОГРН.
+    fallback:
+      value: "СМ. ГРАФУ 14 ДТ"
+      condition: "если трёхсторонний договор не загружен — получатель = декларант (графа 14)"
+    ai_rule: |
+      Проверить наличие трёхстороннего договора среди загруженных документов.
+      Если трёхсторонний договор НЕ найден — заполнить «СМ. ГРАФУ 14 ДТ» (получатель = декларант).
+      Если трёхсторонний договор найден — извлечь данные получателя из договора:
+      наименование, адрес, ИНН/КПП, ОГРН.
+      Другие источники (профиль компании, контракт, инвойс) НЕ используются для этой графы.
+    language_priority: "ru > en"
     required_fields: [name, address]
     validation:
       type: object
@@ -206,29 +216,32 @@ header_graphs:
       kpp: { type: digits, length: [9] }
       ogrn: { type: digits, length: [13, 15] }
     confidence:
-      company_profile: 0.95
-      contract: 0.85
-      invoice: 0.8
+      trilateral_contract: 0.95
+      fallback: 1.0
 
   - graph: 9
     name: "Лицо, ответственное за финансовое урегулирование"
     target:
       kind: extension
       field: financial_responsible
-    sources: [power_of_attorney, broker_agreement]
+    sources: [trilateral_contract]
     source_notes:
-      power_of_attorney: "Доверенность на таможенного представителя."
-      broker_agreement: "Договор с таможенным представителем (брокером)."
+      trilateral_contract: |
+        Трёхсторонний договор — раздел «Лицо, ответственное за финансовое урегулирование»
+        / «Financial responsible party». Единственный источник данных.
+        Извлечь: наименование, адрес, ИНН/КПП, ОГРН.
     fallback:
       value: "СМ. ГРАФУ 14 ДТ"
-      condition: "если не найдены документы power_of_attorney или broker_agreement"
+      condition: "если трёхсторонний договор не загружен — финансово ответственное лицо = декларант (графа 14)"
     ai_rule: |
-      Проверить наличие доверенности или договора с брокером среди загруженных документов.
-      Если документы есть — извлечь реквизиты лица.
-      Если документов нет — заполнить фиксированным текстом "СМ. ГРАФУ 14 ДТ".
+      Проверить наличие трёхстороннего договора среди загруженных документов.
+      Если трёхсторонний договор НЕ найден — заполнить «СМ. ГРАФУ 14 ДТ»
+      (финансово ответственное лицо = декларант).
+      Если трёхсторонний договор найден — извлечь данные лица, ответственного
+      за финансовое урегулирование: наименование, адрес, ИНН/КПП, ОГРН.
+      Другие источники (доверенность, договор с брокером) НЕ используются для этой графы.
     confidence:
-      power_of_attorney: 0.9
-      broker_agreement: 0.8
+      trilateral_contract: 0.95
       fallback: 1.0
 
   - graph: 10
@@ -284,15 +297,11 @@ header_graphs:
     target:
       kind: core_declaration
       field: declarant_inn_kpp
-    sources: [power_of_attorney, broker_agreement, company_profile, contract, invoice]
+    sources: [contract, invoice, company_profile]
     source_notes:
-      power_of_attorney: "Если есть — данные брокера/таможенного представителя."
-      broker_agreement: "Если есть — данные брокера/таможенного представителя."
-      company_profile: "Если нет доверенности/договора с брокером — данные Получателя из профиля компании."
-      contract: "Раздел «Buyer» / «Покупатель». Предпочитать русский язык."
-      invoice: "Поле «Buyer» / «Покупатель» в инвойсе на товары. Предпочитать русский язык."
-    fallback:
-      condition: "если нет power_of_attorney и broker_agreement — использовать данные Получателя (гр. 8)"
+      contract: "Контракт/договор — раздел «Покупатель» / «Buyer». Основной источник. Предпочитать русский язык."
+      invoice: "Инвойс на товары — поле «Покупатель» / «Buyer». Резервный источник. Предпочитать русский язык."
+      company_profile: "Профиль компании в системе — fallback, если контракт и инвойс не содержат данных."
     language_priority: "ru > en"
     validation:
       type: object
@@ -301,11 +310,9 @@ header_graphs:
       kpp: { type: digits, length: [9] }
       ogrn: { type: digits, length: [13, 15] }
     confidence:
-      power_of_attorney: 0.95
-      broker_agreement: 0.9
-      company_profile: 0.95
-      contract: 0.85
-      invoice: 0.8
+      contract: 0.95
+      invoice: 0.85
+      company_profile: 0.80
 
   - graph: 15
     name: "Страна отправления"
