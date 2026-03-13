@@ -9,6 +9,8 @@ import { CustomsValueItem } from '../types';
 interface DtsItemCardProps {
   item: CustomsValueItem;
   description?: string;
+  currencyCode?: string;
+  exchangeRate?: number;
   onChange: (itemId: string, field: string, value: number) => void;
 }
 
@@ -35,7 +37,7 @@ const DEDUCTION_FIELDS: { key: keyof CustomsValueItem; label: string; graph: str
   { key: 'duties_taxes', label: 'Пошлины, налоги, сборы', graph: '23' },
 ];
 
-const DtsItemCard = ({ item, description, onChange }: DtsItemCardProps) => {
+const DtsItemCard = ({ item, description, currencyCode, exchangeRate, onChange }: DtsItemCardProps) => {
   const [expanded, setExpanded] = useState(true);
 
   const handleChange = (field: string, raw: string) => {
@@ -73,7 +75,8 @@ const DtsItemCard = ({ item, description, onChange }: DtsItemCardProps) => {
         <Grid container spacing={1} sx={{ mb: 1.5 }}>
           <Grid item xs={6} md={3}>
             <TextField
-              size="small" fullWidth label="Цена в валюте счёта (11а.1)"
+              size="small" fullWidth
+              label={`Цена в ${currencyCode || 'валюте'} (11а.1)`}
               value={item.invoice_price_foreign ?? ''}
               onChange={(e) => handleChange('invoice_price_foreign', e.target.value)}
               type="number" InputLabelProps={{ shrink: true }}
@@ -81,7 +84,8 @@ const DtsItemCard = ({ item, description, onChange }: DtsItemCardProps) => {
           </Grid>
           <Grid item xs={6} md={3}>
             <TextField
-              size="small" fullWidth label="Цена в нац. валюте (11а.2)"
+              size="small" fullWidth
+              label={`Цена в РУБ (11а.2)${exchangeRate ? ` курс ${exchangeRate}` : ''}`}
               value={item.invoice_price_national ?? ''}
               onChange={(e) => handleChange('invoice_price_national', e.target.value)}
               type="number" InputLabelProps={{ shrink: true }}

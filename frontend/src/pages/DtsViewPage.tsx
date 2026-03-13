@@ -415,17 +415,27 @@ const DtsViewPage = () => {
             </G>
             {[0, 1, 2].map((i) => (
               <G key={i} w="24%" br={i < 2}>
-                {sheetItems[i] ? num(sheetItems[i].invoice_price_foreign) : ''}
+                {sheetItems[i]
+                  ? `${f(decl.currency_code)} ${num(sheetItems[i].invoice_price_foreign)}`
+                  : ''}
               </G>
             ))}
           </Row>
-          <Row h={22}>
+          <Row h={30}>
             <G w="28%" br style={{ paddingLeft: 14 }}>
-              в нац. валюте (курс {num(decl.exchange_rate, 4)})
+              в нац. валюте
             </G>
             {[0, 1, 2].map((i) => (
               <G key={i} w="24%" br={i < 2}>
-                {sheetItems[i] ? num(sheetItems[i].invoice_price_national) : ''}
+                {sheetItems[i] ? (
+                  <>
+                    {num(sheetItems[i].invoice_price_national)}
+                    <br />
+                    <span style={{ fontSize: 8, color: '#555' }}>
+                      (курс {f(decl.currency_code)} {num(decl.exchange_rate, 4)})
+                    </span>
+                  </>
+                ) : ''}
               </G>
             ))}
           </Row>
@@ -620,6 +630,40 @@ const DtsViewPage = () => {
               </G>
             ))}
           </Row>
+
+          {/* Таблица пересчёта валют (раздел *) */}
+          {(() => {
+            const allConv = sheetItems.flatMap(
+              (si) => (si?.currency_conversions as Array<{
+                item_no?: number; graph?: string; currency_code?: string;
+                amount_foreign?: number; exchange_rate?: number;
+              }>) || [],
+            );
+            if (allConv.length === 0) return null;
+            return (
+              <>
+                <Row h={16}>
+                  <G w="100%" style={{ fontSize: 8, fontWeight: 700, background: '#fafafa' }}>
+                    * Пересчёт сумм в иностранной валюте
+                  </G>
+                </Row>
+                <Row h={14}>
+                  <G w="28%" br bold style={{ fontSize: 8 }}>Товар / Графа</G>
+                  <G w="44%" br bold style={{ fontSize: 8 }}>Код валюты, сумма</G>
+                  <G w="28%" bold style={{ fontSize: 8 }}>Курс пересчёта</G>
+                </Row>
+                {allConv.map((c, ci) => (
+                  <Row key={ci} h={14}>
+                    <G w="28%" br style={{ fontSize: 9 }}>{c.item_no} / {c.graph}</G>
+                    <G w="44%" br style={{ fontSize: 9 }}>
+                      {c.currency_code} {num(c.amount_foreign)}
+                    </G>
+                    <G w="28%" style={{ fontSize: 9 }}>{num(c.exchange_rate, 4)}</G>
+                  </Row>
+                ))}
+              </>
+            );
+          })()}
 
           {dts.additional_data && (
             <Row h={40}>

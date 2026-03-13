@@ -2,6 +2,7 @@ import uuid
 import secrets
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import structlog
@@ -10,6 +11,9 @@ import redis.asyncio as redis
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import User
+from app.models.declaration import Declaration, DeclarationStatus
+from app.models.document import Document, DocumentType
+from app.models.declaration_log import DeclarationLog
 from app.schemas import TelegramLinkRequest, TelegramLinkResponse, TelegramLogRequest
 from app.config import settings
 
@@ -131,3 +135,110 @@ async def log_telegram_action(
     )
     await db.commit()
     return {"status": "ok"}
+
+
+class BotCreateDeclarationRequest(BaseModel):
+    user_id: str
+    company_id: str
+
+
+class BotAttachDocumentRequest(BaseModel):
+    user_id: str
+    declaration_id: str
+    file_key: str
+    original_filename: str
+
+
+@router.post("/create-declaration")
+async def bot_create_declaration(
+    data: BotCreateDeclarationRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a draft declaration from bot-service (no JWT, internal network only)."""
+    user_id = uuid.UUID(data.user_id)
+    company_id = uuid.UUID(data.company_id)
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    declaration = Declaration(
+        company_id=company_id,
+        status=DeclarationStatus.DRAFT,
+        created_by=user_id,
+    )
+    db.add(declaration)
+    await db.commit()
+    await db.refresh(declaration)
+
+    log_entry = DeclarationLog(
+        declaration_id=declaration.id,
+        user_id=user_id,
+        action="create",
+        new_value={"status": "draft", "source": "telegram"},
+    )
+    db.add(log_entry)
+    await db.commit()
+
+    logger.info("declaration_created_via_telegram", declaration_id=str(declaration.id), user_id=data.user_id)
+    return {"id": str(declaration.id)}
+
+
+@router.post("/attach-document")
+async def bot_attach_document(
+    data: BotAttachDocumentRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Attach a document to a declaration from bot-service (no JWT, internal network only)."""
+    document = Document(
+        declaration_id=uuid.UUID(data.declaration_id),
+        doc_type=DocumentType.OTHER,
+        file_key=data.file_key,
+        original_filename=data.original_filename,
+        mime_type="application/octet-stream",
+        file_size=0,
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+
+    logger.info(
+        "document_attached_via_telegram",
+        document_id=str(document.id),
+        declaration_id=data.declaration_id,
+        filename=data.original_filename,
+    )
+    return {"id": str(document.id)}
+
+
+class BotApplyParsedRequest(BaseModel):
+    user_id: str
+    declaration_id: str
+    parsed_data: dict
+
+
+@router.post("/apply-parsed")
+async def bot_apply_parsed(
+    data: BotApplyParsedRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply parse-smart results to a declaration (no JWT, internal network only)."""
+    from app.routers.apply_parsed import apply_parsed_data, ApplyParsedRequest
+
+    user_id = uuid.UUID(data.user_id)
+    declaration_id = uuid.UUID(data.declaration_id)
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        parsed_request = ApplyParsedRequest(**data.parsed_data)
+    except Exception as e:
+        logger.error("apply_parsed_validation_error", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Invalid parsed data: {str(e)}")
+
+    logger.info("apply_parsed_via_telegram", declaration_id=str(declaration_id), user_id=data.user_id)
+    return await apply_parsed_data(declaration_id, parsed_request, db, user)
