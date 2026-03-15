@@ -1123,17 +1123,13 @@ async def apply_parsed_data(
             )
             counters["counterparties"] += 1
 
-        # Графа 14: декларант — приоритет: Контракт/Инвойс (buyer) > Профиль компании
-        # Имя и адрес: предпочитаем русский (кириллический) вариант (ДТ заполняется на русском).
-        # ИНН/КПП/ОГРН: приоритет контракт → инвойс → профиль.
-        bp = data.buyer   # данные из контракта/инвойса (AI извлекает в порядке приоритета)
-        c = company       # профиль компании (fallback)
-        bp_name = bp.name if bp else None
-        c_name = c.name if c else None
-        decl_name = _prefer_russian(bp_name, c_name)
-        bp_addr = bp.address if bp else None
-        c_addr = c.address if c else None
-        decl_address = _prefer_russian(bp_addr, c_addr)
+        # Графа 14: декларант — ТОЛЬКО из контракта/инвойса.
+        # AI-промпт обязан возвращать buyer.name и buyer.address на русском языке.
+        # Профиль компании — fallback только для ИНН/КПП/ОГРН, если нет в контракте.
+        bp = data.buyer   # данные из контракта/инвойса (AI извлекает на русском)
+        c = company       # профиль компании (fallback только для реквизитов)
+        decl_name = bp.name if bp else None
+        decl_address = bp.address if bp else None
         decl_country = (bp.country_code if bp else None) or (c.country_code if c else None) or "RU"
         decl_inn = (bp.inn if bp else None) or (c.inn if c else None)
         decl_kpp = (bp.kpp if bp else None) or (c.kpp if c else None)

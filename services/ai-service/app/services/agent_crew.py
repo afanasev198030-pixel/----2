@@ -277,6 +277,114 @@ def _detect_doc_type(filename: str, text: str) -> str:
     return "other"
 
 
+def _detect_doc_type_debug(filename: str, text: str) -> dict:
+    """Determine document type with debug info: reason, matched keywords, scores."""
+    fn_lower = filename.lower()
+    text_lower = (text[:3000].lower()) if text else ""
+
+    def _result(doc_type: str, reason: str, scores: dict | None = None) -> dict:
+        return {"detected": doc_type, "reason": reason, "scores": scores}
+
+    if fn_lower.endswith(('.xlsx', '.xls')):
+        return _result("packing_list", "file_extension: xlsx/xls")
+
+    if ("inv" in fn_lower and "pl" in fn_lower) or ("инвойс" in fn_lower and "упаков" in fn_lower):
+        return _result("invoice", "filename_combined: inv+pl")
+
+    if any(k in fn_lower for k in ["gtd", "гтд", "декларация на товары"]):
+        return _result("reference_gtd", f"filename_keyword: {[k for k in ['gtd','гтд','декларация на товары'] if k in fn_lower]}")
+    if re.search(r'\d{8}[_\-]\d{6}[_\-]\d{7}', fn_lower):
+        return _result("reference_gtd", "filename_pattern: GTD number")
+
+    if any(k in fn_lower for k in ["cbx", "свх", "свх_", "warehouse"]):
+        return _result("svh_doc", f"filename_keyword: {[k for k in ['cbx','свх','warehouse'] if k in fn_lower]}")
+
+    _fn_checks = [
+        (["contract", "договор", "контракт"], "contract"),
+        (["packing", "упаков", "packing_list", "packing-list"], "packing_list"),
+        (["awb", "waybill", "накладная", "cmr"], "transport_doc"),
+        (["application", "заявка"], "application_statement"),
+        (["spec", "спец"], "specification"),
+        (["teh", "тех"], "tech_description"),
+    ]
+    for keywords, dtype in _fn_checks:
+        matched = [k for k in keywords if k in fn_lower]
+        if matched:
+            return _result(dtype, f"filename_keyword: {matched}")
+
+    if re.search(r'\bpl\b', fn_lower) and "inv" not in fn_lower:
+        return _result("packing_list", "filename_keyword: 'pl' (word boundary)")
+
+    if any(k in fn_lower for k in ["пп", "платеж", "платёж", "payment order"]):
+        return _result("payment_order", "filename_keyword: payment")
+    _pp_kw = ["платежное поручение", "платёжное поручение", "заявление на перевод",
+              "payment order", "просим списать с", "банк получателя"]
+    pp_matched = [k for k in _pp_kw if k in text_lower]
+    if pp_matched:
+        return _result("payment_order", f"content_keyword: {pp_matched[:2]}")
+
+    _ti_kw = ["invoice for transport", "transport invoice", "freight invoice",
+              "инвойс за перевозку", "транспортный инвойс", "инвойс за фрахт"]
+    ti_matched = [k for k in _ti_kw if k in fn_lower]
+    if ti_matched:
+        return _result("transport_invoice", f"filename_keyword: {ti_matched}")
+
+    is_invoice_by_name = any(k in fn_lower for k in ["invoice", "инвойс", "счёт", "счет", "inv-", "inv_"])
+    is_invoice_by_content = (
+        ("invoice" in text_lower or "инвойс" in text_lower or "счёт" in text_lower)
+        and ("total" in text_lower or "amount" in text_lower or "итого" in text_lower)
+    )
+    if is_invoice_by_name or is_invoice_by_content:
+        trigger = "filename" if is_invoice_by_name else "content"
+        subtype = _classify_invoice_content(text, filename)
+        t = (text[:6000].lower()) if text else ""
+        _TRANSPORT_KW = [
+            ("air freight charge", 12.0), ("air freight", 10.0), ("ocean freight", 10.0),
+            ("freight charge", 9.0), ("airway bill", 9.0), ("фрахт", 9.0),
+            ("fuel surcharge", 8.0), ("handling charge", 7.0), ("carrier", 5.0),
+        ]
+        _GOODS_KW = [
+            ("description of goods", 10.0), ("hs code", 9.0), ("unit price", 8.0),
+            ("country of origin", 7.0), ("quantity", 5.0), ("gross weight", 4.0),
+        ]
+        ts = round(sum(w for kw, w in _TRANSPORT_KW if kw in t), 1)
+        gs = round(sum(w for kw, w in _GOODS_KW if kw in t), 1)
+        return _result(subtype, f"invoice_detected_by_{trigger}, scoring -> {subtype}",
+                       {"transport_score": ts, "goods_score": gs})
+
+    fn_stripped = re.sub(r'\.(pdf|jpg|jpeg|png|tif|tiff)$', '', fn_lower).strip()
+    if re.search(r'^\d{3}[-_ ]?\d{7,8}', fn_stripped):
+        return _result("transport_doc", "filename_pattern: AWB number")
+    if "air waybill" in text_lower or re.search(r'\bawb\b', text_lower):
+        return _result("transport_doc", "content_keyword: air waybill / awb")
+
+    _content_checks = [
+        (["contract №", "contract no", "договор №", "контракт №", "предмет договора", "subject of contract"], "contract"),
+        (["specification", "спецификация", "приложение к контракту", "приложение к договору"], "specification"),
+        (["технические характеристики", "техническое описание", "назначение изделия",
+          "technical specifications", "operating temperature"], "tech_description"),
+        (["packing list", "gross weight"], "packing_list"),
+        (["forwarding agent", "forwarding order", "заявка на перевозку",
+          "заявка на экспедирование", "отправитель груза"], "application_statement"),
+        (["склад временного хранения", "свидетельство о включении в реестр",
+          "документ о принятии на хранение", "до-1", "до1"], "svh_doc"),
+    ]
+    for keywords, dtype in _content_checks:
+        matched = [k for k in keywords if k in text_lower]
+        if matched:
+            return _result(dtype, f"content_keyword: {matched[:2]}")
+
+    if any(k in text_lower for k in ["наименование товара", "кол-во", "цена за ед", "unit price"]) \
+            and "total" in text_lower:
+        return _result("specification", "content_keyword: table headers + total")
+
+    if any(k in text_lower for k in ["декларация на товары", "грузовая таможенная"]) \
+            and re.search(r'\d{8}/\d{6}/\d{7}', text_lower):
+        return _result("reference_gtd", "content_keyword: ГТД + registration number pattern")
+
+    return _result("other", "no_match")
+
+
 def _parse_svh_doc(text: str, filename: str) -> dict:
     """Извлечь данные СВХ (склада временного хранения) из текста документа.
 
@@ -395,6 +503,107 @@ def _safe_float(value) -> Optional[float]:
         return float(s)
     except (ValueError, TypeError):
         return None
+
+
+def _normalize_hs_code(raw) -> str:
+    """Normalize HS code to 10 digits, validate first 2 digits are 01-97."""
+    code = re.sub(r"\D", "", str(raw or ""))
+    if len(code) < 6:
+        return ""
+    if len(code) < 10:
+        code = code.ljust(10, "0")
+    else:
+        code = code[:10]
+    try:
+        first2 = int(code[:2])
+        if first2 < 1 or first2 > 97:
+            return ""
+    except ValueError:
+        return ""
+    return code
+
+
+_DESTINATION_TO_POST: dict[str, tuple[str, str, str]] = {
+    "SVO":  ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "SVO2": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "UUEE": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "VKO":  ("10005030", "Т/П Аэропорт Внуково", "г. Москва, Внуковское шоссе, д. 4"),
+    "UUWW": ("10005030", "Т/П Аэропорт Внуково", "г. Москва, Внуковское шоссе, д. 4"),
+    "DME":  ("10009100", "Т/П Аэропорт Домодедово", "Московская обл., г.о. Домодедово, Аэропорт Домодедово"),
+    "UUDD": ("10009100", "Т/П Аэропорт Домодедово", "Московская обл., г.о. Домодедово, Аэропорт Домодедово"),
+    "ZIA":  ("10005040", "Т/П Аэропорт Жуковский", "Московская обл., г.о. Жуковский, Аэропорт Жуковский"),
+    "UUBW": ("10005040", "Т/П Аэропорт Жуковский", "Московская обл., г.о. Жуковский, Аэропорт Жуковский"),
+    "LED":  ("10206020", "Т/П Аэропорт Пулково", "г. Санкт-Петербург, Аэропорт Пулково, Пулковское ш."),
+    "ULLI": ("10206020", "Т/П Аэропорт Пулково", "г. Санкт-Петербург, Аэропорт Пулково, Пулковское ш."),
+    "SVX":  ("10502050", "Т/П Аэропорт Кольцово", "Свердловская обл., г. Екатеринбург, Аэропорт Кольцово"),
+    "USSS": ("10502050", "Т/П Аэропорт Кольцово", "Свердловская обл., г. Екатеринбург, Аэропорт Кольцово"),
+    "OVB":  ("10609040", "Т/П Аэропорт Толмачёво", "Новосибирская обл., г. Новосибирск, Аэропорт Толмачёво"),
+    "UNNT": ("10609040", "Т/П Аэропорт Толмачёво", "Новосибирская обл., г. Новосибирск, Аэропорт Толмачёво"),
+    "KJA":  ("10614040", "Т/П Аэропорт Красноярск (Емельяново)", "Красноярский край, г. Красноярск, Аэропорт Емельяново"),
+    "UNKL": ("10614040", "Т/П Аэропорт Красноярск (Емельяново)", "Красноярский край, г. Красноярск, Аэропорт Емельяново"),
+    "VVO":  ("10702030", "Т/П Аэропорт Владивосток", "Приморский край, г. Владивосток, Аэропорт Кневичи"),
+    "UHWW": ("10702030", "Т/П Аэропорт Владивосток", "Приморский край, г. Владивосток, Аэропорт Кневичи"),
+    "KHV":  ("10703040", "Т/П Аэропорт Хабаровск", "Хабаровский край, г. Хабаровск, Аэропорт Новый"),
+    "UHHH": ("10703040", "Т/П Аэропорт Хабаровск", "Хабаровский край, г. Хабаровск, Аэропорт Новый"),
+    "KZN":  ("10404080", "Т/П Аэропорт Казань", "Республика Татарстан, г. Казань, Аэропорт Казань"),
+    "UWKD": ("10404080", "Т/П Аэропорт Казань", "Республика Татарстан, г. Казань, Аэропорт Казань"),
+    "UFA":  ("10401060", "Т/П Аэропорт Уфа", "Республика Башкортостан, г. Уфа, Аэропорт Уфа"),
+    "UWUU": ("10401060", "Т/П Аэропорт Уфа", "Республика Башкортостан, г. Уфа, Аэропорт Уфа"),
+    "KUF":  ("10412030", "Т/П Аэропорт Самара (Курумоч)", "Самарская обл., г. Самара, Аэропорт Курумоч"),
+    "UWWW": ("10412030", "Т/П Аэропорт Самара (Курумоч)", "Самарская обл., г. Самара, Аэропорт Курумоч"),
+    "ROV":  ("10313110", "Т/П Аэропорт Ростов-на-Дону (Платов)", "Ростовская обл., г. Ростов-на-Дону, Аэропорт Платов"),
+    "URRP": ("10313110", "Т/П Аэропорт Ростов-на-Дону (Платов)", "Ростовская обл., г. Ростов-на-Дону, Аэропорт Платов"),
+    "KRR":  ("10309110", "Т/П Аэропорт Краснодар (Пашковский)", "Краснодарский край, г. Краснодар, Аэропорт Пашковский"),
+    "URKK": ("10309110", "Т/П Аэропорт Краснодар (Пашковский)", "Краснодарский край, г. Краснодар, Аэропорт Пашковский"),
+    "AER":  ("10317110", "Т/П Аэропорт Сочи", "Краснодарский край, г. Сочи, Аэропорт Адлер"),
+    "URSS": ("10317110", "Т/П Аэропорт Сочи", "Краснодарский край, г. Сочи, Аэропорт Адлер"),
+    "IKT":  ("10607040", "Т/П Аэропорт Иркутск", "Иркутская обл., г. Иркутск, Аэропорт Иркутск"),
+    "UIII": ("10607040", "Т/П Аэропорт Иркутск", "Иркутская обл., г. Иркутск, Аэропорт Иркутск"),
+    "OMS":  ("10610040", "Т/П Аэропорт Омск (Центральный)", "Омская обл., г. Омск, Аэропорт Центральный"),
+    "UNOO": ("10610040", "Т/П Аэропорт Омск (Центральный)", "Омская обл., г. Омск, Аэропорт Центральный"),
+    "TJM":  ("10503050", "Т/П Аэропорт Тюмень (Рощино)", "Тюменская обл., г. Тюмень, Аэропорт Рощино"),
+    "USTR": ("10503050", "Т/П Аэропорт Тюмень (Рощино)", "Тюменская обл., г. Тюмень, Аэропорт Рощино"),
+    "GOJ":  ("10408030", "Т/П Аэропорт Нижний Новгород (Стригино)", "Нижегородская обл., г. Нижний Новгород, Аэропорт Стригино"),
+    "UWGG": ("10408030", "Т/П Аэропорт Нижний Новгород (Стригино)", "Нижегородская обл., г. Нижний Новгород, Аэропорт Стригино"),
+    "PEE":  ("10411070", "Т/П Аэропорт Пермь (Большое Савино)", "Пермский край, г. Пермь, Аэропорт Большое Савино"),
+    "USPP": ("10411070", "Т/П Аэропорт Пермь (Большое Савино)", "Пермский край, г. Пермь, Аэропорт Большое Савино"),
+    "MRV":  ("10802050", "Т/П Аэропорт Минеральные Воды", "Ставропольский край, г. Минеральные Воды, Аэропорт Минеральные Воды"),
+    "URMM": ("10802050", "Т/П Аэропорт Минеральные Воды", "Ставропольский край, г. Минеральные Воды, Аэропорт Минеральные Воды"),
+    "KGD":  ("10012030", "Т/П Аэропорт Калининград (Храброво)", "Калининградская обл., г. Калининград, Аэропорт Храброво"),
+    "UMKK": ("10012030", "Т/П Аэропорт Калининград (Храброво)", "Калининградская обл., г. Калининград, Аэропорт Храброво"),
+    "MMK":  ("10207070", "Т/П Аэропорт Мурманск", "Мурманская обл., г. Мурманск, Аэропорт Мурманск"),
+    "ULMM": ("10207070", "Т/П Аэропорт Мурманск", "Мурманская обл., г. Мурманск, Аэропорт Мурманск"),
+    "YKS":  ("10704030", "Т/П Аэропорт Якутск", "Республика Саха (Якутия), г. Якутск, Аэропорт Якутск"),
+    "UEEE": ("10704030", "Т/П Аэропорт Якутск", "Республика Саха (Якутия), г. Якутск, Аэропорт Якутск"),
+    "GDX":  ("10706040", "Т/П Аэропорт Магадан (Сокол)", "Магаданская обл., г. Магадан, Аэропорт Сокол"),
+    "UHMM": ("10706040", "Т/П Аэропорт Магадан (Сокол)", "Магаданская обл., г. Магадан, Аэропорт Сокол"),
+    "PKC":  ("10705030", "Т/П Аэропорт Петропавловск-Камчатский", "Камчатский край, г. Петропавловск-Камчатский, Аэропорт Елизово"),
+    "UHPP": ("10705030", "Т/П Аэропорт Петропавловск-Камчатский", "Камчатский край, г. Петропавловск-Камчатский, Аэропорт Елизово"),
+    "UUS":  ("10707050", "Т/П Аэропорт Южно-Сахалинск", "Сахалинская обл., г. Южно-Сахалинск, Аэропорт Хомутово"),
+    "UHSS": ("10707050", "Т/П Аэропорт Южно-Сахалинск", "Сахалинская обл., г. Южно-Сахалинск, Аэропорт Хомутово"),
+    "CEK":  ("10504050", "Т/П Аэропорт Челябинск (Баландино)", "Челябинская обл., г. Челябинск, Аэропорт Баландино"),
+    "USCC": ("10504050", "Т/П Аэропорт Челябинск (Баландино)", "Челябинская обл., г. Челябинск, Аэропорт Баландино"),
+    "VOZ":  ("10104030", "Т/П Аэропорт Воронеж (Чертовицкое)", "Воронежская обл., г. Воронеж, Аэропорт Чертовицкое"),
+    "UUOO": ("10104030", "Т/П Аэропорт Воронеж (Чертовицкое)", "Воронежская обл., г. Воронеж, Аэропорт Чертовицкое"),
+}
+
+_AWB_PREFIX_TO_POST: dict[str, tuple[str, str, str]] = {
+    "999": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "784": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "555": ("10009100", "Т/П Аэропорт Домодедово", "Московская обл., г.о. Домодедово, Аэропорт Домодедово"),
+    "880": ("10005030", "Т/П Аэропорт Внуково", "г. Москва, Внуковское шоссе, д. 4"),
+    "176": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "074": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "172": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "580": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
+    "728": ("10005030", "Т/П Аэропорт Внуково", "г. Москва, Внуковское шоссе, д. 4"),
+}
+
+_DEFAULT_POST: tuple[str, str, str] = (
+    "10005020",
+    "Т/П Аэропорт Шереметьево (Грузовой)",
+    "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш.",
+)
 
 
 def _parse_transport_doc_llm(text: str, filename: str) -> dict:
@@ -728,16 +937,17 @@ JSON: {{"matches": [...]}}"""},
                         return doc.get("filename")
                 return None
 
-            # Собираем тексты для промпта
             doc_sections = []
             for d in docs:
                 label = d["doc_type"].upper()
                 text = d.get("text") or ""
-                # For specification, items are often at the end. Take more text.
-                if d["doc_type"] == "specification":
-                    text_chunk = text[:8000]
+                if d["doc_type"] == "contract":
+                    from app.services.contract_parser import _smart_slice_contract
+                    text_chunk = _smart_slice_contract(text, max_chars=12000)
+                elif d["doc_type"] == "specification":
+                    text_chunk = text[:10000]
                 else:
-                    text_chunk = text[:4000]
+                    text_chunk = text[:6000]
                 doc_sections.append(f"=== {label}: {d['filename']} ===\n{text_chunk}")
 
             combined_text = "\n\n".join(doc_sections)
@@ -771,6 +981,7 @@ JSON: {{"matches": [...]}}"""},
                     {"role": "user", "content": f"""Из документов ниже извлеки:
 
 contract: {{contract_number, contract_date, seller: {{name, country_code, address, inn, kpp, ogrn}}, buyer: {{name, country_code, address, inn, kpp, ogrn}}, is_trilateral: true/false, receiver: {{name, address, country_code, inn, kpp, ogrn}}, financial_responsible: {{name, address, country_code, inn, kpp, ogrn}}, currency, incoterms, payment_terms, delivery_place}}
+  ВАЖНО: buyer.name и buyer.address ОБЯЗАТЕЛЬНО на русском языке! В контракте часто дублируется наименование на двух языках — всегда выбирай РУССКИЙ вариант (например «ООО «АГ-ЛОГИСТИК»» вместо «AG-Logistik LLC»).
   is_trilateral: true если договор трёхсторонний (между получателем, декларантом и лицом за фин. урегулирование)
   receiver: получатель груза (графа 8 ДТ) — ТОЛЬКО если отличается от buyer/declarant
   financial_responsible: лицо, ответственное за финансовое урегулирование (графа 9 ДТ) — ТОЛЬКО если отличается от buyer/declarant
@@ -788,12 +999,12 @@ application_statement: {{doc_number, doc_date, forwarding_agent: {{name, address
 Заполни только те разделы, для которых есть документы. Если документа нет — не включай раздел.
 Для specification не извлекай все позиции целиком: нужен только items_count и totals для cross-check.
 
-{combined_text[:16000]}
+{combined_text[:24000]}
 
 JSON:"""},
                 ],
                 temperature=0,
-                max_tokens=2500,
+                max_tokens=3000,
                 response_format={"type": "json_object"},
             )
 
@@ -912,172 +1123,108 @@ JSON:"""},
         return parsed_docs
 
     def process_documents(self, files: list[tuple[bytes, str]]) -> dict:
-        """
-        Обработать набор PDF файлов и вернуть данные для декларации.
+        """LLM-based document processing pipeline.
 
-        Args:
-            files: список (file_bytes, filename)
-
-        Returns:
-            dict с данными для ApplyParsedRequest
+        Steps:
+          1. OCR all files
+          2. classify_and_extract() — one LLM call per file (type + data)
+          3. _compile_declaration_llm() — LLM fills all declaration fields
+          4. _post_process_compilation() — Python: arithmetic, lookups, normalization
+          5. validate_declaration()
+          6. HS RAG + DSPy classification
+          7. Risk assessment
+          8. Precedent search
         """
-        import hashlib as _hashlib
-        logger.info("crew_process_start", files_count=len(files))
+        from app.services.llm_parser import classify_and_extract
+
+        logger.info("crew_process_start", files_count=len(files), pipeline="llm_v3")
         total_files = len(files)
 
-        # --- Шаг 1: OCR + детекция типов (быстро, без LLM) ---
-        doc_texts = []  # [(file_bytes, filename, text, doc_type)]
+        # ── Step 1: OCR ──
+        doc_texts: list[tuple[bytes, str, str]] = []
         for i, (file_bytes, filename) in enumerate(files):
-            pct = 10 + int(20 * i / total_files)
-            self._progress("parsing", f"[{i+1}/{total_files}] OCR: {filename}", pct)
+            pct = 10 + int(15 * i / max(total_files, 1))
+            self._progress("ocr", f"[{i+1}/{total_files}] OCR: {filename}", pct)
             text = extract_text(file_bytes, filename)
-            doc_type = _detect_doc_type(filename, text)
-            doc_texts.append((file_bytes, filename, text, doc_type))
-            logger.info("document_detected", filename=filename, doc_type=doc_type)
+            doc_texts.append((file_bytes, filename, text))
+            logger.info("ocr_done", filename=filename, chars=len(text))
 
-        # --- Шаг 2: LLM-парсинг (invoice и packing — критичны, парсим отдельно; остальные — батчом) ---
-        parsed_docs = {}
-        secondary_texts = []  # Тексты для батч-парсинга одним LLM-вызовом
+        # ── Step 2: LLM classify + extract (one call per doc) ──
+        parsed_docs: dict = {}
+        for i, (file_bytes, filename, text) in enumerate(doc_texts):
+            pct = 25 + int(30 * i / max(total_files, 1))
+            self._progress("classify_extract", f"[{i+1}/{total_files}] AI: {filename}", pct)
 
-        for i, (file_bytes, filename, text, doc_type) in enumerate(doc_texts):
-            pct = 30 + int(30 * i / total_files)
+            result = classify_and_extract(text, filename)
+            doc_type = result["doc_type"]
+            extracted = result["extracted"]
+            extracted["_filename"] = filename
+            extracted["doc_type"] = doc_type
+            extracted["doc_type_confidence"] = result.get("doc_type_confidence", 0.5)
 
-            # Кэш по хэшу файла
-            file_hash = _hashlib.md5(file_bytes).hexdigest()[:12]
-            cached = _parse_cache.get(file_hash)
-            if cached:
-                cache_ok = True
-                # Не использовать кеш инвойса, если в нём нет цен —
-                # при предыдущем парсинге мог упасть LLM.
-                if cached.get("_cache_type") == "invoice":
-                    cached_items = cached.get("items", [])
-                    has_any_price = any(
-                        it.get("unit_price") or it.get("line_total")
-                        for it in cached_items
-                    ) if cached_items else False
-                    if cached_items and not has_any_price:
-                        cache_ok = False
-                        logger.info("parse_cache_skip_no_prices",
-                                    filename=filename, items=len(cached_items))
-                if cache_ok:
-                    logger.info("parse_cache_hit", filename=filename, doc_type=doc_type)
-                    if cached.get("_cache_type") == "invoice":
-                        parsed_docs["invoice"] = cached
-                    elif cached.get("_cache_type") == "packing":
-                        parsed_docs["packing"] = cached
-                    continue
-
-            if doc_type == "invoice":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI: инвойс...", pct)
-                new_inv = self.invoice_extractor.extract(file_bytes, filename)
-                new_inv["_filename"] = filename
-                new_inv["_cache_type"] = "invoice"
-                _parse_cache[file_hash] = new_inv
-                # Если уже есть инвойс — выбираем лучший по качеству описаний, затем по кол-ву позиций
+            _LIST_TYPES = {"tech_description", "payment_order", "other"}
+            if doc_type in _LIST_TYPES:
+                list_key = {
+                    "tech_description": "tech_descriptions",
+                    "payment_order": "payment_orders",
+                    "other": "other",
+                }[doc_type]
+                parsed_docs.setdefault(list_key, []).append(extracted)
+            elif doc_type == "packing_list":
+                parsed_docs["packing"] = extracted
+            elif doc_type == "transport_doc":
+                parsed_docs["transport"] = extracted
+            elif doc_type == "invoice":
                 prev_inv = parsed_docs.get("invoice")
                 if prev_inv:
-                    prev_score = _invoice_score(prev_inv)
-                    new_score = _invoice_score(new_inv)
-                    prev_good, _, _, prev_total = prev_score
-                    new_good, _, _, new_total = new_score
-                    if new_score > prev_score:
-                        parsed_docs["invoice"] = new_inv
-                        logger.info("invoice_replaced",
-                                    prev=prev_inv.get("_filename"), new=filename,
-                                    prev_good=prev_good, new_good=new_good,
-                                    prev_items=prev_total, new_items=new_total)
+                    new_score = _invoice_score(extracted)
+                    old_score = _invoice_score(prev_inv)
+                    if new_score > old_score:
+                        parsed_docs["invoice"] = extracted
+                        logger.info("invoice_replaced", prev=prev_inv.get("_filename"), new=filename)
                     else:
-                        logger.info("invoice_kept",
-                                    kept=prev_inv.get("_filename"), skipped=filename,
-                                    kept_good=prev_good, skipped_good=new_good,
-                                    kept_items=prev_total, skipped_items=new_total)
+                        logger.info("invoice_kept", kept=prev_inv.get("_filename"), skipped=filename)
                 else:
-                    parsed_docs["invoice"] = new_inv
-            elif doc_type == "packing_list":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI: упаковочный лист...", pct)
-                parsed_docs["packing"] = self.packing_extractor.extract(file_bytes, filename)
-                parsed_docs["packing"]["_filename"] = filename
-                parsed_docs["packing"]["_cache_type"] = "packing"
-                _parse_cache[file_hash] = parsed_docs["packing"]
-            elif doc_type == "transport_doc":
-                # Парсим AWB/CMR/B/L LLM-ом для извлечения идентификатора ТС (гр. 21)
-                transport_parsed = _parse_transport_doc_llm(text, filename)
-                transport_parsed["raw_text"] = text
-                transport_parsed["_filename"] = filename
-                transport_parsed["doc_type"] = "transport_doc"
-                parsed_docs["transport"] = transport_parsed
-            elif doc_type in ("contract", "specification", "tech_description", "transport_invoice", "application_statement"):
-                # Собираем для батч-парсинга одним LLM-вызовом
-                secondary_texts.append({"doc_type": doc_type, "filename": filename, "text": text, "file_bytes": file_bytes})
-            elif doc_type == "payment_order":
-                parsed_docs.setdefault("payment_orders", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
-            elif doc_type == "reference_gtd":
-                self._progress("parsing", f"[{i+1}/{total_files}] AI: эталонная ГТД...", pct)
-                from app.services.gtd_reference_extractor import extract_gtd_reference
-                gtd_ref = extract_gtd_reference(file_bytes, filename)
-                gtd_ref["_filename"] = filename
-                gtd_ref["doc_type"] = "reference_gtd"
-                parsed_docs["reference_gtd"] = gtd_ref
-                logger.info("reference_gtd_parsed", filename=filename,
-                            items_count=len(gtd_ref.get("items", [])),
-                            customs_office=gtd_ref.get("header", {}).get("customs_office_code"))
-            elif doc_type == "svh_doc":
-                self._progress("parsing", f"[{i+1}/{total_files}] Извлечение данных СВХ...", pct)
-                svh_data = _parse_svh_doc(text, filename)
-                svh_data["raw_text"] = text
-                svh_data["_filename"] = filename
-                svh_data["doc_type"] = "svh_doc"
-                parsed_docs["svh_doc"] = svh_data
-                logger.info("svh_doc_parsed", filename=filename,
-                            svh_number=svh_data.get("svh_number"),
-                            warehouse_name=svh_data.get("warehouse_name"))
+                    parsed_docs["invoice"] = extracted
             else:
-                parsed_docs.setdefault("other", []).append({"raw_text": text, "_filename": filename, "doc_type": doc_type})
+                parsed_docs[doc_type] = extracted
 
-        # --- Шаг 3: Батч-парсинг второстепенных документов (один LLM-вызов) ---
-        if secondary_texts:
-            self._progress("parsing", f"AI: батч-парсинг {len(secondary_texts)} документов...", 60)
-            parsed_docs = self._batch_parse_secondary(secondary_texts, parsed_docs)
+            logger.info("classify_extract_done", filename=filename, doc_type=doc_type,
+                        confidence=result.get("doc_type_confidence"),
+                        keys=list(extracted.keys()))
 
-        # --- Шаг 2: Компиляция данных декларации (хардкод-слияние) ---
-        self._progress("compiling", "Компиляция данных декларации...", 70)
-        result = self._compile_declaration(parsed_docs)
+        # ── Step 3: LLM compile (semantic decisions) ──
+        self._progress("compiling", "AI компилирует данные декларации...", 58)
+        llm_result = self._compile_declaration_llm(parsed_docs)
 
-        # --- Шаг 2.1: LLM-компиляция по правилам граф ДТ из БД ---
-        # Повторно вызывает LLM с полными правилами, перекрывает хардкод-значения
-        self._progress("compiling", "AI применяет правила заполнения граф ДТ...", 73)
-        result = self._compile_by_rules(parsed_docs, result)
+        # ── Step 4: Python post-process (arithmetic, lookups) ──
+        self._progress("compiling", "Python: расчёты, нормализация...", 65)
+        result = self._post_process_compilation(llm_result, parsed_docs)
 
-        # Нормализация имён полей из _compile_by_rules → имена для ApplyParsedRequest
+        # Field normalization for ApplyParsedRequest compatibility
         if result.get("transport_country") and not result.get("transport_country_code"):
             result["transport_country_code"] = result["transport_country"]
-        # Гр. 11: fallback — страна продавца (seller), НЕ страна происхождения товара
         if result.get("trading_partner_country") is None:
             seller_data = result.get("seller")
             if seller_data and isinstance(seller_data, dict) and seller_data.get("country_code"):
                 result["trading_partner_country"] = seller_data["country_code"]
 
-        # --- Шаг 2.5: CrewAI мультиагентная оркестрация (если доступна) ---
-        # Отключено для оптимизации: дублирует логику шагов 3 и 4, тратит токены и время.
-        logger.info(
-            "crewai_stage_skipped",
-            available=_crewai_available,
-            reason="disabled_for_optimization",
-        )
-        # if _crewai_available:
-        #     self._progress("crewai", "CrewAI агенты анализируют декларацию...", 72)
-        #     result = self._run_crewai(parsed_docs, result)
+        # ── Step 5: validate_declaration() ──
+        self._progress("validating", "Валидация декларации...", 70)
+        evidence_map = result.get("evidence_map", {})
+        issues = validate_declaration(result, evidence_map)
+        result["evidence_map"] = evidence_map
+        result["issues"] = issues
 
-        # --- Шаг 3: Классификация ТН ВЭД для позиций БЕЗ кода ---
+        # ── Step 6: HS Classification ──
         items = result.get("items", [])
-        all_descs = [it.get("description") or it.get("commercial_name") or "" for it in items if (it.get("description") or it.get("commercial_name"))]
+        all_descs = [it.get("description") or "" for it in items if it.get("description")]
         decl_context = "; ".join([d[:60] for d in all_descs]) if len(all_descs) > 1 else ""
         for j, item in enumerate(items):
             existing_hs = (item.get("hs_code") or "").strip()
             desc = item.get("description") or item.get("commercial_name") or ""
-            self._progress("classifying", f"Классификация ТН ВЭД: позиция {j+1}/{len(items)} — {desc[:40]}", 75 + int(10 * j / max(len(items), 1)))
+            self._progress("classifying", f"ТН ВЭД: {j+1}/{len(items)} — {desc[:40]}", 72 + int(12 * j / max(len(items), 1)))
 
-            # Skip if already have a good HS code from document parsing
             if existing_hs and len(existing_hs) >= 8 and not desc.strip().lower().startswith("item "):
                 if len(existing_hs) < 10:
                     item["hs_code"] = existing_hs.ljust(10, "0")
@@ -1102,46 +1249,33 @@ JSON:"""},
                         if hs_candidates:
                             item["hs_candidates"] = hs_candidates
                     except Exception as e:
-                        logger.debug("hs_candidates_for_doc_code_skip", error=str(e)[:80])
+                        logger.debug("hs_candidates_skip", error=str(e)[:80])
                 logger.info("hs_from_doc_kept", item_no=j+1, hs_code=item["hs_code"])
                 continue
 
             if desc:
-                # Для классификации ТН ВЭД: приоритет — hs_description из тех.описания,
-                # так как оно специально сформулировано для таможенной классификации
                 hs_classify_desc = item.get("hs_description_for_classification") or desc
-                if hs_classify_desc != desc:
-                    logger.info("hs_using_techop_desc", item_no=j+1,
-                                invoice_desc=desc[:50], techop_desc=hs_classify_desc[:50])
-                # RAG поиск
                 rag_results = self.index_manager.search_hs_codes(hs_classify_desc)
-                # DSPy/keyword классификация
                 hs_result = self.hs_classifier.classify(hs_classify_desc, rag_results, context=decl_context)
                 hs_code = hs_result.get("hs_code", "")
-
-                # Гарантируем 10 знаков
                 if hs_code and len(hs_code) < 10:
                     hs_code = hs_code.ljust(10, "0")
-
                 item["hs_code"] = hs_code
                 item["hs_code_name"] = hs_result.get("name_ru", "")
                 item["hs_confidence"] = hs_result.get("confidence", 0.0)
                 item["hs_reasoning"] = hs_result.get("reasoning", "")
                 item["hs_candidates"] = hs_result.get("candidates", [])
-
-                if hs_result.get("confidence", 0) < 0.5 or not hs_code:
-                    item["hs_needs_review"] = True
-                    item["hs_review_message"] = f"AI не уверен в коде ТН ВЭД для товара: {desc[:80]}. Пожалуйста, проверьте и укажите код вручную."
-                else:
-                    item["hs_needs_review"] = False
-
-                logger.info("hs_classified", item_no=j+1, description=desc[:50], hs_code=hs_code, confidence=hs_result.get("confidence", 0))
+                item["hs_needs_review"] = (hs_result.get("confidence", 0) < 0.5 or not hs_code)
+                if item["hs_needs_review"]:
+                    item["hs_review_message"] = f"AI не уверен в коде ТН ВЭД: {desc[:80]}"
+                logger.info("hs_classified", item_no=j+1, description=desc[:50],
+                            hs_code=hs_code, confidence=hs_result.get("confidence", 0))
             else:
                 item["hs_code"] = ""
                 item["hs_needs_review"] = True
-                item["hs_review_message"] = "Описание товара отсутствует. Укажите описание и код ТН ВЭД вручную."
+                item["hs_review_message"] = "Описание товара отсутствует."
 
-        # --- Шаг 4: Оценка рисков ---
+        # ── Step 7: Risk assessment ──
         self._progress("risks", "Оценка рисков СУР...", 88)
         risk_rules = self.index_manager.search_risk_rules(
             json.dumps(result, ensure_ascii=False, default=str)[:3000]
@@ -1150,7 +1284,7 @@ JSON:"""},
         result["risk_score"] = risk_result.get("risk_score", 0)
         result["risk_flags"] = {"risks": risk_result.get("risks", []), "source": risk_result.get("source", "")}
 
-        # --- Шаг 5: Поиск прецедентов ---
+        # ── Step 8: Precedent search ──
         self._progress("precedents", "Поиск прецедентов...", 93)
         for item in result.get("items", []):
             desc = item.get("description", "")
@@ -1159,46 +1293,32 @@ JSON:"""},
                 if precedents:
                     item["precedents"] = precedents[:3]
 
-        # Confidence — среднее по всем источникам
-        def _get_conf(obj):
-            if obj is None:
-                return 0
-            if isinstance(obj, dict):
-                return obj.get("confidence", 0)
-            return getattr(obj, "confidence", 0)
+        # Confidence
         confidences = [
-            _get_conf(parsed_docs.get("invoice")),
-            _get_conf(parsed_docs.get("contract")),
-            _get_conf(parsed_docs.get("packing")),
+            (parsed_docs.get("invoice") or {}).get("doc_type_confidence", 0),
+            (parsed_docs.get("contract") or {}).get("doc_type_confidence", 0),
+            (parsed_docs.get("packing") or {}).get("doc_type_confidence", 0),
         ]
         non_zero = [c for c in confidences if c > 0]
         result["confidence"] = sum(non_zero) / len(non_zero) if non_zero else 0.0
 
-        # --- Шаг 5.5: Agent escalation layer (только для конфликтных кейсов) ---
-        self._progress("escalation", "Проверка условий эскалации агентов...", 95)
+        # ── Step 9: Agent escalation ──
+        self._progress("escalation", "Проверка эскалации...", 95)
         self._run_escalation(result)
 
         items_count = len(result.get("items", []))
-        logger.info(
-            "crew_process_complete",
-            items_count=items_count,
-            confidence=result["confidence"],
-            risk_score=result.get("risk_score", 0),
-        )
+        logger.info("crew_process_complete", items_count=items_count,
+                    confidence=result["confidence"], risk_score=result.get("risk_score", 0))
 
-        # Репорт проблем для batch-тестирования
         try:
             from app.services.issue_reporter import report_issue
             if items_count == 0:
                 report_issue("compile", "warning", "No items after compilation",
-                    {"files": [f for f, _ in files] if hasattr(files[0], '__len__') else [], "confidence": result.get("confidence")})
+                    {"confidence": result.get("confidence")})
             for it in result.get("items", []):
-                desc = it.get("description") or it.get("commercial_name") or ""
+                desc = it.get("description") or ""
                 if desc.lower().startswith("item ") or not desc:
                     report_issue("compile", "warning", f"Bad item description: '{desc[:60]}'",
-                        {"description": desc, "hs_code": it.get("hs_code", "")})
-                if not it.get("hs_code") or it.get("hs_code", "").startswith("0000"):
-                    report_issue("hs_classify", "warning", f"No/bad HS code for: {desc[:60]}",
                         {"description": desc, "hs_code": it.get("hs_code", "")})
         except Exception:
             pass
@@ -2276,7 +2396,428 @@ JSON:"""},
 
         return docs
 
-    def _compile_by_rules(self, parsed_docs: dict, base_result: dict) -> dict:
+    # ------------------------------------------------------------------
+    # NEW: LLM-only compilation pipeline (replaces _compile_declaration + _compile_by_rules)
+    # ------------------------------------------------------------------
+
+    def _compile_declaration_llm(self, parsed_docs: dict) -> dict:
+        """LLM-based declaration compilation.
+
+        Sends all extracted document data + filling rules to LLM.
+        LLM handles semantic decisions: source priority, field selection,
+        party identification, document type codes.
+        Arithmetic, lookups and normalization are done in _post_process_compilation.
+        """
+        import json as _json
+        from app.config import get_settings as _get_settings
+        from app.services.llm_client import get_llm_client, get_model
+        from app.services.rules_engine import get_filling_rules_text
+
+        settings = _get_settings()
+        rules_text = build_full_rules_for_llm(section="header", core_api_url=settings.CORE_API_URL)
+        filling_rules = get_filling_rules_text()
+
+        docs_ctx = {}
+        for doc_key, doc_data in parsed_docs.items():
+            if doc_key.startswith("_"):
+                continue
+            data = self._to_dict(doc_data) if not isinstance(doc_data, list) else doc_data
+            if not data:
+                continue
+            if isinstance(data, dict):
+                cleaned = {k: v for k, v in data.items()
+                           if v is not None and k not in ("raw_text", "_cache_type", "_filename")
+                           and not (isinstance(k, str) and k.startswith("_"))}
+                if cleaned:
+                    docs_ctx[doc_key] = cleaned
+            elif isinstance(data, list):
+                items_list = []
+                for item in data:
+                    if isinstance(item, dict):
+                        c = {k: v for k, v in item.items()
+                             if v is not None and k not in ("raw_text", "_cache_type", "_filename")}
+                        if c:
+                            items_list.append(c)
+                if items_list:
+                    docs_ctx[doc_key] = items_list
+
+        docs_json = _json.dumps(docs_ctx, ensure_ascii=False, indent=2)
+
+        system_prompt = (
+            "Ты опытный таможенный брокер РФ. Заполняешь таможенную декларацию ИМ40 (импорт).\n"
+            "Тебе предоставлены извлечённые данные из документов и официальные правила.\n"
+            "СТРОГО следуй правилам: приоритеты источников, форматы, специальные значения.\n"
+            "Ответь ТОЛЬКО валидным JSON. Если данных нет — null. Не придумывай данные.\n"
+            "НЕ делай арифметические расчёты (суммирование, распределение весов) — это сделает Python."
+        )
+
+        user_prompt = f"""=== ИЗВЛЕЧЁННЫЕ ДАННЫЕ ИЗ ДОКУМЕНТОВ ===
+{docs_json}
+
+=== ПРАВИЛА ЗАПОЛНЕНИЯ ГРАФ ДТ (из БД) ===
+{(rules_text or '')[:5000]}
+
+=== ПРАВИЛА ЗАПОЛНЕНИЯ ГРАФ (полные) ===
+{(filling_rules or '')[:12000]}
+
+=== ЗАДАЧА ===
+На основе документов и правил заполни ВСЕ поля декларации, для которых есть данные.
+Соблюдай приоритет источников для каждой графы.
+
+ФОРМАТ ОТВЕТА — JSON:
+{{
+  "type_code": "ИМ40 или другой код (гр.1)",
+  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
+  "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
+  "declarant": {{"name": "ТОЛЬКО НА РУССКОМ", "address": "ТОЛЬКО НА РУССКОМ", "inn": "...", "kpp": "...", "ogrn": "..."}},
+  "buyer_matches_declarant": true,
+  "receiver": null,
+  "financial_responsible": null,
+  "trading_partner_country": "ISO2 (гр.11)",
+  "declarant_inn_kpp": "ИНН/КПП (гр.14)",
+  "country_dispatch": "ISO2 (гр.15)",
+  "country_origin": "ISO2 или РАЗНЫЕ/НЕИЗВЕСТНО/ЕВРОСОЮЗ (гр.16)",
+  "country_destination": "ISO2 (гр.17, дефолт RU)",
+  "transport_vehicle_departure": "рег.номер/рейс/судно (гр.18)",
+  "transport_vehicle_departure_country": "ISO2 или 00/99 (гр.18)",
+  "container": true/false,
+  "incoterms": "код Инкотермс (гр.20)",
+  "delivery_place": "пункт поставки (гр.20)",
+  "transport_vehicle_border": "рейс/номер/судно (гр.21)",
+  "transport_vehicle_border_country": "ISO2 или 00/99 (гр.21)",
+  "currency": "ISO4217 (гр.22) — ТОЛЬКО из контракта",
+  "deal_nature_code": "3-значный код (гр.24, дефолт 010)",
+  "deal_specifics_code": "2-значный код (гр.24, дефолт 01)",
+  "transport_type": "10/20/30/40 (гр.25)",
+  "transport_type_internal": "10/20/30/40 (гр.26)",
+  "special_features_code": "код особенности или null (гр.7)",
+  "contract_number": "номер контракта",
+  "contract_date": "дата контракта",
+  "invoice_number": "номер инвойса",
+  "invoice_date": "дата инвойса",
+  "awb_number": "номер AWB/CMR/B-L",
+  "destination_airport": "IATA код аэропорта назначения (для гр.29 lookup)",
+  "total_packages": число (гр.6),
+  "package_type": "тип упаковки",
+  "freight_amount": число,
+  "freight_currency": "ISO4217",
+  "valuation_method": "1 (гр.43, дефолт)",
+  "items": [
+    {{
+      "line_no": 1,
+      "description": "наименование товара (из техописания если есть, иначе из инвойса)",
+      "quantity": число,
+      "unit": "единица измерения",
+      "unit_price": число,
+      "line_total": число,
+      "country_origin_code": "ISO2 (гр.34)",
+      "procedure_code": "4000 (гр.37)"
+    }}
+  ],
+  "evidence_map": {{
+    "seller": {{"source": "transport_doc", "confidence": 0.9, "graph": 2}},
+    "buyer": {{"source": "contract", "confidence": 0.95, "graph": 14}},
+    "currency": {{"source": "contract", "confidence": 0.97, "graph": 22}}
+  }}
+}}
+
+JSON:"""
+
+        try:
+            client = get_llm_client(operation="compile_declaration_llm")
+            resp = client.chat.completions.create(
+                model=get_model(),
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0,
+                max_tokens=4000,
+                response_format={"type": "json_object"},
+            )
+            raw = strip_code_fences(resp.choices[0].message.content)
+            result = _json.loads(raw)
+            logger.info("compile_declaration_llm_ok", fields=list(result.keys()),
+                        items_count=len(result.get("items", [])))
+            return result
+        except Exception as e:
+            logger.error("compile_declaration_llm_failed", error=str(e))
+            return {"items": [], "evidence_map": {}, "issues": [
+                {"id": "compile_llm_failed", "severity": "error", "message": f"LLM compilation failed: {e}"}
+            ]}
+
+    def _post_process_compilation(self, llm_result: dict, parsed_docs: dict) -> dict:
+        """Deterministic post-processing after LLM compilation.
+
+        Handles: IATA lookups, weight distribution, summing, normalization,
+        item filtering, sheet count, description formatting.
+        """
+        import math
+        result = dict(llm_result)
+
+        # ── IATA -> customs office lookup (гр. 29, 30) ──
+        destination_airport = (result.get("destination_airport") or "").upper().strip()
+        if not destination_airport:
+            awb = result.get("awb_number") or ""
+            for doc_key in ("transport", "transport_doc"):
+                td = self._to_dict(parsed_docs.get(doc_key))
+                if td:
+                    destination_airport = (td.get("destination_airport") or "").upper().strip()
+                    if destination_airport:
+                        break
+
+        customs_office_code = result.get("customs_office_code")
+        customs_office_name = result.get("customs_office_name")
+        goods_location = result.get("goods_location")
+
+        if destination_airport and destination_airport in _DESTINATION_TO_POST:
+            customs_office_code, customs_office_name, goods_location = _DESTINATION_TO_POST[destination_airport]
+
+        awb_number = result.get("awb_number") or ""
+        if not customs_office_code and awb_number:
+            prefix = awb_number.split("-")[0] if "-" in awb_number else awb_number[:3]
+            if prefix in _AWB_PREFIX_TO_POST:
+                customs_office_code, customs_office_name, goods_location = _AWB_PREFIX_TO_POST[prefix]
+
+        transport_type = result.get("transport_type")
+        if not customs_office_code and str(transport_type) == "40":
+            customs_office_code, customs_office_name, goods_location = _DEFAULT_POST
+
+        result["customs_office_code"] = customs_office_code
+        result["customs_office_name"] = customs_office_name
+        result["goods_location"] = goods_location
+
+        # ── Items processing ──
+        items = result.get("items") or []
+        inv_data = self._to_dict(parsed_docs.get("invoice"))
+        packing_data = self._to_dict(parsed_docs.get("packing"))
+        pl_items = (packing_data.get("items") or []) if packing_data else []
+
+        _SKIP_ITEM = re.compile(
+            r'\b(freight|shipping|insurance|handling|delivery\s*fee|transport.*fee|'
+            r'фрахт|доставка|страхов|транспортн)',
+            re.IGNORECASE,
+        )
+
+        filtered_items = []
+        for item in items:
+            desc = item.get("description") or ""
+            if _SKIP_ITEM.search(desc):
+                continue
+            if _is_garbage_desc(desc):
+                continue
+            item["hs_code"] = _normalize_hs_code(item.get("hs_code"))
+            co = (item.get("country_origin_code") or "")
+            if co:
+                item["country_origin_code"] = co.strip().upper()[:2]
+            filtered_items.append(item)
+        items = filtered_items
+        result["items"] = items
+
+        # ── Weight distribution (гр. 35/38) ──
+        items = self._distribute_weights(items, packing_data, inv_data)
+        result["items"] = items
+
+        # ── Sum totals ──
+        total_gross = sum(_safe_float(it.get("gross_weight")) or 0.0 for it in items)
+        total_net = sum(_safe_float(it.get("net_weight")) or 0.0 for it in items)
+        if total_gross > 0:
+            result["total_gross_weight"] = round(total_gross, 3)
+        if total_net > 0:
+            result["total_net_weight"] = round(total_net, 3)
+
+        total_invoice = sum(_safe_float(it.get("line_total")) or 0.0 for it in items)
+        if total_invoice > 0 and not result.get("total_amount"):
+            result["total_amount"] = round(total_invoice, 2)
+
+        # ── Sheet count (гр. 3) ──
+        n_items = len(items)
+        if n_items > 0:
+            total_sheets = 1 + math.ceil(max(0, n_items - 1) / 3) if n_items > 1 else 1
+            result["total_sheets"] = total_sheets
+            result["total_items_count"] = n_items
+
+        # ── Description formatting (гр. 31) ──
+        for item in items:
+            desc = item.get("description") or ""
+            pkg_parts = []
+            pc = item.get("package_count") or item.get("packages_count")
+            pt = item.get("package_type")
+            if pc:
+                pkg_parts.append(str(pc))
+            if pt:
+                pkg_parts.append(pt)
+            if pkg_parts and desc:
+                pkg_line = "2. Грузовые места: " + ", ".join(pkg_parts)
+                if pkg_line not in desc:
+                    item["description"] = f"1. {desc}\n{pkg_line}"
+
+        # ── Country origin aggregation (гр. 16) ──
+        _EU_COUNTRIES = {"AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR",
+                         "HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK",
+                         "SI","ES","SE"}
+        unique_origins = set()
+        for it in items:
+            co = (it.get("country_origin_code") or "").strip().upper()
+            if co:
+                unique_origins.add(co)
+        if unique_origins:
+            if len(unique_origins) == 1:
+                result["country_origin"] = unique_origins.pop()
+            elif unique_origins.issubset(_EU_COUNTRIES):
+                result["country_origin"] = "EU"
+            else:
+                result["country_origin"] = "РАЗНЫЕ"
+
+        # ── Documents list (гр. 44) ──
+        if not result.get("documents"):
+            result["documents"] = self._build_documents_list(
+                parsed_docs,
+                inv_data or {},
+                self._to_dict(parsed_docs.get("contract")) or {},
+                awb_number,
+            )
+
+        # ── Reference GTD enrichment ──
+        ref_gtd = parsed_docs.get("reference_gtd")
+        if ref_gtd and isinstance(ref_gtd, dict):
+            gtd_items = ref_gtd.get("items", [])
+            if gtd_items and items:
+                for item in items:
+                    if item.get("hs_code"):
+                        continue
+                    desc = (item.get("description") or "").lower()
+                    for g_item in gtd_items:
+                        g_desc = (g_item.get("description") or "").lower()
+                        if desc and g_desc and (desc[:30] in g_desc or g_desc[:30] in desc):
+                            item["hs_code"] = _normalize_hs_code(g_item.get("hs_code"))
+                            item["hs_confidence"] = 0.75
+                            item["hs_reasoning"] = f"Из эталонной ГТД"
+                            break
+
+        # ── SVH data (гр. 30/49) ──
+        svh_doc = parsed_docs.get("svh_doc")
+        if svh_doc and isinstance(svh_doc, dict):
+            svh_number = svh_doc.get("svh_number")
+            if svh_number:
+                result["warehouse_requisites"] = svh_number
+                result["goods_location_svh_doc_id"] = svh_number
+            if svh_doc.get("warehouse_name"):
+                result["warehouse_name"] = svh_doc["warehouse_name"]
+
+        return result
+
+    def _distribute_weights(self, items: list, packing: dict | None, invoice: dict | None) -> list:
+        """Distribute weights from PL to items, fallback to proportional by cost."""
+        if not items:
+            return items
+
+        packing = packing or {}
+        invoice = invoice or {}
+        pl_items = packing.get("items") or []
+
+        def _desc_similarity(a: str, b: str) -> float:
+            wa = set(re.sub(r'[^a-zа-я0-9]', ' ', (a or "").lower()).split())
+            wb = set(re.sub(r'[^a-zа-я0-9]', ' ', (b or "").lower()).split())
+            if not wa or not wb:
+                return 0.0
+            return len(wa & wb) / max(len(wa), len(wb))
+
+        pl_items_with_weights = [
+            it for it in pl_items
+            if _safe_float(it.get("gross_weight")) or _safe_float(it.get("net_weight"))
+        ]
+
+        weights_assigned = 0
+        used_indices: set = set()
+
+        if pl_items_with_weights:
+            if len(pl_items_with_weights) == len(items):
+                for j, item in enumerate(items):
+                    pl_it = pl_items_with_weights[j]
+                    pg = _safe_float(pl_it.get("gross_weight"))
+                    pn = _safe_float(pl_it.get("net_weight"))
+                    if pg and not item.get("gross_weight"):
+                        item["gross_weight"] = round(pg, 3)
+                    if pn and not item.get("net_weight"):
+                        item["net_weight"] = round(pn, 3)
+                    if pg or pn:
+                        weights_assigned += 1
+            else:
+                for item in items:
+                    best_score, best_match = 0.3, None
+                    for idx, pl_it in enumerate(pl_items_with_weights):
+                        if idx in used_indices:
+                            continue
+                        sim = _desc_similarity(item.get("description", ""), pl_it.get("description", ""))
+                        if sim > best_score:
+                            best_score = sim
+                            best_match = (idx, pl_it)
+                    if best_match:
+                        idx, pl_it = best_match
+                        used_indices.add(idx)
+                        pg = _safe_float(pl_it.get("gross_weight"))
+                        pn = _safe_float(pl_it.get("net_weight"))
+                        if pg and not item.get("gross_weight"):
+                            item["gross_weight"] = round(pg, 3)
+                        if pn and not item.get("net_weight"):
+                            item["net_weight"] = round(pn, 3)
+                        if pg or pn:
+                            weights_assigned += 1
+
+        # Packaging from PL
+        pl_pkg_items = [it for it in pl_items if it.get("packages_count") or it.get("package_type")]
+        if pl_pkg_items and items:
+            if len(pl_pkg_items) == len(items):
+                for j, item in enumerate(items):
+                    pl_it = pl_pkg_items[j]
+                    if not item.get("package_count"):
+                        item["package_count"] = pl_it.get("packages_count")
+                    if not item.get("package_type"):
+                        item["package_type"] = pl_it.get("package_type") or packing.get("package_type")
+        if packing.get("package_type"):
+            for item in items:
+                if not item.get("package_type"):
+                    item["package_type"] = packing["package_type"]
+
+        # Fallback: proportional by cost
+        total_gross = _safe_float(
+            packing.get("total_gross_weight") or
+            (invoice.get("total_gross_weight") if invoice else None)
+        )
+        total_net = _safe_float(
+            packing.get("total_net_weight") or
+            (invoice.get("total_net_weight") if invoice else None)
+        )
+        items_missing_weight = [it for it in items if not it.get("gross_weight")]
+        if items_missing_weight and total_gross:
+            assigned_gross = sum((_safe_float(it.get("gross_weight")) or 0.0) for it in items if it.get("gross_weight"))
+            assigned_net = sum((_safe_float(it.get("net_weight")) or 0.0) for it in items if it.get("net_weight"))
+            remaining_gross = max(0.0, (total_gross or 0.0) - assigned_gross)
+            remaining_net = max(0.0, (total_net or 0.0) - assigned_net) if total_net else None
+
+            total_price = sum((_safe_float(it.get("line_total")) or 0.0) for it in items_missing_weight)
+            for item in items_missing_weight:
+                price = _safe_float(item.get("line_total")) or 0.0
+                share = (price / total_price) if total_price > 0 else (1.0 / len(items_missing_weight))
+                item["gross_weight"] = round(remaining_gross * share, 3)
+                if remaining_net:
+                    item["net_weight"] = round(remaining_net * share, 3)
+                elif item.get("gross_weight"):
+                    item["net_weight"] = round(item["gross_weight"] * 0.9, 3)
+
+        # Net weight fallback from gross
+        for item in items:
+            if item.get("gross_weight") and not item.get("net_weight"):
+                item["net_weight"] = round(_safe_float(item["gross_weight"]) * 0.9, 3)
+
+        return items
+
+    # ------------------------------------------------------------------
+    # LEGACY: _compile_by_rules (kept for reference, no longer called)
+    # ------------------------------------------------------------------
+
+    def _compile_by_rules_legacy(self, parsed_docs: dict, base_result: dict) -> dict:
         """Финальная LLM-компиляция декларации с полными правилами из БД.
 
         Берёт все извлечённые данные + полный текст правил для каждой графы
@@ -2368,7 +2909,7 @@ JSON:"""},
 {{
   "type_code": "код типа декларации (гр.1), обычно ИМ 40",
   "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.2 ОТПРАВИТЕЛЬ: ТОЛЬКО транспортные источники: 1) transport_doc.shipper, 2) application_statement.shipper, 3) transport_invoice.shipper. Товарный инвойс и контракт НЕ источники.
-  "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
+  "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.14 ПОКУПАТЕЛЬ/ДЕКЛАРАНТ: name и address ОБЯЗАТЕЛЬНО на русском языке! Если в контракте есть русский и английский вариант — выбирай РУССКИЙ.
   "responsible_person": "гр.9: 'СМ. ГРАФУ 14 ДТ' по умолчанию. Заполнять данными ТОЛЬКО при трёхстороннем договоре (is_trilateral=true).",
   "trading_partner_country": "гр.11: ISO2 страна контрагента",
   "declarant_inn_kpp": "гр.14: ИНН/КПП декларанта",

@@ -1123,3 +1123,182 @@ def parse(file_bytes: bytes, filename: str) -> InvoiceParsed:
     except Exception as e:
         logger.error("invoice_parsing_failed", filename=filename, error=str(e), exc_info=True)
         return InvoiceParsed(raw_text="", confidence=0.0)
+
+
+def parse_debug(raw_text: str, filename: str) -> dict:
+    """Parse invoice and return debug trace with regex/LLM stage details."""
+    import time as _time
+    debug: dict = {"regex": {}, "llm": {}, "merged": {}}
+
+    if not raw_text:
+        debug["regex"]["error"] = "no_text"
+        return debug
+
+    t0 = _time.monotonic()
+
+    invoice_number = _extract_invoice_number(raw_text)
+    invoice_date = _extract_invoice_date(raw_text)
+    currency = _extract_currency(raw_text)
+    total_amount = _extract_total_amount(raw_text, currency)
+    country_origin = _extract_country_origin(raw_text)
+    country_destination = _extract_country_destination(raw_text)
+    incoterms = _extract_incoterms(raw_text)
+    contract_number = _extract_contract_number(raw_text)
+    seller = _extract_seller(raw_text)
+    buyer = _extract_buyer(raw_text)
+    items = _extract_items(raw_text)
+    gross_weight, net_weight, total_packages = _extract_weights(raw_text)
+
+    regex_ms = int((_time.monotonic() - t0) * 1000)
+
+    debug["regex"] = {
+        "duration_ms": regex_ms,
+        "invoice_number": {"found": bool(invoice_number), "value": invoice_number},
+        "invoice_date": {"found": bool(invoice_date), "value": invoice_date},
+        "currency": {"found": bool(currency), "value": currency},
+        "total_amount": {"found": bool(total_amount), "value": total_amount},
+        "country_origin": {"found": bool(country_origin), "value": country_origin},
+        "country_destination": {"found": bool(country_destination), "value": country_destination},
+        "incoterms": {"found": bool(incoterms), "value": incoterms},
+        "contract_number": {"found": bool(contract_number), "value": contract_number},
+        "seller": {"found": bool(seller), "value": seller.name if seller else None},
+        "buyer": {"found": bool(buyer), "value": buyer.name if buyer else None},
+        "gross_weight": {"found": bool(gross_weight), "value": gross_weight},
+        "net_weight": {"found": bool(net_weight), "value": net_weight},
+        "total_packages": {"found": bool(total_packages), "value": total_packages},
+        "items_count": len(items),
+        "items": [
+            {"line_no": it.line_no, "description": (it.description_raw or "")[:80],
+             "quantity": it.quantity, "unit_price": it.unit_price, "line_total": it.line_total}
+            for it in items[:20]
+        ],
+    }
+
+    regex_result = {
+        "invoice_number": invoice_number,
+        "country_origin": country_origin,
+        "total_amount": total_amount,
+        "currency": currency,
+        "seller_name": seller.name if seller else None,
+        "buyer_name": buyer.name if buyer else None,
+        "items": [{"description_raw": it.description_raw} for it in items],
+    }
+    llm_debug = _llm_enrich_debug(raw_text, regex_result)
+    debug["llm"] = llm_debug
+
+    merged = {
+        "invoice_number": invoice_number,
+        "invoice_date": invoice_date,
+        "currency": currency,
+        "total_amount": total_amount,
+        "country_origin": country_origin,
+        "incoterms": incoterms,
+        "seller": seller.name if seller else None,
+        "buyer": buyer.name if buyer else None,
+        "items_count": len(items),
+    }
+    llm_data = llm_debug.get("parsed", {})
+    if llm_data:
+        for field in ["invoice_number", "country_origin", "total_amount", "currency"]:
+            if not merged.get(field) and llm_data.get(field):
+                merged[field] = llm_data[field]
+                merged[f"{field}_source"] = "llm"
+    debug["merged"] = merged
+
+    return debug
+
+
+def _llm_enrich_debug(raw_text: str, result: dict) -> dict:
+    """LLM enrichment that captures full debug info: prompt, response, timing."""
+    import time as _time
+    debug: dict = {"skipped": True}
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_llm:
+            debug["skipped_reason"] = "no_llm_configured"
+            return debug
+
+        from app.services.llm_client import get_llm_client, get_model
+        import json as _json
+
+        items = result.get("items", [])
+        has_bad_items = not items or any(
+            _is_garbage_desc(it.get("description_raw", "")) for it in items
+        )
+        has_no_prices = bool(items) and any(
+            not it.get("unit_price") and not it.get("line_total") for it in items
+        )
+
+        missing = []
+        if not result.get("invoice_number"):
+            missing.append("invoice_number")
+        if not result.get("country_origin"):
+            missing.append("country_origin (2-letter ISO code)")
+        if not result.get("total_amount"):
+            missing.append("total_amount (number)")
+        if not result.get("currency"):
+            missing.append("currency (3-letter ISO 4217 code)")
+        if not result.get("seller_name"):
+            missing.append("seller_name")
+        if not result.get("buyer_name"):
+            missing.append("buyer_name")
+
+        if not missing and not has_bad_items and not has_no_prices:
+            debug["skipped_reason"] = "nothing_missing"
+            return debug
+
+        debug["skipped"] = False
+        debug["missing_fields"] = missing
+        debug["has_bad_items"] = has_bad_items
+        debug["has_no_prices"] = has_no_prices
+
+        need_items = has_bad_items or has_no_prices
+        item_prompt = """Also extract ALL items (ONLY physical goods, NOT freight/shipping/insurance/handling fees).
+Return items as JSON array: [{"description": "full product name in original language", "quantity": 100, "unit": "pcs", "unit_price": 5.50, "line_total": 550.00, "country_origin": "CN"}]""" if need_items else ""
+
+        system_msg = "You are an expert customs document parser. Extract structured data from a commercial invoice. Return ONLY valid JSON, no markdown."
+        user_msg = f"""Extract the following from this invoice document:
+{', '.join(missing) if missing else 'Verify existing data.'}
+
+{item_prompt}
+
+Document text:
+{raw_text[:12000]}
+
+Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items else ''}"""
+
+        debug["prompt_system"] = system_msg
+        debug["prompt_user"] = user_msg[:2000] + ("..." if len(user_msg) > 2000 else "")
+        debug["model"] = get_model()
+
+        client = get_llm_client(operation="invoice_llm_enrich")
+        t0 = _time.monotonic()
+        resp = client.chat.completions.create(
+            model=get_model(),
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0,
+            max_tokens=4000,
+            response_format={"type": "json_object"},
+        )
+        debug["duration_ms"] = int((_time.monotonic() - t0) * 1000)
+
+        raw_response = resp.choices[0].message.content or ""
+        debug["raw_response"] = raw_response[:5000]
+        if hasattr(resp, 'usage') and resp.usage:
+            debug["tokens"] = {
+                "prompt": resp.usage.prompt_tokens,
+                "completion": resp.usage.completion_tokens,
+            }
+
+        text = strip_code_fences(raw_response)
+        data = _json.loads(text)
+        debug["parsed"] = data
+
+    except Exception as e:
+        debug["error"] = str(e)[:500]
+
+    return debug
