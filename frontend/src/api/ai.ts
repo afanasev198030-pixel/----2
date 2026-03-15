@@ -196,6 +196,90 @@ export const parseSmartDocument = async (files: File[], declarationId?: string):
   return response.data;
 };
 
+export interface ParseDebugStageOcr {
+  method: string;
+  chars: number;
+  pages: number;
+  duration_ms: number;
+  text: string;
+  text_truncated?: boolean;
+}
+
+export interface ParseDebugClassifyExtract {
+  doc_type: string;
+  doc_type_confidence: number;
+  extracted: Record<string, any>;
+  prompt_system?: string;
+  prompt_user?: string;
+  raw_response?: string;
+  duration_ms?: number;
+  model?: string;
+  tokens?: { prompt: number; completion: number };
+}
+
+export interface ParseDebugDocument {
+  filename: string;
+  stages: {
+    ocr: ParseDebugStageOcr;
+    classify_and_extract: ParseDebugClassifyExtract;
+  };
+}
+
+export interface ParseDebugLlmCompile {
+  duration_ms: number;
+  fields: string[];
+  items_count: number;
+  result: Record<string, any>;
+}
+
+export interface ParseDebugPostProcess {
+  duration_ms: number;
+  customs_office_code?: string;
+  customs_office_name?: string;
+  total_gross_weight?: number;
+  total_net_weight?: number;
+  total_sheets?: number;
+  total_items_count?: number;
+  total_amount?: number;
+  items_preview?: Array<{
+    description?: string;
+    hs_code?: string;
+    gross_weight?: number;
+    net_weight?: number;
+    line_total?: number;
+    country_origin_code?: string;
+  }>;
+}
+
+export interface ParseDebugValidation {
+  issues: Array<{ id?: string; severity?: string; graph?: number; field?: string; message?: string }>;
+  issues_count: number;
+}
+
+export interface ParseDebugCompilation {
+  llm_compile?: ParseDebugLlmCompile;
+  post_process?: ParseDebugPostProcess;
+  validation?: ParseDebugValidation;
+  evidence_map?: Record<string, any>;
+  error?: string;
+}
+
+export interface ParseDebugResponse {
+  documents: ParseDebugDocument[];
+  compilation: ParseDebugCompilation;
+  total_duration_ms: number;
+}
+
+export const parseDebug = async (files: File[]): Promise<ParseDebugResponse> => {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('files', file));
+  const response = await aiClient.post<ParseDebugResponse>('/parse-debug', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 300000,
+  });
+  return response.data;
+};
+
 export const classifyHSRag = async (description: string, countryOrigin?: string): Promise<any> => {
   const response = await aiClient.post('/classify-hs-rag', {
     description,

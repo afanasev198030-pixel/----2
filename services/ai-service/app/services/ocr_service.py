@@ -133,3 +133,61 @@ def extract_text(file_bytes: bytes, filename: str) -> str:
     else:
         logger.warning("unknown_file_type", filename=filename)
         return extract_text_from_pdf(file_bytes)
+
+
+def extract_text_debug(file_bytes: bytes, filename: str) -> dict:
+    """Extract text with debug metadata: method used, pages, timing."""
+    import time as _time
+    filename_lower = filename.lower()
+    t0 = _time.monotonic()
+    method = "unknown"
+    pages = 0
+
+    if filename_lower.endswith('.pdf'):
+        method = "pdfplumber"
+        try:
+            text_parts = []
+            with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                pages = len(pdf.pages)
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+            text = "\n".join(text_parts)
+            if (not text or len(text.strip()) < 10) and HAS_TESSERACT:
+                method = "tesseract"
+                text_parts = []
+                with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+                    for page in pdf.pages:
+                        try:
+                            img = page.to_image(resolution=200)
+                            if img:
+                                ocr_text = pytesseract.image_to_string(img.original, lang='rus+eng')
+                                if ocr_text:
+                                    text_parts.append(ocr_text)
+                        except Exception:
+                            pass
+                text = "\n".join(text_parts)
+            text = clean_ocr_text(text)
+        except Exception as e:
+            text = ""
+            method = f"pdfplumber_error: {str(e)[:100]}"
+    elif filename_lower.endswith(('.jpg', '.jpeg', '.png', '.tiff', '.bmp')):
+        method = "tesseract"
+        pages = 1
+        text = extract_text_from_image(file_bytes)
+    elif filename_lower.endswith(('.xlsx', '.xls')):
+        method = "openpyxl" if filename_lower.endswith('.xlsx') else "xlrd"
+        text = extract_text_from_excel(file_bytes, filename)
+    else:
+        method = "pdfplumber_fallback"
+        text = extract_text_from_pdf(file_bytes)
+
+    duration_ms = int((_time.monotonic() - t0) * 1000)
+    return {
+        "text": text,
+        "method": method,
+        "pages": pages,
+        "chars": len(text),
+        "duration_ms": duration_ms,
+    }

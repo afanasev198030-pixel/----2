@@ -159,6 +159,152 @@ async def parse_smart(
         reset_usage_context(context_tokens)
 
 
+@router.post("/parse-debug")
+async def parse_debug(
+    files: list[UploadFile] = File(...),
+):
+    """
+    Debug endpoint: LLM-only pipeline trace.
+    Stages per document: ocr -> classify_and_extract.
+    Compilation: llm_compile -> post_process -> validation.
+    Does NOT run HS classification, risks, or precedents.
+    """
+    import time as _time
+    t_start = _time.monotonic()
+
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="Max 10 files for debug")
+
+    from app.services.ocr_service import extract_text_debug
+    from app.services.llm_parser import classify_and_extract_debug
+    from app.services.rules_engine import validate_declaration
+
+    documents = []
+    parsed_docs: dict = {}
+
+    for f in files:
+        content = await f.read()
+        if not content:
+            continue
+        fname = f.filename or "document.pdf"
+        doc_trace: dict = {"filename": fname, "stages": {}}
+
+        ocr_result = extract_text_debug(content, fname)
+        full_text = ocr_result["text"]
+        doc_trace["stages"]["ocr"] = {
+            "method": ocr_result["method"],
+            "chars": ocr_result["chars"],
+            "pages": ocr_result["pages"],
+            "duration_ms": ocr_result["duration_ms"],
+            "text": full_text,
+            "text_truncated": False,
+        }
+
+        ce_result = classify_and_extract_debug(full_text, fname)
+        doc_type = ce_result["doc_type"]
+        extracted = ce_result["extracted"]
+        extracted["_filename"] = fname
+        extracted["doc_type"] = doc_type
+
+        doc_trace["stages"]["classify_and_extract"] = {
+            "doc_type": doc_type,
+            "doc_type_confidence": ce_result.get("doc_type_confidence", 0),
+            "extracted": extracted,
+            "prompt_system": ce_result.get("llm_debug", {}).get("prompt_system", ""),
+            "prompt_user": ce_result.get("llm_debug", {}).get("prompt_user", ""),
+            "raw_response": ce_result.get("llm_debug", {}).get("raw_response", ""),
+            "duration_ms": ce_result.get("llm_debug", {}).get("duration_ms", 0),
+            "model": ce_result.get("llm_debug", {}).get("model", ""),
+            "tokens": ce_result.get("llm_debug", {}).get("tokens", {}),
+        }
+
+        _LIST_TYPES = {"tech_description", "payment_order", "other"}
+        if doc_type in _LIST_TYPES:
+            list_key = {
+                "tech_description": "tech_descriptions",
+                "payment_order": "payment_orders",
+                "other": "other",
+            }[doc_type]
+            parsed_docs.setdefault(list_key, []).append(extracted)
+        elif doc_type == "packing_list":
+            parsed_docs["packing"] = extracted
+        elif doc_type == "transport_doc":
+            parsed_docs["transport"] = extracted
+        elif doc_type == "invoice":
+            parsed_docs["invoice"] = extracted
+        else:
+            parsed_docs[doc_type] = extracted
+
+        documents.append(doc_trace)
+
+    compilation: dict = {}
+    try:
+        if parsed_docs:
+            crew = DeclarationCrew()
+
+            t_llm = _time.monotonic()
+            llm_result = crew._compile_declaration_llm(parsed_docs)
+            llm_compile_ms = int((_time.monotonic() - t_llm) * 1000)
+
+            t_pp = _time.monotonic()
+            post_result = crew._post_process_compilation(llm_result, parsed_docs)
+            post_process_ms = int((_time.monotonic() - t_pp) * 1000)
+
+            evidence_map = post_result.get("evidence_map", {})
+            issues = validate_declaration(post_result, evidence_map)
+            post_result["evidence_map"] = evidence_map
+            post_result["issues"] = issues
+
+            compilation = {
+                "llm_compile": {
+                    "duration_ms": llm_compile_ms,
+                    "fields": list(llm_result.keys()),
+                    "items_count": len(llm_result.get("items", [])),
+                    "result": {k: v for k, v in llm_result.items()
+                               if k not in ("evidence_map", "issues", "items")},
+                },
+                "post_process": {
+                    "duration_ms": post_process_ms,
+                    "customs_office_code": post_result.get("customs_office_code"),
+                    "customs_office_name": post_result.get("customs_office_name"),
+                    "total_gross_weight": post_result.get("total_gross_weight"),
+                    "total_net_weight": post_result.get("total_net_weight"),
+                    "total_sheets": post_result.get("total_sheets"),
+                    "total_items_count": post_result.get("total_items_count"),
+                    "total_amount": post_result.get("total_amount"),
+                    "items_preview": [
+                        {
+                            "description": (it.get("description") or "")[:100],
+                            "hs_code": it.get("hs_code"),
+                            "gross_weight": it.get("gross_weight"),
+                            "net_weight": it.get("net_weight"),
+                            "line_total": it.get("line_total"),
+                            "country_origin_code": it.get("country_origin_code"),
+                        }
+                        for it in (post_result.get("items") or [])[:10]
+                    ],
+                },
+                "validation": {
+                    "issues": issues,
+                    "issues_count": len(issues),
+                },
+                "evidence_map": evidence_map,
+            }
+    except Exception as e:
+        compilation = {"error": str(e)[:500]}
+        logger.error("parse_debug_compilation_failed", error=str(e), exc_info=True)
+
+    total_ms = int((_time.monotonic() - t_start) * 1000)
+
+    return {
+        "documents": documents,
+        "compilation": compilation,
+        "total_duration_ms": total_ms,
+    }
+
+
 class ClassifyHSRequest(BaseModel):
     description: str
     country_origin: Optional[str] = None

@@ -18,6 +18,7 @@ import AdminChecklistPage from './pages/AdminChecklistPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import AdminStrategiesPage from './pages/AdminStrategiesPage';
 import AdminAiCostsPage from './pages/AdminAiCostsPage';
+import AdminParseDebugPage from './pages/AdminParseDebugPage';
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
         <Route path="/admin/checklists" element={<AdminChecklistPage />} />
         <Route path="/admin/strategies" element={<AdminStrategiesPage />} />
         <Route path="/admin/ai-costs" element={<AdminAiCostsPage />} />
+        <Route path="/admin/parse-debug" element={<AdminParseDebugPage />} />
       </Route>
     </Routes>
   );

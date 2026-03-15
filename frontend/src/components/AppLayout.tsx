@@ -34,6 +34,7 @@ import {
   MenuBook as BookIcon,
   ChecklistRtl as ChecklistIcon,
   AttachMoney as CostIcon,
+  BugReport as BugReportIcon,
 } from '@mui/icons-material';
 
 const NAV_ITEMS = [
@@ -50,6 +51,7 @@ const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [
   { label: 'База знаний', path: '/admin/knowledge', icon: <BookIcon fontSize="small" /> },
   { label: 'Чек-листы', path: '/admin/checklists', icon: <ChecklistIcon fontSize="small" /> },
   { label: 'AI-затраты', path: '/admin/ai-costs', icon: <CostIcon fontSize="small" /> },
+  { label: 'Дебаг парсинга', path: '/admin/parse-debug', icon: <BugReportIcon fontSize="small" /> },
 ];
 
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {

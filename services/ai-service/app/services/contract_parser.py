@@ -37,6 +37,66 @@ class ContractParsed(BaseModel):
     raw_text: str = ""
 
 
+def _smart_slice_contract(raw_text: str, max_chars: int = 16000) -> str:
+    """Extract key sections of a contract instead of naive [:N] truncation.
+
+    Strategy: take the beginning (title, parties, number, date),
+    search for key sections in the middle (Incoterms, currency, payment),
+    and always include the end (requisites, signatures, bank details).
+    """
+    if len(raw_text) <= max_chars:
+        return raw_text
+
+    head_size = max_chars // 3
+    tail_size = max_chars // 4
+    mid_budget = max_chars - head_size - tail_size
+
+    head = raw_text[:head_size]
+    tail = raw_text[-tail_size:]
+
+    _SECTION_KEYWORDS = [
+        "инкотермс", "incoterms", "условия поставки", "delivery terms",
+        "валют", "currency", "расчёты", "расчеты", "payment",
+        "цена", "price", "стоимость", "total amount", "contract value",
+        "реквизиты", "bank details", "банковские",
+        "юридические адреса", "legal address", "адреса и реквизиты",
+        "подписи сторон", "signatures",
+        "ответственность", "liability", "форс-мажор", "force majeure",
+        "предмет договора", "subject of contract",
+    ]
+
+    text_lower = raw_text.lower()
+    found_sections: list[tuple[int, str]] = []
+    for kw in _SECTION_KEYWORDS:
+        pos = text_lower.find(kw, head_size)
+        if pos != -1 and pos < len(raw_text) - tail_size:
+            found_sections.append((pos, kw))
+
+    found_sections.sort(key=lambda x: x[0])
+
+    mid_parts: list[str] = []
+    mid_used = 0
+    seen_ranges: list[tuple[int, int]] = []
+    ctx_window = 800
+
+    for pos, kw in found_sections:
+        if mid_used >= mid_budget:
+            break
+        start = max(head_size, pos - ctx_window)
+        end = min(len(raw_text) - tail_size, pos + ctx_window)
+        overlaps = any(s <= start <= e or s <= end <= e for s, e in seen_ranges)
+        if overlaps:
+            continue
+        chunk = raw_text[start:end]
+        mid_parts.append(f"\n... [{kw}] ...\n{chunk}")
+        mid_used += len(chunk) + 30
+        seen_ranges.append((start, end))
+
+    if mid_parts:
+        return head + "\n".join(mid_parts) + f"\n... [конец документа] ...\n{tail}"
+    return head + f"\n... [конец документа] ...\n{tail}"
+
+
 def _parse_date(text: str) -> Optional[str]:
     """Parse various date formats."""
     date_patterns = [
@@ -258,6 +318,9 @@ def _llm_enrich_contract(raw_text: str, result: ContractParsed) -> ContractParse
   ogrn = регистрационный номер компании (Company Reg. No., Business Registration No.).
 - buyer: {{name, address, country_code, inn, kpp, ogrn}}
   Искать в разделах «Покупатель», «Buyer», «Заказчик».
+  ВАЖНО: name и address покупателя ОБЯЗАТЕЛЬНО на русском языке!
+  В контракте часто дублируется наименование на двух языках — всегда выбирай РУССКИЙ вариант.
+  Например: «ООО «АГ-ЛОГИСТИК»» вместо «AG-Logistik LLC», «г. Москва, ул. ...» вместо «Moscow, ...».
 - currency: ВАЛЮТА КОНТРАКТА (ISO 4217: USD/EUR/CNY/RUB).
   ВАЖНО: искать ключевые фразы «Валютой Контракта являются», «Валюта контракта —»,
   «расчёты производятся в», «Contract currency is», «Payment currency:».
@@ -270,12 +333,12 @@ def _llm_enrich_contract(raw_text: str, result: ContractParsed) -> ContractParse
 - contract_date: дата договора (YYYY-MM-DD)
 
 Текст контракта:
-{raw_text[:8000]}
+{_smart_slice_contract(raw_text, max_chars=16000)}
 
 JSON:"""},
             ],
             temperature=0,
-            max_tokens=1500,
+            max_tokens=2000,
             response_format={"type": "json_object"},
         )
         text = strip_code_fences(resp.choices[0].message.content)
@@ -325,3 +388,151 @@ JSON:"""},
         logger.warning("contract_llm_enrich_failed", error=str(e))
 
     return result
+
+
+def parse_debug(raw_text: str, filename: str) -> dict:
+    """Parse contract and return debug trace with regex/LLM stage details."""
+    import time as _time
+    debug: dict = {"regex": {}, "llm": {}, "merged": {}}
+
+    if not raw_text:
+        debug["regex"]["error"] = "no_text"
+        return debug
+
+    t0 = _time.monotonic()
+
+    contract_number = None
+    contract_patterns = [
+        r'(?:Contract\s*(?:No|Number|#|Nr\.?))[\s:]*([A-Z0-9\-/]+)',
+        r'(?:CONTRACT[-/]?)([A-Z0-9\-/]+)',
+        r'(?:Договор|Контракт)[\s№:]*([A-Z0-9\-/]+)',
+    ]
+    for pattern in contract_patterns:
+        match = re.search(pattern, raw_text, re.IGNORECASE)
+        if match:
+            contract_number = match.group(1).strip()
+            break
+
+    contract_date = _parse_date(raw_text)
+
+    seller_name = None
+    for pattern in [r'(?:Seller|Vendor|Supplier|Продавец)[\s:]*([A-ZА-Я][^\n]{5,100})']:
+        match = re.search(pattern, raw_text, re.IGNORECASE)
+        if match:
+            seller_name = match.group(1).strip().split('\n')[0]
+            break
+
+    buyer_name = None
+    for pattern in [r'(?:Buyer|Purchaser|Customer|Покупатель)[\s:]*([A-ZА-Я][^\n]{5,100})']:
+        match = re.search(pattern, raw_text, re.IGNORECASE)
+        if match:
+            buyer_name = match.group(1).strip().split('\n')[0]
+            break
+
+    currency = None
+    cur_match = re.search(r'\b(USD|EUR|CNY|GBP|RUB|JPY|CHF)\b', raw_text)
+    if cur_match:
+        currency = cur_match.group(1)
+
+    incoterms = None
+    for code in ['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF']:
+        if re.search(rf'\b{code}\b', raw_text, re.IGNORECASE):
+            incoterms = code
+            break
+
+    regex_ms = int((_time.monotonic() - t0) * 1000)
+
+    debug["regex"] = {
+        "duration_ms": regex_ms,
+        "contract_number": {"found": bool(contract_number), "value": contract_number},
+        "contract_date": {"found": bool(contract_date), "value": contract_date},
+        "seller_name": {"found": bool(seller_name), "value": seller_name},
+        "buyer_name": {"found": bool(buyer_name), "value": buyer_name},
+        "currency": {"found": bool(currency), "value": currency},
+        "incoterms": {"found": bool(incoterms), "value": incoterms},
+    }
+
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_llm:
+            debug["llm"] = {"skipped": True, "skipped_reason": "no_llm_configured"}
+        else:
+            import json as _json
+            from app.services.llm_client import get_llm_client, get_model
+
+            system_msg = "Извлеки реквизиты сторон из контракта/договора. Ответь ТОЛЬКО валидным JSON."
+            sliced_text = _smart_slice_contract(raw_text, max_chars=16000)
+            user_msg = f"""Извлеки из контракта/договора купли-продажи:
+- seller: {{name, address, country_code (2 буквы ISO), inn, kpp, ogrn}}
+- buyer: {{name, address, country_code, inn, kpp, ogrn}}
+- currency: ВАЛЮТА КОНТРАКТА (ISO 4217)
+- incoterms: код условий поставки
+- contract_number, contract_date (YYYY-MM-DD)
+
+Текст контракта:
+{sliced_text}
+
+JSON:"""
+            debug["llm"] = {
+                "skipped": False,
+                "prompt_system": system_msg,
+                "prompt_user": user_msg[:6000] + ("..." if len(user_msg) > 6000 else ""),
+                "model": get_model(),
+                "raw_text_chars": len(raw_text),
+                "sliced_text_chars": len(sliced_text),
+                "smart_slice_applied": len(raw_text) > 16000,
+            }
+
+            client = get_llm_client(operation="contract_llm_enrich")
+            t0 = _time.monotonic()
+            resp = client.chat.completions.create(
+                model=get_model(),
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+            )
+            debug["llm"]["duration_ms"] = int((_time.monotonic() - t0) * 1000)
+            raw_response = resp.choices[0].message.content or ""
+            debug["llm"]["raw_response"] = raw_response
+            debug["llm"]["sliced_text_sent_to_llm"] = sliced_text
+            if hasattr(resp, 'usage') and resp.usage:
+                debug["llm"]["tokens"] = {
+                    "prompt": resp.usage.prompt_tokens,
+                    "completion": resp.usage.completion_tokens,
+                }
+            text = strip_code_fences(raw_response)
+            data = _json.loads(text)
+            debug["llm"]["parsed"] = data
+    except Exception as e:
+        debug["llm"]["error"] = str(e)[:500]
+
+    merged = {
+        "contract_number": contract_number,
+        "contract_date": contract_date,
+        "seller_name": seller_name,
+        "buyer_name": buyer_name,
+        "currency": currency,
+        "incoterms": incoterms,
+    }
+    llm_parsed = debug.get("llm", {}).get("parsed", {})
+    if llm_parsed:
+        for field in ["contract_number", "contract_date", "currency", "incoterms"]:
+            if not merged.get(field) and llm_parsed.get(field):
+                merged[field] = llm_parsed[field]
+                merged[f"{field}_source"] = "llm"
+        if llm_parsed.get("seller"):
+            s = llm_parsed["seller"]
+            merged["seller_name"] = s.get("name") or merged.get("seller_name")
+            merged["seller_detail"] = s
+        if llm_parsed.get("buyer"):
+            b = llm_parsed["buyer"]
+            merged["buyer_name"] = b.get("name") or merged.get("buyer_name")
+            merged["buyer_detail"] = b
+    debug["merged"] = merged
+
+    return debug
