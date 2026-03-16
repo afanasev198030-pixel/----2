@@ -257,6 +257,7 @@ async def parse_debug(
             post_result["evidence_map"] = evidence_map
             post_result["issues"] = issues
 
+            calc_debug = post_result.pop("_calc_debug", {})
             compilation = {
                 "llm_compile": {
                     "duration_ms": llm_compile_ms,
@@ -274,6 +275,12 @@ async def parse_debug(
                     "total_sheets": post_result.get("total_sheets"),
                     "total_items_count": post_result.get("total_items_count"),
                     "total_amount": post_result.get("total_amount"),
+                    "exchange_rate": post_result.get("exchange_rate"),
+                    "exchange_rate_currency": post_result.get("exchange_rate_currency"),
+                    "total_customs_value": post_result.get("total_customs_value"),
+                    "total_statistical_value": post_result.get("total_statistical_value"),
+                    "preference_code": post_result.get("preference_code"),
+                    "freight_distribution": calc_debug.get("freight_distribution"),
                     "items_preview": [
                         {
                             "description": (it.get("description") or "")[:100],
@@ -281,6 +288,8 @@ async def parse_debug(
                             "gross_weight": it.get("gross_weight"),
                             "net_weight": it.get("net_weight"),
                             "line_total": it.get("line_total"),
+                            "customs_value_rub": it.get("customs_value_rub"),
+                            "statistical_value_usd": it.get("statistical_value_usd"),
                             "country_origin_code": it.get("country_origin_code"),
                         }
                         for it in (post_result.get("items") or [])[:10]

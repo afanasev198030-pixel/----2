@@ -145,8 +145,10 @@ services:
       - ./docs:/app/docs:ro
     depends_on:
       - core-api
+      - calc-service
     environment:
       CORE_API_URL: http://core-api:8001
+      CALC_SERVICE_URL: http://calc-service:8005
       # LLM Provider (DeepSeek default, OpenAI fallback)
       LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}

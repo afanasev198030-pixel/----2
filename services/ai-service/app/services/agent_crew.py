@@ -523,6 +523,69 @@ def _normalize_hs_code(raw) -> str:
     return code
 
 
+# ---------------------------------------------------------------------------
+# calc-service integration utilities
+# ---------------------------------------------------------------------------
+
+def _fetch_exchange_rates() -> dict:
+    """Fetch latest CBR exchange rates from calc-service.
+    Returns dict like {"USD": 92.54, "EUR": 100.12, "CNY": 12.87, ...}.
+    """
+    import httpx
+    from app.config import get_settings
+    url = f"{get_settings().CALC_SERVICE_URL}/api/v1/calc/exchange-rates/latest"
+    try:
+        resp = httpx.get(url, timeout=10)
+        resp.raise_for_status()
+        return resp.json().get("rates", {})
+    except Exception as e:
+        logger.warning("fetch_exchange_rates_failed", error=str(e)[:200])
+        return {}
+
+
+def _fetch_payments(items: list[dict], currency: str, exchange_rate: float) -> dict:
+    """Call calc-service to calculate customs payments (duty, VAT, excise, fees).
+    items: [{item_no, hs_code, customs_value_rub}, ...]
+    Returns calc-service response with items + totals.
+    """
+    import httpx
+    from app.config import get_settings
+    url = f"{get_settings().CALC_SERVICE_URL}/api/v1/calc/payments/calculate"
+    try:
+        resp = httpx.post(url, json={
+            "items": items,
+            "currency": currency,
+            "exchange_rate": exchange_rate,
+        }, timeout=15)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        logger.warning("fetch_payments_failed", error=str(e)[:200])
+        return {}
+
+
+def _determine_preference_code(
+    cert_type: str | None,
+    trade_agreement: str | None,
+) -> str:
+    """Determine 4-element preference code (gr. 36).
+    Elements: customs_fee - duty - excise - VAT.
+    Default: 'ОО' (no preference) or '-' (not established).
+    """
+    el1 = "ОО"  # customs fee always applies on import
+
+    # Duty: tariff preference if origin certificate exists
+    if cert_type in ("CT-1", "Form A", "EUR.1"):
+        el2 = "ТП"
+    else:
+        el2 = "ОО"
+
+    el3 = "-"   # excise: not established for most goods
+    el4 = "ОО"  # VAT: always applies
+
+    return f"{el1} {el2} {el3} {el4}"
+
+
 _DESTINATION_TO_POST: dict[str, tuple[str, str, str]] = {
     "SVO":  ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
     "SVO2": ("10005020", "Т/П Аэропорт Шереметьево (Грузовой)", "Московская обл., г.о. Химки, Аэропорт Шереметьево, Шереметьевское ш."),
@@ -1274,6 +1337,41 @@ JSON:"""},
                 item["hs_code"] = ""
                 item["hs_needs_review"] = True
                 item["hs_review_message"] = "Описание товара отсутствует."
+
+        # ── Step 6b: Payments calculation (after HS codes are known) ──
+        self._progress("payments", "Расчёт платежей (calc-service)...", 85)
+        exchange_rate = result.get("exchange_rate", 0.0)
+        currency = (result.get("currency") or "USD").upper()
+        items_with_hs = [it for it in items if it.get("hs_code")]
+
+        if items_with_hs and exchange_rate > 0:
+            pay_items = [{
+                "item_no": it.get("line_no") or (i + 1),
+                "hs_code": it["hs_code"],
+                "customs_value_rub": _safe_float(it.get("customs_value_rub")) or 0.0,
+            } for i, it in enumerate(items_with_hs)]
+
+            payments_data = _fetch_payments(pay_items, currency, exchange_rate)
+            if payments_data:
+                result["payments"] = payments_data.get("totals", {})
+                pay_items_resp = payments_data.get("items", [])
+                for pay_item in pay_items_resp:
+                    item_no = pay_item.get("item_no", 0)
+                    for it in items:
+                        if (it.get("line_no") or 0) == item_no or items.index(it) + 1 == item_no:
+                            it["duty"] = pay_item.get("duty", {})
+                            it["vat"] = pay_item.get("vat", {})
+                            it["excise"] = pay_item.get("excise", 0)
+                            break
+                logger.info("payments_calculated",
+                            total_duty=result["payments"].get("total_duty"),
+                            total_vat=result["payments"].get("total_vat"),
+                            customs_fee=result["payments"].get("customs_fee"))
+        else:
+            if not items_with_hs:
+                logger.warning("payments_skipped", reason="no items with HS codes")
+            elif exchange_rate <= 0:
+                logger.warning("payments_skipped", reason="no exchange rate")
 
         # ── Step 7: Risk assessment ──
         self._progress("risks", "Оценка рисков СУР...", 88)
@@ -2629,6 +2727,119 @@ JSON:"""
         total_invoice = sum(_safe_float(it.get("line_total")) or 0.0 for it in items)
         if total_invoice > 0 and not result.get("total_amount"):
             result["total_amount"] = round(total_invoice, 2)
+
+        # ── Exchange rate (гр. 23) ──
+        currency = (result.get("currency") or "").upper()
+        exchange_rate = 0.0
+        usd_rate = 0.0
+        calc_debug = {}
+        if currency and currency != "RUB":
+            rates = _fetch_exchange_rates()
+            exchange_rate = rates.get(currency, 0.0)
+            usd_rate = rates.get("USD", 0.0)
+            if exchange_rate > 0:
+                result["exchange_rate"] = round(exchange_rate, 4)
+                result["exchange_rate_currency"] = currency
+                calc_debug["exchange_rate"] = exchange_rate
+                calc_debug["usd_rate"] = usd_rate
+                logger.info("exchange_rate_fetched", currency=currency, rate=exchange_rate)
+            else:
+                logger.warning("exchange_rate_not_found", currency=currency)
+        elif currency == "RUB":
+            exchange_rate = 1.0
+            result["exchange_rate"] = 1.0
+            result["exchange_rate_currency"] = "RUB"
+
+        # ── Customs value (гр. 45) + freight distribution ──
+        freight_amount = _safe_float(result.get("freight_amount")) or 0.0
+        freight_currency = (result.get("freight_currency") or currency or "").upper()
+        freight_rub = 0.0
+
+        if freight_amount > 0 and exchange_rate > 0:
+            if freight_currency == currency:
+                freight_rub = freight_amount * exchange_rate
+            elif freight_currency == "RUB":
+                freight_rub = freight_amount
+            else:
+                rates = rates if 'rates' in dir() else _fetch_exchange_rates()
+                fr_rate = rates.get(freight_currency, exchange_rate)
+                freight_rub = freight_amount * fr_rate
+
+        if exchange_rate > 0 and items:
+            freight_distributed = []
+            for item in items:
+                line_total = _safe_float(item.get("line_total")) or 0.0
+                item_value_rub = line_total * exchange_rate
+
+                item_freight = 0.0
+                if freight_rub > 0 and total_gross > 0:
+                    item_gross = _safe_float(item.get("gross_weight")) or 0.0
+                    item_freight = freight_rub * (item_gross / total_gross) if item_gross > 0 else 0.0
+                    item_value_rub += item_freight
+
+                if item_value_rub > 0:
+                    item["customs_value_rub"] = round(item_value_rub, 2)
+                    freight_distributed.append({
+                        "description": (item.get("description") or "")[:60],
+                        "line_total_fcy": line_total,
+                        "line_total_rub": round(line_total * exchange_rate, 2),
+                        "freight_share_rub": round(item_freight, 2),
+                        "customs_value_rub": round(item_value_rub, 2),
+                    })
+
+            total_customs_value = sum(_safe_float(it.get("customs_value_rub")) or 0.0 for it in items)
+            if total_customs_value > 0:
+                result["total_customs_value"] = round(total_customs_value, 2)
+
+            calc_debug["freight_rub"] = round(freight_rub, 2) if freight_rub > 0 else 0
+            calc_debug["freight_distribution"] = freight_distributed
+            calc_debug["total_customs_value"] = round(total_customs_value, 2)
+
+            # ── Statistical value (гр. 46) ──
+            if usd_rate <= 0 and currency != "USD":
+                rates = _fetch_exchange_rates() if 'rates' not in dir() else rates
+                usd_rate = rates.get("USD", 0.0)
+            elif currency == "USD":
+                usd_rate = exchange_rate
+
+            if usd_rate > 0:
+                for item in items:
+                    cv = _safe_float(item.get("customs_value_rub")) or 0.0
+                    if cv > 0:
+                        item["statistical_value_usd"] = round(cv / usd_rate, 2)
+
+                total_stat = sum(_safe_float(it.get("statistical_value_usd")) or 0.0 for it in items)
+                if total_stat > 0:
+                    result["total_statistical_value"] = round(total_stat, 2)
+                calc_debug["total_statistical_value"] = round(total_stat, 2) if total_stat > 0 else 0
+
+            logger.info("customs_values_calculated",
+                        total_customs_value=result.get("total_customs_value"),
+                        total_statistical_value=result.get("total_statistical_value"))
+
+        # ── Preference code (гр. 36) ──
+        origin_cert = parsed_docs.get("origin_certificate")
+        cert_type = None
+        trade_agreement = None
+        if origin_cert and isinstance(origin_cert, dict):
+            cert_type = origin_cert.get("certificate_type")
+            trade_agreement = origin_cert.get("trade_agreement")
+
+        preference_code = _determine_preference_code(cert_type, trade_agreement)
+        result["preference_code"] = preference_code
+        calc_debug["preference_code"] = preference_code
+        calc_debug["origin_certificate_type"] = cert_type
+
+        issues = result.get("issues") or []
+        issues.append({
+            "id": "preference_check",
+            "severity": "warning",
+            "graph": 36,
+            "message": "Проверьте преференции (гр.36). Коды определены по умолчанию.",
+        })
+        result["issues"] = issues
+
+        result["_calc_debug"] = calc_debug
 
         # ── Sheet count (гр. 3) ──
         n_items = len(items)

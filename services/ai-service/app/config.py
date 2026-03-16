@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     # Core API
     CORE_API_URL: str = "http://core-api:8001"
 
+    # Calc service (exchange rates, payments)
+    CALC_SERVICE_URL: str = "http://calc-service:8005"
+
     # Service
     SERVICE_NAME: str = "ai-service"
     LOG_LEVEL: str = "INFO"
