@@ -121,30 +121,33 @@ async def configure_ai(data: dict):
     from app.config import get_settings
     import os
 
-    # Accept both new and legacy keys
     api_key = data.get("api_key") or data.get("openai_api_key", "")
     model = data.get("model") or data.get("openai_model", "")
     base_url = data.get("base_url", "")
     provider = (data.get("provider") or os.environ.get("LLM_PROVIDER", "deepseek")).lower()
+    project_id = data.get("project_id", "")
 
-    # Не отправлять gpt-4o в DeepSeek — подставить deepseek-chat
     if provider == "deepseek" and (not model or model.startswith("gpt-")):
         model = "deepseek-chat"
     if not model:
-        model = "deepseek-chat" if provider == "deepseek" else "gpt-4o"
+        model_defaults = {"deepseek": "deepseek-chat", "cloud_ru": "openai/gpt-oss-120b"}
+        model = model_defaults.get(provider, "gpt-4o")
     if not base_url:
-        base_url = "https://api.deepseek.com" if provider == "deepseek" else "https://api.openai.com/v1"
+        url_defaults = {"deepseek": "https://api.deepseek.com", "cloud_ru": "https://foundation-models.api.cloud.ru/v1"}
+        base_url = url_defaults.get(provider, "https://api.openai.com/v1")
 
     if api_key:
         os.environ["LLM_API_KEY"] = api_key
-        os.environ["OPENAI_API_KEY"] = api_key  # backward compat
+        os.environ["OPENAI_API_KEY"] = api_key
     if model:
         os.environ["LLM_MODEL"] = model
-        os.environ["OPENAI_MODEL"] = model  # backward compat
+        os.environ["OPENAI_MODEL"] = model
     if base_url:
         os.environ["LLM_BASE_URL"] = base_url
     if provider:
         os.environ["LLM_PROVIDER"] = provider
+    if project_id:
+        os.environ["LLM_PROJECT_ID"] = project_id
 
     # Clear cached settings so new env vars take effect
     get_settings.cache_clear()
@@ -208,6 +211,7 @@ async def startup_event():
             db_provider = db_settings.get("llm_provider", "")
             db_base_url = db_settings.get("llm_base_url", "")
             db_model = db_settings.get("openai_model", "")
+            db_project_id = db_settings.get("llm_project_id", "")
             if db_key and db_key != "sk-your-key-here":
                 os.environ["LLM_API_KEY"] = db_key
                 os.environ["OPENAI_API_KEY"] = db_key
@@ -218,6 +222,8 @@ async def startup_event():
                 if db_model:
                     os.environ["LLM_MODEL"] = db_model
                     os.environ["OPENAI_MODEL"] = db_model
+                if db_project_id:
+                    os.environ["LLM_PROJECT_ID"] = db_project_id
                 get_settings.cache_clear()
                 logger.info("llm_key_loaded_from_db", provider=db_provider, model=db_model,
                             base_url=db_base_url[:30] if db_base_url else "", key_prefix=db_key[:8] + "...")

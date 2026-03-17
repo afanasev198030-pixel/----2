@@ -314,16 +314,11 @@ async def get_declaration(
             detail="Declaration not found",
         )
     
-    # Check company access
-    if current_user.company_id and declaration.company_id != current_user.company_id:
+    accessible = await get_accessible_company_ids(current_user, db)
+    if declaration.company_id not in accessible:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
-        )
-    if not current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be associated with a company",
         )
     
     return DeclarationResponse.model_validate(declaration)
@@ -349,16 +344,11 @@ async def update_declaration(
             detail="Declaration not found",
         )
     
-    # Check company access
-    if current_user.company_id and declaration.company_id != current_user.company_id:
+    accessible = await get_accessible_company_ids(current_user, db)
+    if declaration.company_id not in accessible:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
-        )
-    if not current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be associated with a company",
         )
     
     # Check status
@@ -488,16 +478,11 @@ async def delete_declaration(
             detail="Declaration not found",
         )
     
-    # Check company access
-    if current_user.company_id and declaration.company_id != current_user.company_id:
+    accessible = await get_accessible_company_ids(current_user, db)
+    if declaration.company_id not in accessible:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
-        )
-    if not current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be associated with a company",
         )
     
     # Check status
@@ -564,16 +549,11 @@ async def duplicate_declaration(
             detail="Declaration not found",
         )
     
-    # Check company access
-    if current_user.company_id and original.company_id != current_user.company_id:
+    accessible = await get_accessible_company_ids(current_user, db)
+    if original.company_id not in accessible:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
-        )
-    if not current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be associated with a company",
         )
     
     # Create new declaration (copy all fields except id, status, timestamps)

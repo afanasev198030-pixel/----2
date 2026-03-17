@@ -16,12 +16,13 @@ class Settings(BaseSettings):
     SERVICE_NAME: str = "ai-service"
     LOG_LEVEL: str = "INFO"
 
-    # LLM Provider settings (DeepSeek as default, OpenAI as fallback)
-    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, custom
+    # LLM Provider settings (DeepSeek as default, OpenAI/Cloud.ru as alternatives)
+    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, custom
     LLM_BASE_URL: str = "https://api.deepseek.com"  # DeepSeek API endpoint
     LLM_API_KEY: str = ""  # Primary API key
     LLM_MODEL: str = "deepseek-chat"  # Default: DeepSeek V3
     LLM_REASONING_MODEL: str = "deepseek-reasoner"  # DeepSeek R1 for complex tasks
+    LLM_PROJECT_ID: str = ""  # Cloud.ru x-project-id header (optional)
     EMBED_PROVIDER: str = "local"  # local (onnxruntime), openai
 
     # Legacy OpenAI (backward compatibility)
@@ -63,6 +64,8 @@ class Settings(BaseSettings):
             return self.LLM_BASE_URL
         if self.LLM_PROVIDER == "openai":
             return "https://api.openai.com/v1"
+        if self.LLM_PROVIDER == "cloud_ru":
+            return "https://foundation-models.api.cloud.ru/v1"
         return "https://api.deepseek.com"
 
     @property

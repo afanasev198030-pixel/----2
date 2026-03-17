@@ -59,6 +59,7 @@ const SettingsPage = () => {
   const [showKey, setShowKey] = useState(false);
   const [provider, setProvider] = useState('deepseek');
   const [baseUrl, setBaseUrl] = useState('');
+  const [projectId, setProjectId] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error' | 'warning' | 'info'; text: string } | null>(null);
   const [settings, setSettings] = useState<SystemSettings | null>(null);
@@ -120,17 +121,20 @@ const SettingsPage = () => {
 
   const handleSaveKey = async () => {
     if (!apiKey.trim()) { setMessage({ type: 'error', text: 'Введите API ключ' }); return; }
-    if (!apiKey.startsWith('sk-')) { setMessage({ type: 'error', text: 'API ключ должен начинаться с "sk-"' }); return; }
     setSaving(true);
     setMessage(null);
     try {
+      const baseUrlMap: Record<string, string | undefined> = {
+        deepseek: 'https://api.deepseek.com',
+        cloud_ru: 'https://foundation-models.api.cloud.ru/v1',
+        custom: baseUrl || undefined,
+      };
       const resp = await client.post('/settings/openai-key', {
         key: 'openai_api_key',
         value: apiKey,
         provider: provider,
-        base_url: provider === 'deepseek' ? 'https://api.deepseek.com'
-                 : provider === 'custom' ? baseUrl
-                 : undefined,
+        base_url: baseUrlMap[provider],
+        project_id: provider === 'cloud_ru' ? projectId : undefined,
       });
       if (resp.data.status === 'saved') {
         const check = resp.data.ai_check || {};
@@ -737,11 +741,20 @@ const SettingsPage = () => {
           >
             <option value="deepseek">DeepSeek (рекомендуется)</option>
             <option value="openai">OpenAI</option>
+            <option value="cloud_ru">Cloud.ru (Foundation Models)</option>
             <option value="custom">Custom (свой URL)</option>
           </TextField>
         </Box>
 
-        {/* Show base URL for custom provider */}
+        {provider === 'cloud_ru' && (
+          <TextField
+            fullWidth label="Project ID" placeholder="ID проекта Cloud.ru"
+            value={projectId} onChange={(e) => setProjectId(e.target.value)}
+            size="small" sx={{ mb: 2 }}
+            helperText="Необязательное поле. ID проекта из личного кабинета Cloud.ru"
+          />
+        )}
+
         {provider === 'custom' && (
           <TextField
             fullWidth label="Base URL" placeholder="https://api.example.com/v1"
@@ -757,7 +770,7 @@ const SettingsPage = () => {
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
           <TextField
             fullWidth label="API Key"
-            placeholder={provider === 'deepseek' ? 'sk-...' : 'sk-...'}
+            placeholder={provider === 'cloud_ru' ? 'Bearer-токен Cloud.ru' : 'sk-...'}
             value={apiKey} onChange={(e) => setApiKey(e.target.value)}
             type={showKey ? 'text' : 'password'} size="small"
             InputProps={{
@@ -783,8 +796,11 @@ const SettingsPage = () => {
         <Typography variant="h6" sx={{ mb: 2 }}>Модель LLM</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 200 }} SelectProps={{ native: true }}>
+            <optgroup label="Cloud.ru">
+              <option value="openai/gpt-oss-120b">GPT-OSS 120B (Cloud.ru)</option>
+            </optgroup>
             <optgroup label="OpenAI">
-              <option value="gpt-4.1">GPT-4.1 (рекомендуется)</option>
+              <option value="gpt-4.1">GPT-4.1</option>
               <option value="gpt-4.1-mini">GPT-4.1 Mini (быстрее)</option>
               <option value="gpt-4.1-nano">GPT-4.1 Nano (дешёвый)</option>
               <option value="gpt-4o">GPT-4o (legacy)</option>

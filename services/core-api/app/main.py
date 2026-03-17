@@ -63,7 +63,8 @@ async def startup_event():
 
         async with async_sessionmaker() as session:
             rows = await session.execute(text(
-                "SELECT key, value FROM core.system_settings WHERE key IN ('openai_api_key', 'llm_api_key', 'llm_provider', 'llm_model', 'openai_model', 'llm_base_url')"
+                "SELECT key, value FROM core.system_settings WHERE key IN "
+                "('openai_api_key', 'llm_api_key', 'llm_provider', 'llm_model', 'openai_model', 'llm_base_url', 'llm_project_id')"
             ))
             settings_map = {r[0]: r[1] for r in rows.fetchall() if r[1]}
             api_key = (settings_map.get("openai_api_key") or settings_map.get("llm_api_key") or "").strip()
@@ -71,12 +72,15 @@ async def startup_event():
                 logger.info("no_openai_key_in_db")
             else:
                 provider = settings_map.get("llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
-                model = settings_map.get("llm_model") or settings_map.get("openai_model") or (None if provider == "deepseek" else "gpt-4o")
+                model = settings_map.get("llm_model") or settings_map.get("openai_model") or ""
                 base_url = settings_map.get("llm_base_url") or ""
+                project_id = settings_map.get("llm_project_id") or ""
+                model_defaults = {"deepseek": "deepseek-chat", "cloud_ru": "openai/gpt-oss-120b"}
                 if not model:
-                    model = "deepseek-chat" if provider == "deepseek" else "gpt-4o"
+                    model = model_defaults.get(provider, "gpt-4o")
+                url_defaults = {"deepseek": "https://api.deepseek.com", "cloud_ru": "https://foundation-models.api.cloud.ru/v1"}
                 if not base_url:
-                    base_url = "https://api.deepseek.com" if provider == "deepseek" else "https://api.openai.com/v1"
+                    base_url = url_defaults.get(provider, "https://api.openai.com/v1")
                 logger.info("openai_key_loaded_from_db", key_prefix=api_key[:8] + "...", provider=provider, model=model)
                 ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
                 async with httpx.AsyncClient(timeout=15) as client:
@@ -89,6 +93,7 @@ async def startup_event():
                             "model": model,
                             "provider": provider,
                             "base_url": base_url,
+                            "project_id": project_id,
                         },
                     )
                     logger.info("openai_key_sent_to_ai_service", provider=provider, model=model)

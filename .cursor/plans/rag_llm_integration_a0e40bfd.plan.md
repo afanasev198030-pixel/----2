@@ -205,7 +205,7 @@ CORTEX_MEMORY_URL=http://cortex:8080  # Фаза 5
 
 #### 2.2. LlamaIndex — RAG ядро
 
-**Новый файл: `services/ai-service/app/services/index_manager.py**`
+**Новый файл: `services/ai-service/app/services/index_manager.py`**
 
 Заменяет: `vector_store.py`, `rag_classifier.py`, `rag_risk.py`
 
@@ -231,7 +231,7 @@ IndexManager:
 - Response synthesizer для обоснования выбора кода ТН ВЭД
 - `SubQuestionQueryEngine` для сложных запросов (код + правила + прецеденты одновременно)
 
-**Новый файл: `services/ai-service/app/seeds/init_indices.py**`
+**Новый файл: `services/ai-service/app/seeds/init_indices.py`**
 
 ```python
 # Загрузка данных при первом старте:
@@ -248,7 +248,7 @@ IndexManager:
 
 #### 2.3. DSPy — автооптимизация промптов
 
-**Новый файл: `services/ai-service/app/services/dspy_modules.py**`
+**Новый файл: `services/ai-service/app/services/dspy_modules.py`**
 
 Заменяет: ручные промпты в `llm_parser.py`
 
@@ -283,7 +283,7 @@ class PackingExtractor(dspy.Module):
 - DSPy.MIPRO — оптимизация промптов по метрике (accuracy кода ТН ВЭД)
 - Промпты улучшаются автоматически при накоплении данных (self-learning)
 
-**Новый файл: `services/ai-service/app/services/dspy_optimizer.py**`
+**Новый файл: `services/ai-service/app/services/dspy_optimizer.py`**
 
 ```python
 # Оптимизация промптов:
@@ -300,7 +300,7 @@ class PackingExtractor(dspy.Module):
 
 #### 2.4. CrewAI — мультиагентная оркестрация
 
-**Новый файл: `services/ai-service/app/services/agent_crew.py**`
+**Новый файл: `services/ai-service/app/services/agent_crew.py`**
 
 Заменяет: линейный pipeline в `smart_parser.py`
 
@@ -354,7 +354,7 @@ class DeclarationCrew:
 
 #### 2.5. Arize-Phoenix — LLM Observability
 
-**Новый файл: `services/ai-service/app/services/observability.py**`
+**Новый файл: `services/ai-service/app/services/observability.py`**
 
 ```python
 # Интеграция Phoenix для трейсинга:
@@ -376,7 +376,7 @@ class DeclarationCrew:
 
 #### 2.6. Smart Parser Router (обновлённый)
 
-**Обновлённый файл: `services/ai-service/app/routers/smart_parser.py**`
+**Обновлённый файл: `services/ai-service/app/routers/smart_parser.py`**
 
 ```
 POST /api/v1/ai/parse-smart
