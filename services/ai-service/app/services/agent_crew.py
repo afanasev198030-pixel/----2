@@ -2248,7 +2248,34 @@ JSON:"""},
             "китай", "гонконг", "тайвань", "корея", "япония",
             "индия", "турция", "германия", "италия", "россия",
         }
-        transport_departure = transport.get("departure_airport") or ""
+        _DEST_CITIES_RU = {
+            "moscow", "москва", "svo", "dme", "vko", "zia",
+            "saint-petersburg", "санкт-петербург", "led", "пулково",
+            "novosibirsk", "новосибирск", "ovb",
+            "vladivostok", "владивосток", "vvo",
+            "ekaterinburg", "екатеринбург", "svx",
+            "kazan", "казань", "kzn",
+            "krasnodar", "краснодар", "krr",
+        }
+        _SELLER_TERMS = {"EXW", "FCA", "FAS", "FOB"}
+
+        _IATA_CITY = {
+            "HKG": "HONG KONG", "SZX": "SHENZHEN", "PVG": "SHANGHAI",
+            "SHA": "SHANGHAI", "CAN": "GUANGZHOU", "PEK": "BEIJING",
+            "PKX": "BEIJING", "CTU": "CHENGDU", "CKG": "CHONGQING",
+            "WUH": "WUHAN", "NKG": "NANJING", "HGH": "HANGZHOU",
+            "XMN": "XIAMEN", "TAO": "QINGDAO", "DLC": "DALIAN",
+            "TSN": "TIANJIN", "SJW": "SHIJIAZHUANG", "TNA": "JINAN",
+            "ICN": "SEOUL", "NRT": "TOKYO", "TPE": "TAIPEI",
+            "SGN": "HO CHI MINH", "BKK": "BANGKOK", "SIN": "SINGAPORE",
+            "IST": "ISTANBUL", "FRA": "FRANKFURT", "DEL": "NEW DELHI",
+        }
+
+        transport_departure = transport.get("departure_airport") or transport.get("departure_point") or ""
+        if transport_departure:
+            transport_departure = _IATA_CITY.get(transport_departure.strip().upper(), transport_departure)
+        _cur_inco = (inco_val or "").upper().strip()
+
         if delivery_place_val and delivery_place_val.strip().lower() in _COUNTRY_ONLY_NAMES:
             if transport_departure:
                 logger.info("delivery_place_refined_by_transport",
@@ -2258,6 +2285,17 @@ JSON:"""},
                                 f"только страна, уточнено пунктом отправления "
                                 f"из транспортного документа: '{transport_departure}'.")
                 delivery_place_val = transport_departure
+        elif (delivery_place_val and _cur_inco in _SELLER_TERMS
+              and delivery_place_val.strip().lower() in _DEST_CITIES_RU):
+            logger.warning("delivery_place_is_destination_city",
+                           incoterms=_cur_inco, wrong_place=delivery_place_val,
+                           transport_departure=transport_departure or None,
+                           msg=f"Графа 20: для {_cur_inco} место поставки — город ПРОДАВЦА, "
+                               f"а не назначения ('{delivery_place_val}')")
+            if transport_departure:
+                delivery_place_val = transport_departure
+            else:
+                delivery_place_val = None
         elif not delivery_place_val and transport_departure:
             delivery_place_val = transport_departure
             logger.info("delivery_place_from_transport",
@@ -2773,7 +2811,12 @@ JSON:"""},
             "- Если одно и то же поле содержит разные значения в разных документах, выбери значение "
             "из источника с ВЫСШИМ приоритетом (контракт > инвойс > упаковочный лист > транспортная накладная).\n"
             "- Добавь конфликт в issues[] с описанием: какие значения в каких документах.\n"
-            "- Формат issue: {\"id\": \"conflict_<field>\", \"severity\": \"warning\", \"message\": \"описание\"}"
+            "- Формат issue: {\"id\": \"conflict_<field>\", \"severity\": \"warning\", \"message\": \"описание\"}\n\n"
+            "ГРАФА 20 (УСЛОВИЯ ПОСТАВКИ):\n"
+            "- incoterms: ВСЕГДА указывай 3-буквенный код (EXW, FOB, CIF, FCA и т.д.)\n"
+            "- delivery_place: город, написанный ПОСЛЕ кода Инкотермс в спецификации или контракте.\n"
+            "  Для EXW/FCA/FOB/FAS — это город ПРОДАВЦА (отправления), НЕ город получателя.\n"
+            "  Пример: если в спецификации написано 'EXW Hongkong', incoterms='EXW', delivery_place='Hongkong'."
         )
 
         user_prompt = f"""=== ИЗВЛЕЧЁННЫЕ ДАННЫЕ ИЗ ДОКУМЕНТОВ ===
@@ -2809,8 +2852,8 @@ JSON:"""},
   "transport_vehicle_departure": "рег.номер/рейс/судно (гр.18)",
   "transport_vehicle_departure_country": "ISO2 или 00/99 (гр.18)",
   "container": true/false,
-  "incoterms": "код Инкотермс (гр.20)",
-  "delivery_place": "пункт поставки (гр.20)",
+  "incoterms": "3-буквенный код Инкотермс (гр.20): EXW/FCA/FOB/CIF и т.д.",
+  "delivery_place": "город поставки из спецификации или контракта (гр.20)",
   "transport_vehicle_border": "рейс/номер/судно (гр.21)",
   "transport_vehicle_border_country": "ISO2 или 00/99 (гр.21)",
   "currency": "ISO4217 (гр.22) — ТОЛЬКО из контракта",
@@ -3174,19 +3217,79 @@ JSON:"""
             "китай", "гонконг", "тайвань", "корея", "япония",
             "индия", "турция", "германия", "италия", "россия",
         }
+
+        _DESTINATION_CITIES_RU = {
+            "moscow", "москва", "svo", "dme", "vko", "zia",
+            "saint-petersburg", "санкт-петербург", "led", "пулково",
+            "novosibirsk", "новосибирск", "ovb",
+            "vladivostok", "владивосток", "vvo",
+            "ekaterinburg", "екатеринбург", "svx",
+            "kazan", "казань", "kzn",
+            "krasnodar", "краснодар", "krr",
+        }
+
+        _SELLER_TERMS = {"EXW", "FCA", "FAS", "FOB"}
+
+        _IATA_TO_CITY = {
+            "HKG": "HONG KONG", "SZX": "SHENZHEN", "PVG": "SHANGHAI",
+            "SHA": "SHANGHAI", "CAN": "GUANGZHOU", "PEK": "BEIJING",
+            "PKX": "BEIJING", "CTU": "CHENGDU", "CKG": "CHONGQING",
+            "WUH": "WUHAN", "NKG": "NANJING", "HGH": "HANGZHOU",
+            "XMN": "XIAMEN", "TAO": "QINGDAO", "DLC": "DALIAN",
+            "TSN": "TIANJIN", "SJW": "SHIJIAZHUANG", "TNA": "JINAN",
+            "CGO": "ZHENGZHOU", "CSX": "CHANGSHA", "KMG": "KUNMING",
+            "ICN": "SEOUL", "NRT": "TOKYO", "KIX": "OSAKA",
+            "TPE": "TAIPEI", "SGN": "HO CHI MINH", "HAN": "HANOI",
+            "BKK": "BANGKOK", "SIN": "SINGAPORE", "KUL": "KUALA LUMPUR",
+            "CGK": "JAKARTA", "DEL": "NEW DELHI", "BOM": "MUMBAI",
+            "IST": "ISTANBUL", "FRA": "FRANKFURT", "AMS": "AMSTERDAM",
+            "MIL": "MILAN", "MXP": "MILAN", "CDG": "PARIS",
+            "LHR": "LONDON", "MAD": "MADRID", "BCN": "BARCELONA",
+        }
+
+        def _resolve_iata(val: str) -> str:
+            """Convert IATA code to city name if applicable."""
+            upper = val.strip().upper()
+            return _IATA_TO_CITY.get(upper, val)
+
         transport_departure = (
             (transport_d.get("departure_airport") if transport_d else None)
             or (transport_d.get("departure_point") if transport_d else None)
             or ""
         )
+        if transport_departure:
+            transport_departure = _resolve_iata(transport_departure)
+
+        inco_code = (result.get("incoterms") or "").upper().strip()
+
         if dp_val and dp_val.strip().lower() in _COUNTRY_ONLY and transport_departure:
             logger.info("delivery_place_refined", original=dp_val, refined=transport_departure)
             dp_val = transport_departure
+        elif dp_val and inco_code in _SELLER_TERMS and dp_val.strip().lower() in _DESTINATION_CITIES_RU:
+            logger.warning("delivery_place_is_destination",
+                           incoterms=inco_code, wrong_place=dp_val,
+                           transport_departure=transport_departure or None,
+                           msg=f"Графа 20: для {inco_code} место поставки должно быть "
+                               f"городом ПРОДАВЦА, а не назначения ('{dp_val}')")
+            if transport_departure:
+                dp_val = transport_departure
+            else:
+                dp_val = None
         elif not dp_val and transport_departure:
             dp_val = transport_departure
 
         if dp_val:
+            dp_val = _resolve_iata(dp_val)
             result["delivery_place"] = dp_val
+        elif result.get("delivery_place") and inco_code in _SELLER_TERMS:
+            llm_dp = result["delivery_place"].strip().lower()
+            if llm_dp in _DESTINATION_CITIES_RU:
+                logger.warning("delivery_place_llm_destination_removed",
+                               incoterms=inco_code,
+                               removed=result["delivery_place"],
+                               msg=f"LLM указал '{result['delivery_place']}' как пункт поставки "
+                                   f"для {inco_code} — это город назначения, удалён")
+                result.pop("delivery_place", None)
 
         if result.get("incoterms"):
             logger.info("incoterms_postprocess",
@@ -3493,7 +3596,7 @@ JSON:"""
   "country_destination": "гр.17: ISO2 страна назначения",
   "container": true/false (гр.19),
   "incoterms": "гр.20: код Инкотермс (3 буквы: EXW/FCA/FOB/CIF и т.д.)",
-  "delivery_place": "гр.20: географический пункт поставки (город/порт, например Shanghai или Москва)",
+  "delivery_place": "гр.20: город поставки из спецификации или контракта",
   "transport_id": "гр.21: номера/названия ТС через ;",
   "transport_country": "гр.21: ISO2 страна регистрации ТС или 00/99",
   "currency": "гр.22: ISO 4217 валюта",
