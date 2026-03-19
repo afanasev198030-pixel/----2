@@ -246,9 +246,70 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                     <TableCell sx={{ fontWeight: 600 }}>Сумма инвойса (гр.22)</TableCell>
                     <TableCell>{compilation.post_process.total_amount ?? '—'}</TableCell>
                   </TableRow>
+                  {compilation.post_process.exchange_rate != null && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Курс ЦБ (гр.23)</TableCell>
+                      <TableCell>
+                        {compilation.post_process.exchange_rate}{' '}
+                        <Chip label={compilation.post_process.exchange_rate_currency || '—'} size="small" variant="outlined" />
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {compilation.post_process.total_customs_value != null && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Таможенная стоимость (гр.45)</TableCell>
+                      <TableCell>{compilation.post_process.total_customs_value?.toLocaleString('ru-RU')} руб.</TableCell>
+                    </TableRow>
+                  )}
+                  {compilation.post_process.total_statistical_value != null && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Статист. стоимость (гр.46)</TableCell>
+                      <TableCell>{compilation.post_process.total_statistical_value?.toLocaleString('ru-RU')} USD</TableCell>
+                    </TableRow>
+                  )}
+                  {compilation.post_process.preference_code && (
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Преференции (гр.36)</TableCell>
+                      <TableCell><code>{compilation.post_process.preference_code}</code></TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
+
+            {compilation.post_process.freight_distribution && compilation.post_process.freight_distribution.length > 0 && (
+              <Accordion sx={{ mt: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="body2">Распределение фрахта</Typography>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Товар</TableCell>
+                          <TableCell align="right">Сумма (вал.)</TableCell>
+                          <TableCell align="right">Сумма (руб.)</TableCell>
+                          <TableCell align="right">Фрахт (руб.)</TableCell>
+                          <TableCell align="right">ТС (руб.)</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {compilation.post_process.freight_distribution.map((fd, i) => (
+                          <TableRow key={i}>
+                            <TableCell sx={{ maxWidth: 200, wordBreak: 'break-word' }}>{fd.description || '—'}</TableCell>
+                            <TableCell align="right">{fd.line_total_fcy?.toLocaleString('ru-RU') ?? '—'}</TableCell>
+                            <TableCell align="right">{fd.line_total_rub?.toLocaleString('ru-RU') ?? '—'}</TableCell>
+                            <TableCell align="right">{fd.freight_share_rub?.toLocaleString('ru-RU') ?? '—'}</TableCell>
+                            <TableCell align="right">{fd.customs_value_rub?.toLocaleString('ru-RU') ?? '—'}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </AccordionDetails>
+              </Accordion>
+            )}
 
             {compilation.post_process.items_preview && compilation.post_process.items_preview.length > 0 && (
               <Accordion sx={{ mt: 1 }}>
@@ -264,22 +325,26 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                         <TableRow>
                           <TableCell>Описание</TableCell>
                           <TableCell>HS</TableCell>
-                          <TableCell>Брутто</TableCell>
-                          <TableCell>Нетто</TableCell>
-                          <TableCell>Сумма</TableCell>
+                          <TableCell align="right">Брутто</TableCell>
+                          <TableCell align="right">Нетто</TableCell>
+                          <TableCell align="right">Сумма</TableCell>
+                          <TableCell align="right">ТС (руб.)</TableCell>
+                          <TableCell align="right">Стат. (USD)</TableCell>
                           <TableCell>Страна</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
                         {compilation.post_process.items_preview.map((it, i) => (
                           <TableRow key={i}>
-                            <TableCell sx={{ maxWidth: 250, wordBreak: 'break-word' }}>
+                            <TableCell sx={{ maxWidth: 200, wordBreak: 'break-word' }}>
                               {it.description || '—'}
                             </TableCell>
                             <TableCell><code>{it.hs_code || '—'}</code></TableCell>
-                            <TableCell>{it.gross_weight ?? '—'}</TableCell>
-                            <TableCell>{it.net_weight ?? '—'}</TableCell>
-                            <TableCell>{it.line_total ?? '—'}</TableCell>
+                            <TableCell align="right">{it.gross_weight ?? '—'}</TableCell>
+                            <TableCell align="right">{it.net_weight ?? '—'}</TableCell>
+                            <TableCell align="right">{it.line_total ?? '—'}</TableCell>
+                            <TableCell align="right">{it.customs_value_rub?.toLocaleString('ru-RU') ?? '—'}</TableCell>
+                            <TableCell align="right">{it.statistical_value_usd?.toLocaleString('ru-RU') ?? '—'}</TableCell>
                             <TableCell>{it.country_origin_code || '—'}</TableCell>
                           </TableRow>
                         ))}

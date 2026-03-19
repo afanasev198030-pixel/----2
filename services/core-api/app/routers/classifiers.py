@@ -55,6 +55,46 @@ async def list_classifiers(
     return [ClassifierResponse.model_validate(c) for c in classifiers]
 
 
+@router.get("/internal", include_in_schema=False)
+async def classifiers_internal(
+    classifier_type: str = Query(
+        ...,
+        description="Comma-separated classifier types: country,currency,transport_type,...",
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    """Internal endpoint for ai-service — no auth.
+
+    Returns all active classifiers for the requested types as a compact dict
+    keyed by classifier_type.
+    """
+    types = [t.strip() for t in classifier_type.split(",") if t.strip()]
+    if not types:
+        return {}
+
+    query = (
+        select(Classifier)
+        .where(
+            Classifier.classifier_type.in_(types),
+            Classifier.is_active == True,
+        )
+        .order_by(Classifier.classifier_type, Classifier.code)
+    )
+    result = await db.execute(query)
+    rows = result.scalars().all()
+
+    grouped: dict[str, list[dict]] = {}
+    for row in rows:
+        grouped.setdefault(row.classifier_type, []).append({
+            "code": row.code,
+            "name_ru": row.name_ru or "",
+            "name_en": row.name_en or "",
+            "parent_code": row.parent_code,
+        })
+
+    return grouped
+
+
 @router.get("/hs-duty-rate")
 async def get_hs_duty_rate(
     code: str = Query(..., min_length=2, max_length=10),

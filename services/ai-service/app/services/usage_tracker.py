@@ -31,6 +31,7 @@ PRICING_PER_M = {
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "deepseek-chat": {"input": 0.27, "output": 1.10},
     "deepseek-reasoner": {"input": 0.55, "output": 2.19},
+    "openai/gpt-oss-120b": {"input": 0.039, "output": 0.100},
 }
 
 

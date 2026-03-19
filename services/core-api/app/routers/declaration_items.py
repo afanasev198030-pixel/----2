@@ -7,6 +7,7 @@ import structlog
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
+from app.middleware.company_filter import get_accessible_company_ids
 from app.models import Declaration, DeclarationItem, DeclarationStatus, User
 from app.models.hs_code_history import HsCodeHistory
 from app.schemas import (
@@ -102,16 +103,11 @@ async def get_declaration_or_404(
             detail="Declaration not found",
         )
     
-    # Check company access
-    if current_user.company_id and declaration.company_id != current_user.company_id:
+    accessible = await get_accessible_company_ids(current_user, db)
+    if declaration.company_id not in accessible:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
-        )
-    if not current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be associated with a company",
         )
     
     return declaration

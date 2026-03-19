@@ -816,7 +816,8 @@ def configure_dspy(api_key: str = None, model: str = None, base_url: str = None)
 
         from app.services.usage_tracker import DSPYUsageBridge
 
-        lm = dspy.LM(f"openai/{mdl}", api_key=key, api_base=url)
+        dspy_model = mdl if "/" in mdl else f"openai/{mdl}"
+        lm = dspy.LM(dspy_model, api_key=key, api_base=url)
         # DSPy context is safer than global configure in async environments
         dspy.settings.configure(lm=lm, usage_tracker=DSPYUsageBridge())
         logger.info("dspy_configured", model=mdl, provider=settings.LLM_PROVIDER, base_url=url)

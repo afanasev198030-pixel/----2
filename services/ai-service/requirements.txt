@@ -17,6 +17,9 @@ tiktoken>=0.7.0,<1.0
 openpyxl>=3.1.0
 xlrd>=2.0.1
 
+# DOCX parsing
+python-docx>=1.1.0
+
 # ChromaDB client + default embedding deps
 chromadb-client>=1.0.0,<2.0
 onnxruntime>=1.17.0

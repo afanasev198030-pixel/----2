@@ -30,7 +30,7 @@ def hs_code_match(example, prediction, trace=None) -> bool:
     return predicted == expected or predicted[:4] == expected[:4]
 
 
-def optimize_hs_classifier(examples: list[dict], model: str = "gpt-4o") -> Optional[str]:
+def optimize_hs_classifier(examples: list[dict], model: str = None) -> Optional[str]:
     """Оптимизировать HSCodeClassifier на примерах.
 
     Args:
@@ -72,7 +72,7 @@ def optimize_hs_classifier(examples: list[dict], model: str = "gpt-4o") -> Optio
         return None
 
 
-def optimize_invoice_extractor(examples: list[dict], model: str = "gpt-4o") -> Optional[str]:
+def optimize_invoice_extractor(examples: list[dict], model: str = None) -> Optional[str]:
     """Оптимизировать InvoiceExtractor на примерах."""
     if not _dspy_available or len(examples) < 5:
         return None

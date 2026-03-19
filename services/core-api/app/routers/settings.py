@@ -34,7 +34,8 @@ async def get_llm_config_internal(db: AsyncSession = Depends(get_db)):
     provider = await _get_setting(db, "llm_provider") or "deepseek"
     base_url = await _get_setting(db, "llm_base_url") or ""
     model = await _get_setting(db, "openai_model") or "deepseek-chat"
-    return {"llm_api_key": api_key, "llm_provider": provider, "llm_base_url": base_url, "openai_model": model}
+    project_id = await _get_setting(db, "llm_project_id") or ""
+    return {"llm_api_key": api_key, "llm_provider": provider, "llm_base_url": base_url, "openai_model": model, "llm_project_id": project_id}
 
 
 class SettingUpdate(BaseModel):
@@ -42,6 +43,7 @@ class SettingUpdate(BaseModel):
     value: str
     provider: Optional[str] = None
     base_url: Optional[str] = None
+    project_id: Optional[str] = None
 
 class TelegramConfigUpdate(BaseModel):
     bot_token: str
@@ -264,7 +266,6 @@ async def set_openai_key(
     await _set_setting(db, "openai_api_key", data.value)
     await _set_setting(db, "llm_api_key", data.value)
 
-    # Сохранить провайдера и base_url из запроса (если переданы)
     import os
     if data.provider:
         await _set_setting(db, "llm_provider", data.provider)
@@ -278,26 +279,25 @@ async def set_openai_key(
     else:
         llm_base_url = await _get_setting(db, "llm_base_url") or os.environ.get("LLM_BASE_URL", "")
 
+    if data.project_id is not None:
+        await _set_setting(db, "llm_project_id", data.project_id)
+
     llm_model = await _get_setting(db, "llm_model") or os.environ.get("LLM_MODEL", "")
+    llm_project_id = await _get_setting(db, "llm_project_id") or ""
     logger.info("llm_key_saved", user_id=str(current_user.id), provider=llm_provider)
 
-    # Определить base_url для валидации
-    if llm_base_url:
-        validate_base_url = llm_base_url
-    elif llm_provider == "openai":
-        validate_base_url = "https://api.openai.com/v1"
-    else:
-        validate_base_url = "https://api.deepseek.com"
+    base_url_map = {
+        "openai": "https://api.openai.com/v1",
+        "cloud_ru": "https://foundation-models.api.cloud.ru/v1",
+    }
+    validate_base_url = llm_base_url or base_url_map.get(llm_provider, "https://api.deepseek.com")
 
-    # Определить модель для валидации
-    if llm_model:
-        validate_model = llm_model
-    elif llm_provider == "openai":
-        validate_model = "gpt-4o-mini"
-    else:
-        validate_model = "deepseek-chat"
+    model_map = {
+        "openai": "gpt-4o-mini",
+        "cloud_ru": "openai/gpt-oss-120b",
+    }
+    validate_model = llm_model or model_map.get(llm_provider, "deepseek-chat")
 
-    # Проверить ключ через ai-service (у core-api нет openai SDK)
     ai_check = {"status": "unknown", "message": ""}
     try:
         ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
@@ -309,6 +309,7 @@ async def set_openai_key(
                     "model": validate_model,
                     "base_url": validate_base_url,
                     "provider": llm_provider,
+                    "project_id": llm_project_id,
                     "openai_api_key": data.value,
                     "openai_model": validate_model,
                 },
@@ -349,9 +350,15 @@ async def set_openai_model(
     await _set_setting(db, "openai_model", data.value)
     await _set_setting(db, "llm_model", data.value)
 
-    is_deepseek = data.value.startswith("deepseek")
-    provider = "deepseek" if is_deepseek else "openai"
-    base_url = "https://api.deepseek.com" if is_deepseek else "https://api.openai.com/v1"
+    if data.value.startswith("deepseek"):
+        provider = "deepseek"
+        base_url = "https://api.deepseek.com"
+    elif "/" in data.value:
+        provider = "cloud_ru"
+        base_url = "https://foundation-models.api.cloud.ru/v1"
+    else:
+        provider = "openai"
+        base_url = "https://api.openai.com/v1"
 
     await _set_setting(db, "llm_provider", provider)
     await _set_setting(db, "llm_base_url", base_url)
@@ -362,11 +369,13 @@ async def set_openai_model(
         ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
         r_key = await db.execute(text("SELECT value FROM core.system_settings WHERE key='openai_api_key'"))
         api_key = (r_key.scalar() or "").strip()
+        project_id = await _get_setting(db, "llm_project_id") or ""
         if api_key:
             async with httpx.AsyncClient(timeout=15, headers=tracing_headers()) as c:
                 resp = await c.post(f"{ai_url}/api/v1/ai/configure", json={
                     "api_key": api_key, "model": data.value,
                     "provider": provider, "base_url": base_url,
+                    "project_id": project_id,
                 })
                 ai_result = resp.json()
     except Exception as e:

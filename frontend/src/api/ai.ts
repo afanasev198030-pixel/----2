@@ -241,12 +241,26 @@ export interface ParseDebugPostProcess {
   total_sheets?: number;
   total_items_count?: number;
   total_amount?: number;
+  exchange_rate?: number;
+  exchange_rate_currency?: string;
+  total_customs_value?: number;
+  total_statistical_value?: number;
+  preference_code?: string;
+  freight_distribution?: Array<{
+    description?: string;
+    line_total_fcy?: number;
+    line_total_rub?: number;
+    freight_share_rub?: number;
+    customs_value_rub?: number;
+  }>;
   items_preview?: Array<{
     description?: string;
     hs_code?: string;
     gross_weight?: number;
     net_weight?: number;
     line_total?: number;
+    customs_value_rub?: number;
+    statistical_value_usd?: number;
     country_origin_code?: string;
   }>;
 }

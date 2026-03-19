@@ -1,6 +1,6 @@
 """
 Unified LLM client factory.
-Supports DeepSeek, OpenAI, and custom OpenAI-compatible providers.
+Supports DeepSeek, OpenAI, Cloud.ru and custom OpenAI-compatible providers.
 All use the same openai Python SDK — just different base_url.
 """
 import openai
@@ -29,7 +29,15 @@ def get_llm_client(
     if not key:
         raise ValueError("No LLM API key configured. Set LLM_API_KEY or OPENAI_API_KEY.")
 
-    raw_client = openai.OpenAI(api_key=key, base_url=url)
+    extra_headers = {}
+    if settings.LLM_PROJECT_ID:
+        extra_headers["x-project-id"] = settings.LLM_PROJECT_ID
+
+    raw_client = openai.OpenAI(
+        api_key=key,
+        base_url=url,
+        default_headers=extra_headers or None,
+    )
     logger.debug("llm_client_created", provider=settings.LLM_PROVIDER, base_url=url, operation=operation)
     return TrackedOpenAIClient(
         raw_client,

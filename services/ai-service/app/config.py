@@ -9,17 +9,29 @@ class Settings(BaseSettings):
     # Core API
     CORE_API_URL: str = "http://core-api:8001"
 
+    # Calc service (exchange rates, payments)
+    CALC_SERVICE_URL: str = "http://calc-service:8005"
+
     # Service
     SERVICE_NAME: str = "ai-service"
     LOG_LEVEL: str = "INFO"
 
-    # LLM Provider settings (DeepSeek as default, OpenAI as fallback)
-    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, custom
+    # LLM Provider settings (DeepSeek as default, OpenAI/Cloud.ru as alternatives)
+    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, custom
     LLM_BASE_URL: str = "https://api.deepseek.com"  # DeepSeek API endpoint
     LLM_API_KEY: str = ""  # Primary API key
     LLM_MODEL: str = "deepseek-chat"  # Default: DeepSeek V3
     LLM_REASONING_MODEL: str = "deepseek-reasoner"  # DeepSeek R1 for complex tasks
+    LLM_PROJECT_ID: str = ""  # Cloud.ru x-project-id header (optional)
     EMBED_PROVIDER: str = "local"  # local (onnxruntime), openai
+
+    # Vision OCR (DeepSeek-OCR-2 via Cloud.ru — replaces Tesseract/pdfplumber)
+    OCR_ENABLED: bool = False
+    OCR_BASE_URL: str = "https://foundation-models.api.cloud.ru/v1"
+    OCR_API_KEY: str = ""
+    OCR_MODEL: str = "deepseek-ai/DeepSeek-OCR-2"
+    OCR_PROJECT_ID: str = ""
+    OCR_TIMEOUT: int = 120
 
     # Legacy OpenAI (backward compatibility)
     OPENAI_API_KEY: str = ""
@@ -36,6 +48,11 @@ class Settings(BaseSettings):
     @property
     def chromadb_url(self) -> str:
         return f"http://{self.CHROMADB_HOST}:{self.CHROMADB_PORT}"
+
+    @property
+    def has_vision_ocr(self) -> bool:
+        """Check if Vision OCR is configured and enabled."""
+        return bool(self.OCR_ENABLED and self.OCR_API_KEY)
 
     @property
     def has_llm(self) -> bool:
@@ -60,6 +77,8 @@ class Settings(BaseSettings):
             return self.LLM_BASE_URL
         if self.LLM_PROVIDER == "openai":
             return "https://api.openai.com/v1"
+        if self.LLM_PROVIDER == "cloud_ru":
+            return "https://foundation-models.api.cloud.ru/v1"
         return "https://api.deepseek.com"
 
     @property
