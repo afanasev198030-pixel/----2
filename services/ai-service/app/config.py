@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     LLM_PROJECT_ID: str = ""  # Cloud.ru x-project-id header (optional)
     EMBED_PROVIDER: str = "local"  # local (onnxruntime), openai
 
+    # Vision OCR (DeepSeek-OCR-2 via Cloud.ru — replaces Tesseract/pdfplumber)
+    OCR_ENABLED: bool = False
+    OCR_BASE_URL: str = "https://foundation-models.api.cloud.ru/v1"
+    OCR_API_KEY: str = ""
+    OCR_MODEL: str = "deepseek-ai/DeepSeek-OCR-2"
+    OCR_PROJECT_ID: str = ""
+    OCR_TIMEOUT: int = 120
+
     # Legacy OpenAI (backward compatibility)
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o"
@@ -40,6 +48,11 @@ class Settings(BaseSettings):
     @property
     def chromadb_url(self) -> str:
         return f"http://{self.CHROMADB_HOST}:{self.CHROMADB_PORT}"
+
+    @property
+    def has_vision_ocr(self) -> bool:
+        """Check if Vision OCR is configured and enabled."""
+        return bool(self.OCR_ENABLED and self.OCR_API_KEY)
 
     @property
     def has_llm(self) -> bool:

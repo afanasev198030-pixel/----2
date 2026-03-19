@@ -188,6 +188,12 @@ services:
       LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-deepseek-reasoner}
       LLM_PROJECT_ID: ${LLM_PROJECT_ID:-}
       EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+      OCR_BASE_URL: ${OCR_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      OCR_API_KEY: ${OCR_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-deepseek-ai/DeepSeek-OCR-2}
+      OCR_PROJECT_ID: ${OCR_PROJECT_ID:-}
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-60}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       CHROMADB_HOST: chromadb

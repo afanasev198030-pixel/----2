@@ -484,6 +484,30 @@ def _invoice_score(inv: dict) -> tuple:
     return (good, has_parties, conf, total)
 
 
+_VISION_RETRY_FIELDS: dict[str, list[str]] = {
+    "invoice": ["seller", "buyer", "invoice_number"],
+    "contract": ["contract_number"],
+    "specification": ["items"],
+    "packing_list": ["items"],
+    "transport_doc": ["transport_number"],
+}
+
+
+def _check_needs_vision_retry(doc_type: str, extracted: dict) -> list[str]:
+    """Return list of critical fields that are empty after LLM extraction."""
+    required = _VISION_RETRY_FIELDS.get(doc_type, [])
+    missing = []
+    for f in required:
+        val = extracted.get(f)
+        if not val:
+            missing.append(f)
+        elif isinstance(val, dict) and not any(val.values()):
+            missing.append(f)
+        elif isinstance(val, list) and len(val) == 0:
+            missing.append(f)
+    return missing
+
+
 def _safe_float(value) -> Optional[float]:
     if value is None:
         return None
@@ -716,6 +740,11 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
     ВАЖНО: если регистрация конкретного ВС неизвестна (нет tail number / бортового знака) — вернуть "00".
     Для AWB: если известен только перевозчик, но не борт — "00".
 - vehicle_count: количество транспортных средств (обычно 1)
+- departure_airport: пункт отправления груза — город или IATA-код аэропорта/порта отправления.
+    Искать в полях: "Airport of Departure", "Origin", "From", "Departure", "Аэропорт отправления", "Пункт погрузки".
+    Примеры: "CAN" (Guangzhou), "PVG" (Shanghai), "HKG" (Hong Kong), "SHANGHAI", "QINGDAO".
+    Для CMR/авто: город отправления (например "HANGZHOU", "YIWU", "NINGBO").
+    Если не найдено — null.
 - destination_airport: IATA-код аэропорта/порта назначения (графа 29 ДТ — таможня на границе).
     Искать в полях: "Airport of Destination", "Destination", "DEST", "To", "Аэропорт назначения".
     Примеры: "SVO", "SVO2", "DME", "VKO", "LED", "SVX", "OVB".
@@ -747,6 +776,8 @@ JSON:"""},
         result["vehicle_count"] = data.get("vehicle_count") or 1
         result["shipper_name"] = data.get("shipper_name")
         result["shipper_address"] = data.get("shipper_address")
+        dep = (data.get("departure_airport") or "").strip().upper()
+        result["departure_airport"] = dep or None
         dest = (data.get("destination_airport") or "").strip().upper()
         result["destination_airport"] = dest or None
         logger.info("transport_doc_parsed", filename=filename,
@@ -1048,13 +1079,16 @@ contract: {{contract_number, contract_date, seller: {{name, country_code, addres
   is_trilateral: true если договор трёхсторонний (между получателем, декларантом и лицом за фин. урегулирование)
   receiver: получатель груза (графа 8 ДТ) — ТОЛЬКО если отличается от buyer/declarant
   financial_responsible: лицо, ответственное за финансовое урегулирование (графа 9 ДТ) — ТОЛЬКО если отличается от buyer/declarant
-specification: {{doc_number, doc_date, items_count, total_amount, currency, total_gross_weight, total_net_weight}}
+specification: {{doc_number, doc_date, incoterms, delivery_place, items_count, total_amount, currency, total_gross_weight, total_net_weight}}
   doc_number: номер спецификации / приложения к контракту
+  incoterms: условия поставки (EXW, FOB, CIF, FCA и т.д.) — если указаны в спецификации
+  delivery_place: пункт/место поставки — если указан
 tech_description: {{doc_number, doc_date, products: [{{product_name, purpose, materials, technical_specs, suggested_hs_description}}]}}
-transport_invoice: {{doc_number, doc_date, freight_amount, freight_currency, carrier_name, shipper_name, shipper_address, awb_number, transport_type}}
+transport_invoice: {{doc_number, doc_date, freight_amount, freight_currency, shipper_name, shipper_address, shipper_contact, consignee_name, consignee_address, consignee_inn, contract_number, contract_date, awb_number, transport_type, route, flight_number, bank_details}}
   doc_number: номер транспортного инвойса / счёта за перевозку
-  shipper_name: отправитель груза — искать "Shipper", "Shipper's Name", "Отправитель", "Consignor"
-  shipper_address: адрес отправителя — искать "Shipper's Address", "Адрес отправителя" (улица, город, индекс, страна)
+  shipper_name: компания, выставившая инвойс (отправитель/перевозчик) — искать в шапке документа
+  shipper_address: адрес компании-выставителя
+  consignee_name: получатель услуги ("TO:" / "Покупатель") — наименование, ИНН
 application_statement: {{doc_number, doc_date, forwarding_agent: {{name, address, country_code, inn, kpp, ogrn}}, incoterms, delivery_place, shipper: {{name, address, country_code}}}}
   doc_number: номер заявки / поручения экспедитору
   shipper: отправитель груза — искать "Shipper", "Отправитель" и его адрес
@@ -1124,6 +1158,8 @@ JSON:"""},
                     "items_count": spec_items_count,
                     "total_amount": _safe_float(spec_raw.get("total_amount")),
                     "currency": spec_raw.get("currency"),
+                    "incoterms": spec_raw.get("incoterms"),
+                    "delivery_place": spec_raw.get("delivery_place"),
                     "total_gross_weight": _safe_float(spec_raw.get("total_gross_weight")),
                     "total_net_weight": _safe_float(spec_raw.get("total_net_weight")),
                     "_filename": _first_filename("specification"),
@@ -1198,19 +1234,24 @@ JSON:"""},
           7. Risk assessment
           8. Precedent search
         """
-        from app.services.llm_parser import classify_and_extract
+        from app.services.llm_parser import classify_and_extract_with_correction as classify_and_extract
 
         logger.info("crew_process_start", files_count=len(files), pipeline="llm_v3")
         total_files = len(files)
 
         # ── Step 1: OCR ──
+        from app.config import get_settings as _get_settings
+        _settings = _get_settings()
+        ocr_method = "vision_ocr" if _settings.has_vision_ocr else "legacy"
+
         doc_texts: list[tuple[bytes, str, str]] = []
         for i, (file_bytes, filename) in enumerate(files):
             pct = 10 + int(15 * i / max(total_files, 1))
             self._progress("ocr", f"[{i+1}/{total_files}] OCR: {filename}", pct)
             text = extract_text(file_bytes, filename)
             doc_texts.append((file_bytes, filename, text))
-            logger.info("ocr_done", filename=filename, chars=len(text))
+            logger.info("ocr_done", filename=filename, chars=len(text),
+                        ocr_method=ocr_method)
 
         # ── Step 2: LLM classify + extract (one call per doc) ──
         parsed_docs: dict = {}
@@ -1225,11 +1266,40 @@ JSON:"""},
             extracted["doc_type"] = doc_type
             extracted["doc_type_confidence"] = result.get("doc_type_confidence", 0.5)
 
-            _LIST_TYPES = {"tech_description", "payment_order", "other"}
+            # ── Vision OCR quality gate ──
+            missing_fields = _check_needs_vision_retry(doc_type, extracted)
+            if missing_fields and _settings.has_vision_ocr:
+                logger.info("vision_retry_triggered",
+                            filename=filename, doc_type=doc_type,
+                            missing=missing_fields)
+                try:
+                    from app.services.ocr_service import _extract_with_vision_ocr
+                    vision_text = _extract_with_vision_ocr(file_bytes, filename)
+                    if vision_text and vision_text.strip():
+                        vision_result = classify_and_extract(vision_text, filename)
+                        vision_extracted = vision_result.get("extracted", {})
+                        merged = []
+                        for field in missing_fields:
+                            v = vision_extracted.get(field)
+                            if v and not (isinstance(v, dict) and not any(v.values())):
+                                extracted[field] = v
+                                merged.append(field)
+                        if merged:
+                            logger.info("vision_retry_merged",
+                                        filename=filename, merged_fields=merged)
+                        else:
+                            logger.info("vision_retry_no_new_data",
+                                        filename=filename)
+                except Exception as e:
+                    logger.warning("vision_retry_failed",
+                                   filename=filename, error=str(e)[:200])
+
+            _LIST_TYPES = {"tech_description", "payment_order", "conformity_declaration", "other"}
             if doc_type in _LIST_TYPES:
                 list_key = {
                     "tech_description": "tech_descriptions",
                     "payment_order": "payment_orders",
+                    "conformity_declaration": "conformity_declarations",
                     "other": "other",
                 }[doc_type]
                 parsed_docs.setdefault(list_key, []).append(extracted)
@@ -1252,9 +1322,23 @@ JSON:"""},
             else:
                 parsed_docs[doc_type] = extracted
 
-            logger.info("classify_extract_done", filename=filename, doc_type=doc_type,
-                        confidence=result.get("doc_type_confidence"),
-                        keys=list(extracted.keys()))
+            items_count = len(extracted.get("items", extracted.get("products", [])))
+            llm_debug = result.get("llm_debug", {})
+            logger.info(
+                "classify_extract_done",
+                filename=filename,
+                doc_type=doc_type,
+                confidence=result.get("doc_type_confidence"),
+                reasoning=result.get("reasoning", "")[:150],
+                correction_applied=result.get("correction_applied", False),
+                validation_issues_count=len(result.get("validation_issues", [])),
+                items_extracted=items_count,
+                finish_reason=llm_debug.get("finish_reason"),
+                tokens_prompt=llm_debug.get("tokens", {}).get("prompt", 0),
+                tokens_completion=llm_debug.get("tokens", {}).get("completion", 0),
+                duration_ms=llm_debug.get("duration_ms", 0),
+                keys=list(extracted.keys()),
+            )
 
         # ── Step 3: LLM compile (semantic decisions) ──
         self._progress("compiling", "AI компилирует данные декларации...", 58)
@@ -2123,29 +2207,79 @@ JSON:"""},
         ev.record("buyer", buyer, buyer_src, confidence=0.85 if buyer_src == "contract" else 0.8, graph=8)
         ev.record("currency", currency, "contract", confidence=0.97 if currency else 0.3, graph=22)
         ev.record("total_amount", total_amount, "invoice", confidence=0.85, graph=22)
-        # Графа 20: Инкотермс — 1) Заявка на перевозку, 2) Контракт.
-        # Товарный инвойс НЕ является источником условий поставки.
-        inco_val = application.get("incoterms") or contract.get("incoterms")
-        delivery_place_val = application.get("delivery_place") or contract.get("delivery_place")
-        inco_src = "application" if application.get("incoterms") else "contract"
-        ev.record("incoterms", inco_val, inco_src, confidence=0.85, graph=20)
-
-        # Предупреждение при расхождении условий поставки между документами
+        # Графа 20: Инкотермс.
+        # Приоритет источников: 1) Заявка, 2) Контракт, 3) Спецификация.
+        # Инвойс НЕ является источником условий поставки.
+        # Если delivery_place — только страна (не город), уточняем пунктом
+        # отправления из транспортного документа.
         app_inco = application.get("incoterms")
-        app_place = application.get("delivery_place")
-        inv_inco = inv.get("incoterms")
         contract_inco = contract.get("incoterms")
-        if app_inco and inv_inco and app_inco.upper() != inv_inco.upper():
-            logger.warning("incoterms_conflict_app_vs_invoice",
-                           application=f"{app_inco} {app_place or ''}".strip(),
-                           invoice=inv_inco,
-                           msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ инвойс ({inv_inco}). "
-                               f"Используются условия из заявки на перевозку.")
+        spec_inco = spec.get("incoterms")
+
+        if app_inco:
+            inco_val = app_inco
+            inco_src = "application"
+            inco_confidence = 0.90
+        elif contract_inco:
+            inco_val = contract_inco
+            inco_src = "contract"
+            inco_confidence = 0.85
+        elif spec_inco:
+            inco_val = spec_inco
+            inco_src = "specification"
+            inco_confidence = 0.80
+        else:
+            inco_val = None
+            inco_src = "none"
+            inco_confidence = 0.0
+
+        delivery_place_val = (
+            application.get("delivery_place")
+            or contract.get("delivery_place")
+            or spec.get("delivery_place")
+        )
+
+        _COUNTRY_ONLY_NAMES = {
+            "china", "cn", "hong kong", "hk", "taiwan", "tw",
+            "korea", "kr", "japan", "jp", "india", "in",
+            "turkey", "tr", "germany", "de", "italy", "it",
+            "usa", "us", "russia", "ru", "vietnam", "vn",
+            "thailand", "th", "indonesia", "id", "malaysia", "my",
+            "китай", "гонконг", "тайвань", "корея", "япония",
+            "индия", "турция", "германия", "италия", "россия",
+        }
+        transport_departure = transport.get("departure_airport") or ""
+        if delivery_place_val and delivery_place_val.strip().lower() in _COUNTRY_ONLY_NAMES:
+            if transport_departure:
+                logger.info("delivery_place_refined_by_transport",
+                            original=delivery_place_val,
+                            transport_departure=transport_departure,
+                            msg=f"Графа 20: место поставки '{delivery_place_val}' — "
+                                f"только страна, уточнено пунктом отправления "
+                                f"из транспортного документа: '{transport_departure}'.")
+                delivery_place_val = transport_departure
+        elif not delivery_place_val and transport_departure:
+            delivery_place_val = transport_departure
+            logger.info("delivery_place_from_transport",
+                        transport_departure=transport_departure,
+                        msg=f"Графа 20: место поставки не указано в заявке/контракте/"
+                            f"спецификации, взято из транспортного документа: "
+                            f"'{transport_departure}'.")
+
+        ev.record("incoterms", inco_val, inco_src, confidence=inco_confidence, graph=20)
+
+        app_place = application.get("delivery_place")
         if app_inco and contract_inco and app_inco.upper() != contract_inco.upper():
             logger.warning("incoterms_conflict_app_vs_contract",
                            application=f"{app_inco} {app_place or ''}".strip(),
                            contract=contract_inco,
                            msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ контракт ({contract_inco}). "
+                               f"Используются условия из заявки на перевозку.")
+        if app_inco and spec_inco and app_inco.upper() != spec_inco.upper():
+            logger.warning("incoterms_conflict_app_vs_spec",
+                           application=f"{app_inco} {app_place or ''}".strip(),
+                           specification=spec_inco,
+                           msg=f"Графа 20: заявка ({app_inco} {app_place or ''}) ≠ спецификация ({spec_inco}). "
                                f"Используются условия из заявки на перевозку.")
         # Графа 16: агрегация страны происхождения из всех позиций
         _EU_COUNTRIES = {"AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE"}
@@ -2336,27 +2470,51 @@ JSON:"""},
         import mimetypes
 
         _DOC_TYPE_CODES = {
-            "invoice": "04021",
-            "contract": "03011",
-            "packing": "04024",
-            "packing_list": "04024",
-            "specification": "04091",
-            "transport_invoice": "04025",
-            "transport": "02011",
-            "transport_doc": "02011",
+            "invoice":               "04021",
+            "contract":              "03011",
+            "packing":               "04024",
+            "packing_list":          "04024",
+            "specification":         "04091",
+            "transport_invoice":     "04025",
             "application_statement": "05999",
-            "tech_description": "05011",
-            "payment_order": "03031",
-            "reference_gtd": "09013",
-            "svh_doc": "09023",
-            "certificate_origin": "06019",
-            "license": "01011",
-            "permit": "01999",
-            "sanitary": "07013",
-            "veterinary": "07012",
-            "phytosanitary": "07011",
-            "other": "09023",
+            "tech_description":      "05011",
+            "insurance":             "03041",
+            "payment_order":         "03031",
+            "reference_gtd":         "09023",
+            "svh_doc":               "09023",
+            "certificate_origin":    "06019",
+            "origin_certificate":    "06019",
+            "license":               "01011",
+            "permit":                "01999",
+            "sanitary":              "07013",
+            "veterinary":            "07012",
+            "phytosanitary":         "07011",
+            "conformity_declaration": "01191",
+            "other":                 "09023",
         }
+        _TRANSPORT_DOC_CODES = {
+            "40": "02013",  # AWB
+            "30": "02011",  # CMR
+            "10": "02015",  # B/L
+            "20": "02011",  # Railway
+            "80": "02015",  # Inland waterway
+        }
+        _ORIGIN_CERT_CODES = {
+            "CT-1":                  "06011",
+            "Form A":                "06012",
+            "EUR.1":                 "06013",
+            "Declaration of Origin": "06021",
+        }
+
+        def _resolve_doc_code(doc_type: str, source_data) -> str:
+            sd = DeclarationCrew._to_dict(source_data) if source_data else {}
+            if doc_type in ("transport", "transport_doc"):
+                tt = str(sd.get("transport_type", ""))
+                return _TRANSPORT_DOC_CODES.get(tt, "02091")
+            if doc_type in ("origin_certificate", "certificate_origin"):
+                ct = str(sd.get("certificate_type", ""))
+                return _ORIGIN_CERT_CODES.get(ct, "06019")
+            return _DOC_TYPE_CODES.get(doc_type, "09023")
         docs: list[dict] = []
 
         def _append_doc(
@@ -2402,10 +2560,17 @@ JSON:"""},
         )
 
         transport_data = parsed_docs.get("transport") or {}
+        _resolved_transport_code = _resolve_doc_code("transport_doc", transport_data)
+        _TRANSPORT_DOC_NAMES = {
+            "02013": "Авиационная накладная (AWB)",
+            "02011": "Транспортная накладная (CMR)",
+            "02015": "Коносамент (B/L)",
+            "02091": "Транспортный документ",
+        }
         _append_doc(
             doc_type="transport_doc",
-            doc_code="02011",
-            doc_type_name="Транспортный документ",
+            doc_code=_resolved_transport_code,
+            doc_type_name=_TRANSPORT_DOC_NAMES.get(_resolved_transport_code, "Транспортный документ"),
             parsed_source=transport_data,
             doc_number=awb_number or transport_data.get("awb_number") or transport_data.get("vehicle_id"),
             doc_date=None,
@@ -2492,6 +2657,46 @@ JSON:"""},
                 doc_date=svh.get("placement_date"),
             )
 
+        origin_cert = parsed_docs.get("origin_certificate") or {}
+        if origin_cert:
+            _cert_code = _resolve_doc_code("origin_certificate", origin_cert)
+            _CERT_NAMES = {
+                "06011": "Сертификат происхождения СТ-1",
+                "06012": "Сертификат происхождения Form A",
+                "06013": "Сертификат происхождения EUR.1",
+                "06021": "Декларация о происхождении",
+                "06019": "Сертификат происхождения",
+            }
+            _append_doc(
+                doc_type="origin_certificate",
+                doc_code=_cert_code,
+                doc_type_name=_CERT_NAMES.get(_cert_code, "Сертификат происхождения"),
+                parsed_source=origin_cert,
+                doc_number=origin_cert.get("certificate_number"),
+                doc_date=origin_cert.get("certificate_date"),
+            )
+
+        insurance_data = parsed_docs.get("insurance") or {}
+        if insurance_data:
+            _append_doc(
+                doc_type="insurance",
+                doc_code=_DOC_TYPE_CODES["insurance"],
+                doc_type_name="Страховой полис / сертификат",
+                parsed_source=insurance_data,
+                doc_number=insurance_data.get("policy_number"),
+                doc_date=insurance_data.get("issue_date"),
+            )
+
+        for conf_decl in parsed_docs.get("conformity_declarations") or []:
+            _append_doc(
+                doc_type="conformity_declaration",
+                doc_code=_DOC_TYPE_CODES["conformity_declaration"],
+                doc_type_name="Декларация о соответствии ЕАЭС",
+                parsed_source=conf_decl,
+                doc_number=conf_decl.get("declaration_number"),
+                doc_date=conf_decl.get("registration_date"),
+            )
+
         return docs
 
     # ------------------------------------------------------------------
@@ -2541,26 +2746,51 @@ JSON:"""},
 
         docs_json = _json.dumps(docs_ctx, ensure_ascii=False, indent=2)
 
+        from app.services.classifier_cache import get_cache
+        _clf = get_cache()
+        classifier_tables = (
+            "СПРАВОЧНИК ВИДОВ ТРАНСПОРТА (гр.25/26): "
+            + (_clf.format_for_prompt("transport_type") or "10—Морской|20—ЖД|30—Авто|40—Воздушный")
+            + "\n"
+            "СПРАВОЧНИК ХАРАКТЕРА СДЕЛКИ (гр.24, подраздел 1 — 2-значный код + '0'→3 цифры): "
+            + (_clf.format_for_prompt("deal_nature") or "01—Купля-продажа|02—Бартер|03—Безвозмездная")
+            + "\n"
+            "СПРАВОЧНИК МОС (гр.43, подраздел 1): "
+            + (_clf.format_for_prompt("mos_method") or "01—По цене сделки|02—Идентичные|03—Однородные")
+            + "\n"
+            "СПРАВОЧНИК ПРОЦЕДУР (гр.1/37): "
+            + (_clf.format_for_prompt("procedure") or "IM40—Выпуск|IM51—Переработка")
+            + "\n"
+        )
+
         system_prompt = (
             "Ты опытный таможенный брокер РФ. Заполняешь таможенную декларацию ИМ40 (импорт).\n"
             "Тебе предоставлены извлечённые данные из документов и официальные правила.\n"
             "СТРОГО следуй правилам: приоритеты источников, форматы, специальные значения.\n"
             "Ответь ТОЛЬКО валидным JSON. Если данных нет — null. Не придумывай данные.\n"
-            "НЕ делай арифметические расчёты (суммирование, распределение весов) — это сделает Python."
+            "НЕ делай арифметические расчёты (суммирование, распределение весов) — это сделает Python.\n\n"
+            "ОБРАБОТКА КОНФЛИКТОВ:\n"
+            "- Если одно и то же поле содержит разные значения в разных документах, выбери значение "
+            "из источника с ВЫСШИМ приоритетом (контракт > инвойс > упаковочный лист > транспортная накладная).\n"
+            "- Добавь конфликт в issues[] с описанием: какие значения в каких документах.\n"
+            "- Формат issue: {\"id\": \"conflict_<field>\", \"severity\": \"warning\", \"message\": \"описание\"}"
         )
 
         user_prompt = f"""=== ИЗВЛЕЧЁННЫЕ ДАННЫЕ ИЗ ДОКУМЕНТОВ ===
 {docs_json}
 
 === ПРАВИЛА ЗАПОЛНЕНИЯ ГРАФ ДТ (из БД) ===
-{(rules_text or '')[:5000]}
+{rules_text or ''}
 
 === ПРАВИЛА ЗАПОЛНЕНИЯ ГРАФ (полные) ===
-{(filling_rules or '')[:12000]}
+{filling_rules or ''}
 
+=== СПРАВОЧНИКИ КЛАССИФИКАТОРОВ (используй ТОЛЬКО коды из этих таблиц) ===
+{classifier_tables}
 === ЗАДАЧА ===
 На основе документов и правил заполни ВСЕ поля декларации, для которых есть данные.
 Соблюдай приоритет источников для каждой графы.
+Если между документами есть конфликтующие данные — выбери значение по приоритету и добавь issues[].
 
 ФОРМАТ ОТВЕТА — JSON:
 {{
@@ -2630,10 +2860,26 @@ JSON:"""
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0,
-                max_tokens=4000,
+                max_tokens=6000,
                 response_format={"type": "json_object"},
             )
             raw = strip_code_fences(resp.choices[0].message.content)
+            finish_reason = resp.choices[0].finish_reason
+
+            if finish_reason == "length":
+                logger.warning("compile_declaration_truncated_retrying")
+                resp = client.chat.completions.create(
+                    model=get_model(),
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0,
+                    max_tokens=10000,
+                    response_format={"type": "json_object"},
+                )
+                raw = strip_code_fences(resp.choices[0].message.content)
+
             result = _json.loads(raw)
             logger.info("compile_declaration_llm_ok", fields=list(result.keys()),
                         items_count=len(result.get("items", [])))
@@ -2829,6 +3075,124 @@ JSON:"""
         result["preference_code"] = preference_code
         calc_debug["preference_code"] = preference_code
         calc_debug["origin_certificate_type"] = cert_type
+
+        # ── Classifier validation (countries, currency, transport, procedure) ──
+        from app.services.classifier_cache import get_cache as _get_clf_cache
+        _clf = _get_clf_cache()
+        issues = result.get("issues") or []
+
+        _COUNTRY_FIELDS = (
+            "country_dispatch", "country_destination", "country_origin",
+            "trading_partner_country", "transport_vehicle_departure_country",
+            "transport_vehicle_border_country",
+        )
+        for _cf in _COUNTRY_FIELDS:
+            _cv = result.get(_cf)
+            if _cv and isinstance(_cv, str) and _cv not in ("РАЗНЫЕ", "НЕИЗВЕСТНО", "ЕВРОСОЮЗ", "EU"):
+                resolved = _clf.lookup_code("country", _cv)
+                if resolved:
+                    result[_cf] = resolved
+                elif len(_cv) == 2 and _cv.upper().isalpha():
+                    result[_cf] = _cv.upper()
+                else:
+                    issues.append({
+                        "id": f"unknown_country_{_cf}",
+                        "severity": "warning",
+                        "message": f"Неизвестный код страны '{_cv}' в поле {_cf}",
+                    })
+
+        _cur = result.get("currency")
+        if _cur and not _clf.validate_code("currency", _cur):
+            resolved_cur = _clf.lookup_code("currency", _cur)
+            if resolved_cur:
+                result["currency"] = resolved_cur
+            else:
+                issues.append({
+                    "id": "unknown_currency",
+                    "severity": "warning",
+                    "message": f"Неизвестный код валюты: {_cur}",
+                })
+
+        _tt = result.get("transport_type")
+        if _tt and not _clf.validate_code("transport_type", str(_tt)):
+            issues.append({
+                "id": "unknown_transport_type",
+                "severity": "warning",
+                "message": f"Неизвестный код вида транспорта: {_tt}",
+            })
+
+        for _item in items:
+            _ico = (_item.get("country_origin_code") or "").strip().upper()
+            if _ico and len(_ico) == 2:
+                _item["country_origin_code"] = _ico
+            elif _ico:
+                _resolved_co = _clf.lookup_code("country", _ico)
+                if _resolved_co:
+                    _item["country_origin_code"] = _resolved_co
+
+        result["issues"] = issues
+
+        # ── Инкотермс (гр. 20): детерминированная логика приоритетов ──
+        # Приоритет: 1) заявка, 2) контракт, 3) спецификация.
+        # Инвойс НЕ является источником. Если LLM уже вернул — перезаписываем
+        # по строгому приоритету из extracted data, чтобы исключить ошибки LLM.
+        application_d = self._to_dict(parsed_docs.get("application_statement"))
+        contract_d = self._to_dict(parsed_docs.get("contract"))
+        spec_d = self._to_dict(parsed_docs.get("specification"))
+        transport_d = self._to_dict(parsed_docs.get("transport"))
+
+        app_inco = application_d.get("incoterms") if application_d else None
+        contract_inco = contract_d.get("incoterms") if contract_d else None
+        spec_inco = spec_d.get("incoterms") if spec_d else None
+
+        if app_inco:
+            result["incoterms"] = app_inco
+            inco_src = "application_statement"
+        elif contract_inco:
+            result["incoterms"] = contract_inco
+            inco_src = "contract"
+        elif spec_inco:
+            result["incoterms"] = spec_inco
+            inco_src = "specification"
+        else:
+            inco_src = "none"
+
+        dp_val = (
+            application_d.get("delivery_place") if application_d else None
+        ) or (
+            contract_d.get("delivery_place") if contract_d else None
+        ) or (
+            spec_d.get("delivery_place") if spec_d else None
+        )
+
+        _COUNTRY_ONLY = {
+            "china", "cn", "hong kong", "hk", "taiwan", "tw",
+            "korea", "kr", "japan", "jp", "india", "in",
+            "turkey", "tr", "germany", "de", "italy", "it",
+            "usa", "us", "russia", "ru", "vietnam", "vn",
+            "thailand", "th", "indonesia", "id", "malaysia", "my",
+            "китай", "гонконг", "тайвань", "корея", "япония",
+            "индия", "турция", "германия", "италия", "россия",
+        }
+        transport_departure = (
+            (transport_d.get("departure_airport") if transport_d else None)
+            or (transport_d.get("departure_point") if transport_d else None)
+            or ""
+        )
+        if dp_val and dp_val.strip().lower() in _COUNTRY_ONLY and transport_departure:
+            logger.info("delivery_place_refined", original=dp_val, refined=transport_departure)
+            dp_val = transport_departure
+        elif not dp_val and transport_departure:
+            dp_val = transport_departure
+
+        if dp_val:
+            result["delivery_place"] = dp_val
+
+        if result.get("incoterms"):
+            logger.info("incoterms_postprocess",
+                        incoterms=result["incoterms"],
+                        delivery_place=result.get("delivery_place"),
+                        source=inco_src)
 
         issues = result.get("issues") or []
         issues.append({

@@ -193,20 +193,81 @@ async def parse_debug(
 
         ocr_result = extract_text_debug(content, fname)
         full_text = ocr_result["text"]
-        doc_trace["stages"]["ocr"] = {
+        ocr_stage: dict = {
             "method": ocr_result["method"],
             "chars": ocr_result["chars"],
-            "pages": ocr_result["pages"],
+            "pages": ocr_result.get("pages", 0),
             "duration_ms": ocr_result["duration_ms"],
             "text": full_text,
             "text_truncated": False,
         }
+        if ocr_result.get("ocr_vision"):
+            v = ocr_result["ocr_vision"]
+            ocr_stage["ocr_vision"] = {
+                "method": v.get("method"),
+                "chars": v.get("chars"),
+                "duration_ms": v.get("duration_ms"),
+                "text": v.get("text", "")[:3000],
+                "error": v.get("error"),
+            }
+        if ocr_result.get("ocr_legacy"):
+            lg = ocr_result["ocr_legacy"]
+            ocr_stage["ocr_legacy"] = {
+                "method": lg.get("method"),
+                "chars": lg.get("chars"),
+                "pages": lg.get("pages", 0),
+                "duration_ms": lg.get("duration_ms"),
+                "text": lg.get("text", "")[:3000],
+            }
+        doc_trace["stages"]["ocr"] = ocr_stage
 
         ce_result = classify_and_extract_debug(full_text, fname)
         doc_type = ce_result["doc_type"]
         extracted = ce_result["extracted"]
         extracted["_filename"] = fname
         extracted["doc_type"] = doc_type
+
+        # ── Vision OCR quality gate ──
+        vision_retry_info: dict = {}
+        from app.services.agent_crew import _check_needs_vision_retry
+        missing_fields = _check_needs_vision_retry(doc_type, extracted)
+        if missing_fields:
+            from app.config import get_settings as _get_settings
+            _dbg_settings = _get_settings()
+            if _dbg_settings.has_vision_ocr:
+                logger.info("debug_vision_retry_triggered",
+                            filename=fname, doc_type=doc_type,
+                            missing=missing_fields)
+                try:
+                    from app.services.ocr_service import _extract_with_vision_ocr
+                    from app.services.llm_parser import classify_and_extract_debug as _ce_debug
+                    vision_text = _extract_with_vision_ocr(content, fname)
+                    if vision_text and vision_text.strip():
+                        vision_ce = _ce_debug(vision_text, fname)
+                        vision_extracted = vision_ce.get("extracted", {})
+                        merged = []
+                        for field in missing_fields:
+                            v = vision_extracted.get(field)
+                            if v and not (isinstance(v, dict) and not any(v.values())):
+                                extracted[field] = v
+                                merged.append(field)
+                        vision_retry_info = {
+                            "triggered": True,
+                            "missing_fields": missing_fields,
+                            "merged_fields": merged,
+                            "vision_doc_type": vision_ce.get("doc_type"),
+                        }
+                        if merged:
+                            logger.info("debug_vision_retry_merged",
+                                        filename=fname, merged_fields=merged)
+                except Exception as e:
+                    vision_retry_info = {
+                        "triggered": True,
+                        "missing_fields": missing_fields,
+                        "error": str(e)[:200],
+                    }
+                    logger.warning("debug_vision_retry_failed",
+                                   filename=fname, error=str(e)[:200])
 
         doc_trace["stages"]["classify_and_extract"] = {
             "doc_type": doc_type,
@@ -218,13 +279,15 @@ async def parse_debug(
             "duration_ms": ce_result.get("llm_debug", {}).get("duration_ms", 0),
             "model": ce_result.get("llm_debug", {}).get("model", ""),
             "tokens": ce_result.get("llm_debug", {}).get("tokens", {}),
+            "vision_retry": vision_retry_info or None,
         }
 
-        _LIST_TYPES = {"tech_description", "payment_order", "other"}
+        _LIST_TYPES = {"tech_description", "payment_order", "conformity_declaration", "other"}
         if doc_type in _LIST_TYPES:
             list_key = {
                 "tech_description": "tech_descriptions",
                 "payment_order": "payment_orders",
+                "conformity_declaration": "conformity_declarations",
                 "other": "other",
             }[doc_type]
             parsed_docs.setdefault(list_key, []).append(extracted)
