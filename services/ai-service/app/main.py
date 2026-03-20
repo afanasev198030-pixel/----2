@@ -36,23 +36,61 @@ app.include_router(smart_parser.router)
 app.include_router(chat.router)
 
 
+# Liveness — lightweight, no network calls
 @app.get("/health")
 async def health():
-    from app.services.index_manager import get_index_manager
-    from app.config import get_settings
+    return {"status": "ok", "service": settings.SERVICE_NAME}
+
+
+# Readiness — checks real dependencies
+@app.get("/ready")
+async def readiness():
+    from fastapi.responses import JSONResponse
+    checks = {}
+    all_ok = True
+
+    # ChromaDB
+    try:
+        from app.services.index_manager import get_index_manager
+        idx = get_index_manager()
+        if idx._chroma_client:
+            idx._chroma_client.heartbeat()
+            checks["chromadb"] = {"status": "ok"}
+        else:
+            checks["chromadb"] = {"status": "error", "detail": "client not initialized"}
+            all_ok = False
+    except Exception as e:
+        checks["chromadb"] = {"status": "error", "detail": str(e)[:200]}
+        all_ok = False
+
+    # Redis (ARQ broker)
+    try:
+        import redis as _redis
+        r = _redis.from_url(settings.REDIS_BROKER_URL, socket_connect_timeout=3)
+        r.ping()
+        r.close()
+        checks["redis"] = {"status": "ok"}
+    except Exception as e:
+        checks["redis"] = {"status": "error", "detail": str(e)[:200]}
+        all_ok = False
+
+    # LLM configured (informational, not blocking)
     current_settings = get_settings()
-    idx = get_index_manager()
-    return {
-        "status": "ok",
-        "service": current_settings.SERVICE_NAME,
-        "rag_available": idx.available,
-        "chromadb_connected": idx.chromadb_connected,
-        "openai_configured": current_settings.has_llm,  # backward compat key name
-        "llm_configured": current_settings.has_llm,
-        "llm_provider": current_settings.LLM_PROVIDER,
-        "llm_model": current_settings.effective_model,
-        "embed_provider": current_settings.EMBED_PROVIDER,
+    checks["llm"] = {
+        "status": "ok" if current_settings.has_llm else "degraded",
+        "provider": current_settings.LLM_PROVIDER,
+        "model": current_settings.effective_model,
     }
+
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if all_ok else "unavailable",
+            "service": settings.SERVICE_NAME,
+            "checks": checks,
+        },
+    )
 
 
 # Хранилище последнего парсинга (in-memory)

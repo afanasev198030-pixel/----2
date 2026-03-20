@@ -31,26 +31,24 @@ docker exec customs-core-api python -m app.seeds.update_tnved_online
 
 ## Архитектура
 
-| Сервис | Порт | Описание |
-|--------|------|----------|
-| **PostgreSQL** | 5432 | БД (39722 кода ТН ВЭД) |
-| **Redis** | 6379 | Кеш курсов ЦБ |
-| **MinIO** | 9000 | Файловое хранилище |
-| **ChromaDB** | 8100 | Векторная БД (RAG) |
-| **core-api** | 8001 | Ядро: декларации, auth, справочники |
-| **file-service** | 8002 | Загрузка PDF файлов |
-| **ai-service** | 8003 | AI: парсинг, ТН ВЭД, риски |
-| **calc-service** | 8005 | Расчёт платежей, курсы ЦБ |
-| **Nginx** | 80 | Reverse proxy |
-| **Frontend** | 3000 | React SPA |
+**Актуальное описание архитектуры** находится в [`docs/architecture.md`](docs/architecture.md) (создано и обновлено 20 марта 2026 на основе анализа реального кода проекта).
 
-## AI стек
+**Кратко:**
+- **core-api (8001)** — основной сервис (авторизация, CRUD деклараций, `apply_parsed`, `graph_rules`, админка)
+- **ai-service (8003)** — AI-движок (`smart_parser`, RAG/ChromaDB, DSPy, rules engine) — **главный кандидат на рефакторинг**
+- **file-service (8002)** — работа с файлами (MinIO + Gotenberg для PDF)
+- **integration-service (8004)** — XML-экспорт
+- **calc-service (8005)** — расчёты платежей и курсы ЦБ
+- **bot-service** — Telegram-бот
+- Nginx — единый reverse proxy со сквозным `X-Request-ID` для трассировки
 
-- **OpenAI GPT-4o** — парсинг PDF документов
-- **LlamaIndex + ChromaDB** — RAG поиск по ТН ВЭД
-- **DSPy** — авто-оптимизация промптов
-- **CrewAI** — мультиагентная оркестрация
-- **Regex fallback** — работает без OpenAI ключа
+## AI стек (актуально)
+
+- **LLM:** DeepSeek (по умолчанию `deepseek-chat` / `deepseek-reasoner`), совместимость с OpenAI и Cloud.ru
+- **RAG:** ChromaDB (коллекции `hs_codes`, `risk_rules`, `precedents`)
+- **Structured output:** DSPy
+- **OCR:** встроенный + Vision-модели (DeepSeek-OCR-2)
+- **Правила:** `declaration_mapping_v3.yaml` + данные из БД + `docs/declaration_ai_filling_rules.md`
 
 ## Коды ТН ВЭД
 

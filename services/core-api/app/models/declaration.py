@@ -96,6 +96,10 @@ class Declaration(Base):
     spot_qr_file_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     spot_amount: Mapped[Optional[Decimal]] = mapped_column(DECIMAL(15, 2), nullable=True)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Task Queue fields for async AI processing
+    ai_task_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    processing_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default=None)
     place_and_date: Mapped[Optional[str]] = mapped_column(String(200))
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.users.id")

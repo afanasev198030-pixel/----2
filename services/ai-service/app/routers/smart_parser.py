@@ -22,8 +22,25 @@ logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/ai", tags=["smart-parser"])
 
 
-# Global progress store
+# Global progress store (in-memory; replaced by Redis in worker mode)
 _progress: dict = {}
+
+# ARQ connection pool (lazy init)
+_arq_pool = None
+
+
+async def _get_arq_pool():
+    """Lazy-init ARQ Redis connection pool."""
+    global _arq_pool
+    if _arq_pool is None:
+        from arq.connections import create_pool, RedisSettings
+        from app.config import get_settings
+        settings = get_settings()
+        _arq_pool = await create_pool(
+            RedisSettings.from_dsn(settings.REDIS_BROKER_URL),
+            default_queue_name=settings.ARQ_QUEUE_NAME,
+        )
+    return _arq_pool
 
 
 def _send_event(request_id: str, step: str, detail: str, progress: int):
@@ -41,6 +58,35 @@ async def get_parse_progress(request_id: str):
     return _progress.get(request_id, {"step": "waiting", "detail": "Ожидание...", "progress": 0})
 
 
+@router.get("/task-status/{task_id}")
+async def get_task_status(task_id: str):
+    """Получить статус задачи в очереди ARQ."""
+    from app.config import get_settings
+    settings = get_settings()
+    if not settings.TASK_QUEUE_ENABLED:
+        raise HTTPException(status_code=404, detail="Task queue is disabled")
+
+    try:
+        pool = await _get_arq_pool()
+        from arq.jobs import Job
+        job = Job(task_id, pool)
+        info = await job.info()
+        if info is None:
+            return {"task_id": task_id, "status": "not_found"}
+        return {
+            "task_id": task_id,
+            "status": str(info.status),
+            "enqueue_time": str(info.enqueue_time) if info.enqueue_time else None,
+            "start_time": str(info.start_time) if info.start_time else None,
+            "finish_time": str(info.finish_time) if info.finish_time else None,
+            "success": info.success,
+            "result": info.result if info.success else None,
+        }
+    except Exception as e:
+        logger.warning("task_status_error", task_id=task_id, error=str(e))
+        return {"task_id": task_id, "status": "unknown", "error": str(e)}
+
+
 @router.post("/parse-smart")
 async def parse_smart(
     files: list[UploadFile] = File(...),
@@ -48,6 +94,8 @@ async def parse_smart(
 ):
     """
     Мультизагрузка PDF файлов → автопарсинг → данные для декларации.
+    При TASK_QUEUE_ENABLED=true ставит задачу в ARQ и возвращает task_id.
+    При TASK_QUEUE_ENABLED=false работает синхронно (обратная совместимость).
     """
     import uuid as _uuid
     request_id = str(_uuid.uuid4())[:8]
@@ -61,24 +109,81 @@ async def parse_smart(
     filenames = [f.filename for f in files]
     logger.info("parse_smart_start", files_count=len(files), filenames=filenames, request_id=request_id)
 
+    # Step 1: Reading files
+    _send_event(request_id, "reading", f"Чтение {len(files)} файлов...", 5)
+    file_data = []
+    for i, f in enumerate(files):
+        content = await f.read()
+        if len(content) == 0:
+            continue
+        if len(content) > 50 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"File {f.filename} exceeds 50MB limit")
+        file_data.append((content, f.filename or "document.pdf"))
+        _send_event(request_id, "reading", f"Прочитан: {f.filename}", 5 + int(10 * (i + 1) / len(files)))
+
+    if not file_data:
+        raise HTTPException(status_code=400, detail="No valid files to process")
+
+    # ── Async mode: enqueue to ARQ worker, then poll for result ──
+    from app.config import get_settings
+    settings = get_settings()
+
+    if settings.TASK_QUEUE_ENABLED:
+        try:
+            pool = await _get_arq_pool()
+            job = await pool.enqueue_job(
+                "process_declaration_task",
+                declaration_id=declaration_id,
+                file_data=file_data,
+                request_id=request_id,
+            )
+            _send_event(request_id, "queued", "Задача поставлена в очередь...", 10)
+            logger.info("task_enqueued", task_id=job.job_id, request_id=request_id)
+
+            poll_timeout = 540
+            poll_interval = 3
+            import time as _poll_time
+            deadline = _poll_time.time() + poll_timeout
+
+            while _poll_time.time() < deadline:
+                await asyncio.sleep(poll_interval)
+                info = await job.info()
+                if info is None:
+                    continue
+                if info.success is not None:
+                    if info.success:
+                        task_result = info.result or {}
+                        result = task_result.get("result", {}) if isinstance(task_result, dict) else {}
+                        result["request_id"] = request_id
+                        _send_event(request_id, "complete", "Готово!", 100)
+                        logger.info(
+                            "task_poll_complete",
+                            task_id=job.job_id,
+                            items_count=len(result.get("items", [])),
+                            request_id=request_id,
+                        )
+                        asyncio.get_event_loop().call_later(60, lambda: _progress.pop(request_id, None))
+                        return result
+                    else:
+                        error_msg = ""
+                        if isinstance(info.result, dict):
+                            error_msg = info.result.get("error", "Unknown error")
+                        else:
+                            error_msg = str(info.result)[:300] if info.result else "Unknown error"
+                        logger.error("task_poll_failed", task_id=job.job_id, error=error_msg, request_id=request_id)
+                        raise HTTPException(status_code=500, detail=f"AI processing failed: {error_msg}")
+
+            logger.warning("task_poll_timeout", task_id=job.job_id, request_id=request_id)
+            raise HTTPException(status_code=504, detail="AI processing timeout — задача всё ещё обрабатывается. Попробуйте повторить позже.")
+
+        except HTTPException:
+            raise
+        except Exception as eq_err:
+            logger.warning("enqueue_failed_fallback_sync", error=str(eq_err), request_id=request_id)
+
+    # ── Sync fallback (TASK_QUEUE_ENABLED=false or enqueue failed) ──
     context_tokens = set_usage_context(declaration_id=declaration_id or "", operation="parse_smart_dspy")
     try:
-        # Step 1: Reading files
-        _send_event(request_id, "reading", f"Чтение {len(files)} файлов...", 5)
-        file_data = []
-        for i, f in enumerate(files):
-            content = await f.read()
-            if len(content) == 0:
-                continue
-            if len(content) > 50 * 1024 * 1024:
-                raise HTTPException(status_code=400, detail=f"File {f.filename} exceeds 50MB limit")
-            file_data.append((content, f.filename or "document.pdf"))
-            _send_event(request_id, "reading", f"Прочитан: {f.filename}", 5 + int(10 * (i + 1) / len(files)))
-
-        if not file_data:
-            raise HTTPException(status_code=400, detail="No valid files to process")
-
-        # Step 2-5: Process through crew with progress callbacks
         _send_event(request_id, "parsing", "Распознавание документов (OCR)...", 15)
 
         crew = DeclarationCrew()
@@ -95,7 +200,6 @@ async def parse_smart(
             request_id=request_id,
         )
 
-        # Normalize ALL HS codes to exactly 10 digits (min 6 input + group 01-97)
         import re as _re
         def _pad_hs(code: str) -> str:
             c = _re.sub(r"\D", "", str(code or ""))
@@ -120,10 +224,8 @@ async def parse_smart(
                 if cand.get("hs_code"):
                     cand["hs_code"] = _pad_hs(cand["hs_code"])
 
-        # Include request_id in response for progress tracking
         result["request_id"] = request_id
 
-        # Сохраняем last_parse для дебаг-панели
         try:
             from app.main import _last_parse
             import time as _time
@@ -144,9 +246,7 @@ async def parse_smart(
         except Exception:
             pass
 
-        # Clean up progress after 60s
         asyncio.get_event_loop().call_later(60, lambda: _progress.pop(request_id, None))
-
         return result
 
     except HTTPException:

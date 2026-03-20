@@ -484,7 +484,9 @@ class ApplyParsedRequest(BaseModel):
     # Ссылки на загруженные документы
     documents: list[ParsedDocumentRef] = []
 
-    # Графа 8: по умолчанию True → "СМ. ГРАФУ 14 ДТ"
+    # Графа 8: получатель из транспортного документа (если отличается от декларанта)
+    consignee: Optional[ParsedCounterparty] = None
+    # True → "СМ. ГРАФУ 14 ДТ", False → использовать consignee
     buyer_matches_declarant: Optional[bool] = True
 
     # Графа 9: лицо, ответственное за финансовое урегулирование
@@ -1159,24 +1161,25 @@ async def apply_parsed_data(
         if company and hasattr(company, "broker_license") and company.broker_license and not declaration.broker_registry_number:
             declaration.broker_registry_number = str(company.broker_license)[:30]
 
-        # Детекция трёхстороннего договора среди загруженных документов
-        has_trilateral = _has_trilateral_contract(data.documents)
-        if has_trilateral:
-            logger.info("trilateral_contract_detected", declaration_id=str(declaration.id))
-
-        # Графа 8: «СМ. ГРАФУ 14 ДТ» по умолчанию.
-        # Отдельный получатель — ТОЛЬКО при наличии трёхстороннего договора.
-        if has_trilateral and data.buyer and data.buyer.name and not _is_placeholder_party(data.buyer.name):
+        # Графа 8: источник — транспортный документ (consignee).
+        # Если consignee из transport_doc совпадает с декларантом по ИНН/КПП/ОГРН →
+        # buyer_matches_declarant=True → receiver = declarant («СМ. ГРАФУ 14 ДТ»).
+        # Если не совпадает → data.consignee содержит отдельного получателя.
+        if (not data.buyer_matches_declarant
+                and data.consignee
+                and data.consignee.name
+                and not _is_placeholder_party(data.consignee.name)):
             receiver_id = await _find_or_create_counterparty(
-                db, data.buyer, "buyer", current_user.company_id
+                db, data.consignee, "buyer", current_user.company_id
             )
             counters["counterparties"] += 1
-            logger.info("graph_8_from_trilateral", receiver_name=data.buyer.name)
+            logger.info("graph_8_from_transport_doc", receiver_name=data.consignee.name)
         elif declarant_id:
             receiver_id = declarant_id
 
         # Графа 9: «СМ. ГРАФУ 14 ДТ» по умолчанию.
         # Отдельное фин. ответственное лицо — ТОЛЬКО при наличии трёхстороннего договора.
+        has_trilateral = _has_trilateral_contract(data.documents)
         financial_id = None
         if has_trilateral and isinstance(responsible_person_data, ParsedCounterparty) and responsible_person_data.name:
             financial_id = await _find_or_create_counterparty(

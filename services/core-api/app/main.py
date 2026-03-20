@@ -9,6 +9,7 @@ import structlog
 from app.config import settings
 from app.middleware.logging_middleware import LoggingMiddleware
 from app.utils.logging import setup_logging
+from app.models.declaration import Declaration
 from app.routers import (
     auth,
     declarations,
@@ -204,14 +205,49 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 
-# Health check endpoint
+# Health check endpoint (liveness — always 200 if process is alive)
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "ok",
-        "service": "core-api",
-    }
+    return {"status": "ok", "service": "core-api"}
+
+
+# Readiness check (checks real dependencies before accepting traffic)
+@app.get("/ready")
+async def readiness_check():
+    checks = {}
+    all_ok = True
+
+    # PostgreSQL
+    try:
+        from app.database import engine
+        from sqlalchemy import text
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["postgres"] = {"status": "ok"}
+    except Exception as e:
+        checks["postgres"] = {"status": "error", "detail": str(e)[:200]}
+        all_ok = False
+
+    # Redis
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, socket_connect_timeout=3)
+        await r.ping()
+        await r.aclose()
+        checks["redis"] = {"status": "ok"}
+    except Exception as e:
+        checks["redis"] = {"status": "error", "detail": str(e)[:200]}
+        all_ok = False
+
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if all_ok else "unavailable",
+            "service": "core-api",
+            "checks": checks,
+        },
+    )
 
 
 # Internal endpoint for ai-service (no auth)
@@ -236,6 +272,78 @@ async def internal_create_parse_issue(data: dict, db=Depends(get_db)):
     db.add(issue)
     await db.commit()
     return {"status": "created", "id": str(issue.id)}
+
+
+@app.post("/api/v1/internal/task-complete", status_code=200)
+async def internal_task_complete(data: dict, db=Depends(get_db)):
+    """Callback from ai-worker when background parsing task completes."""
+    import uuid as _uuid
+    declaration_id = data.get("declaration_id")
+    task_status = data.get("status", "unknown")
+    request_id = data.get("request_id")
+
+    if not declaration_id:
+        return {"status": "ignored", "reason": "no declaration_id"}
+
+    try:
+        decl_uuid = _uuid.UUID(declaration_id)
+    except (ValueError, TypeError):
+        return {"status": "ignored", "reason": "invalid declaration_id"}
+
+    from sqlalchemy import select
+    result = await db.execute(select(Declaration).where(Declaration.id == decl_uuid))
+    decl = result.scalar_one_or_none()
+    if decl:
+        decl.processing_status = "complete" if task_status == "success" else "failed"
+        await db.commit()
+        logger.info(
+            "task_complete_callback",
+            declaration_id=declaration_id,
+            processing_status=decl.processing_status,
+            request_id=request_id,
+        )
+    return {"status": "ok"}
+
+
+@app.post("/api/v1/internal/apply-parsed/{declaration_id}", status_code=200)
+async def internal_apply_parsed(declaration_id: str, data: dict, db=Depends(get_db)):
+    """Worker callback: apply parsed AI result to declaration without JWT auth."""
+    import uuid as _uuid
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.models import User
+
+    try:
+        decl_uuid = _uuid.UUID(declaration_id)
+    except (ValueError, TypeError):
+        return {"status": "error", "reason": "invalid declaration_id"}
+
+    result = await db.execute(select(Declaration).where(Declaration.id == decl_uuid))
+    decl = result.scalar_one_or_none()
+    if not decl:
+        return {"status": "error", "reason": "declaration not found"}
+
+    user_result = await db.execute(select(User).where(User.id == decl.created_by))
+    user = user_result.scalar_one_or_none()
+    if not user:
+        return {"status": "error", "reason": "creator user not found"}
+
+    try:
+        from app.routers.apply_parsed import apply_parsed_data, ApplyParsedRequest
+        parsed_request = ApplyParsedRequest(**data)
+        response = await apply_parsed_data(decl_uuid, parsed_request, db, user)
+        logger.info(
+            "internal_apply_parsed_ok",
+            declaration_id=declaration_id,
+            items=response.counters.get("items", 0) if hasattr(response, "counters") else "?",
+        )
+        return {"status": "ok"}
+    except HTTPException as he:
+        logger.warning("internal_apply_parsed_http_error", detail=he.detail, status=he.status_code)
+        return {"status": "error", "reason": he.detail}
+    except Exception as e:
+        logger.exception("internal_apply_parsed_failed", error=str(e)[:300])
+        return {"status": "error", "reason": str(e)[:300]}
 
 
 @app.post("/api/v1/internal/ai-usage", status_code=201)

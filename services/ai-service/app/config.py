@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     PHOENIX_HOST: str = "phoenix"
     PHOENIX_PORT: int = 6006
 
+    # Task Queue (ARQ + Redis) - for async AI processing to prevent OOM
+    REDIS_BROKER_URL: str = "redis://redis:6379/2"
+    TASK_QUEUE_ENABLED: bool = True
+    ARQ_QUEUE_NAME: str = "ai_tasks"
+    ARQ_MAX_JOBS: int = 3
+    ARQ_JOB_TIMEOUT_SECONDS: int = 1800  # 30 minutes
+
     @property
     def chromadb_url(self) -> str:
         return f"http://{self.CHROMADB_HOST}:{self.CHROMADB_PORT}"

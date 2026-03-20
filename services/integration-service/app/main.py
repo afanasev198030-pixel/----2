@@ -105,9 +105,40 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Health check
 # ---------------------------------------------------------------------------
 
+# Liveness
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": settings.SERVICE_NAME}
+
+
+# Readiness — checks core-api availability
+@app.get("/ready")
+async def readiness():
+    checks = {}
+    all_ok = True
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"{settings.CORE_API_URL}/health")
+            if resp.status_code == 200:
+                checks["core_api"] = {"status": "ok"}
+            else:
+                checks["core_api"] = {"status": "error", "detail": f"HTTP {resp.status_code}"}
+                all_ok = False
+    except Exception as e:
+        checks["core_api"] = {"status": "error", "detail": str(e)[:200]}
+        all_ok = False
+
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ok" if all_ok else "unavailable",
+            "service": settings.SERVICE_NAME,
+            "checks": checks,
+        },
+    )
 
 
 @app.on_event("startup")

@@ -36,3 +36,6 @@ crewai
 arize-phoenix>=8.0.0
 openinference-instrumentation-openai>=0.1.0
 redis>=5.0.1
+
+# Task Queue (ARQ + Redis) - for async AI processing to prevent OOM and timeouts
+arq>=0.25.0
