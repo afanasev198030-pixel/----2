@@ -2,6 +2,92 @@
 
 ---
 
+## Этап 1.1: Task Queue (ARQ) + Этап 1.2: Healthchecks
+
+**Дата:** 2026-03-20
+**Ветка:** `feature/task-queue-healthchecks`
+
+### Обзор
+
+Внедрение фоновой обработки документов через ARQ (Async Redis Queue) и полноценных healthcheck-ов (liveness + readiness) для всех микросервисов. Это первые два этапа плана рефакторинга инфраструктуры (Phase 0).
+
+---
+
+### 1. Task Queue — асинхронная обработка документов (Этап 1.1)
+
+**Проблема**: парсинг пакета PDF (OCR + LLM классификация + HS-коды + риски) занимает 1–10 минут. Всё это время ai-service блокирован одним запросом, при нескольких параллельных пользователях рискует упасть по OOM или timeout.
+
+**Решение**: обработка вынесена в отдельный ARQ worker процесс.
+
+- **Новый сервис `ai-worker`** — Docker-контейнер с `arq app.workers.tasks.WorkerSettings`. Обрабатывает задачи из Redis DB 2, очередь `ai_tasks`. До 3 параллельных задач, timeout 30 минут.
+- **`workers/tasks.py`** — задача `process_declaration_task`: OCR → LLM extraction → HS classification → risk assessment → автоматическое применение результата через `POST /api/v1/internal/apply-parsed/{id}`.
+- **Гибридный режим `/parse-smart`** — задача ставится в worker (безопасная обработка в изолированном процессе), но endpoint ждёт результат (polling каждые 3 сек, timeout 9 мин) и возвращает полный ответ фронтенду. Фронтенд не требует доработки.
+- **LLM config at startup** — worker при старте загружает актуальный API-ключ и настройки LLM из БД через `core-api/api/v1/settings/internal/llm-config`.
+- **Internal apply-parsed endpoint** — `POST /api/v1/internal/apply-parsed/{id}` в core-api: находит декларацию, подтягивает пользователя-создателя, вызывает `apply_parsed_data` без JWT.
+- **Миграция** — `028_task_queue_fields.py`: колонки `ai_task_id` и `processing_status` в `core.declarations`.
+
+### 2. Healthchecks — liveness и readiness пробы (Этап 1.2)
+
+**Проблема**: Docker проверял «контейнер запустился», но не проверял «сервис реально готов принимать запросы». При падении PostgreSQL или Redis — сервисы продолжали получать трафик и падали с ошибками.
+
+**Решение**: разделение на два уровня проверок.
+
+| Сервис | `/health` (liveness) | `/ready` (readiness) — проверяет |
+|--------|---------------------|----------------------------------|
+| core-api | `{"status":"ok"}` | PostgreSQL (SELECT 1), Redis (ping) |
+| ai-service | `{"status":"ok"}` | ChromaDB (heartbeat), Redis (ping), LLM config (info) |
+| ai-worker | — | Redis ping (Python one-liner) |
+| file-service | `{"status":"ok"}` | MinIO (bucket_exists), Gotenberg (/health) |
+| calc-service | `{"status":"ok"}` | (нет внешних зависимостей) |
+| integration-service | `{"status":"ok"}` | core-api (/health) |
+| frontend | — | wget http://127.0.0.1:3000/ |
+| nginx | — | curl http://localhost:80/ |
+| gotenberg | — | curl /health |
+
+- **Liveness** (`/health`) — легковесная проверка «процесс жив», всегда 200 OK.
+- **Readiness** (`/ready`) — проверка зависимостей. Возвращает 503 при недоступности критических сервисов, 200 когда всё работает. Docker использует `/ready` для healthcheck.
+- **depends_on с condition: service_healthy** — ai-service ждёт ChromaDB + Redis, file-service ждёт Gotenberg, ai-worker ждёт Redis + core-api + ai-service.
+- **start_period** — для сервисов с долгим стартом (frontend: 30s, ai-service: 20s, core-api: 15s).
+- **Деградация и восстановление** — при падении зависимости readiness возвращает 503 с детализацией ошибки. После восстановления автоматически возвращается в 200.
+
+### Результаты тестирования
+
+Проведено полное тестирование:
+- `/health` и `/ready` для всех 5 бэкенд-сервисов — PASS
+- Docker healthcheck статусы 14 контейнеров — все healthy
+- ARQ worker: запуск, LLM config, Redis, queue name — PASS
+- Internal apply-parsed: edge cases + реальная декларация — PASS
+- Деградация: остановка ChromaDB → ai-service `/ready` 503, `/health` 200 — PASS
+- Деградация: остановка Redis → core-api `/ready` 503, PostgreSQL ok — PASS
+- Восстановление: после запуска зависимости → `/ready` 200 — PASS
+
+### Изменённые файлы
+
+| Файл | Изменения |
+|---|---|
+| `docker-compose.yml` | +99: healthchecks для всех сервисов, ai-worker, depends_on с service_healthy, start_period |
+| `docker-compose.prod.yml` | +45: healthchecks для prod |
+| `services/core-api/app/main.py` | +120: `/ready` (PostgreSQL + Redis), `internal/apply-parsed`, `internal/task-complete` |
+| `services/core-api/app/models/declaration.py` | +4: `ai_task_id`, `processing_status` |
+| `services/ai-service/app/main.py` | +64: `/ready` (ChromaDB + Redis + LLM info) |
+| `services/ai-service/app/routers/smart_parser.py` | +144: hybrid polling mode, task-status endpoint |
+| `services/ai-service/app/config.py` | +7: ARQ settings (queue name, max_jobs, timeout, Redis broker URL) |
+| `services/ai-service/requirements.txt` | +3: arq, redis |
+| `services/file-service/app/main.py` | +46: `/ready` (MinIO + Gotenberg) |
+| `services/calc-service/app/main.py` | +7: `/ready` |
+| `services/integration-service/app/main.py` | +31: `/ready` (core-api) |
+
+### Новые файлы
+
+| Файл | Строк | Назначение |
+|---|---|---|
+| `services/ai-service/app/workers/__init__.py` | 0 | Package init |
+| `services/ai-service/app/workers/tasks.py` | 178 | ARQ задача: OCR + LLM + HS + риски + auto-apply |
+| `services/core-api/alembic/versions/028_task_queue_fields.py` | — | Миграция: ai_task_id + processing_status |
+| `docs/architecture.md` | 284 | Архитектурная документация с планом рефакторинга |
+
+---
+
 ## Fix: Инкотермс (гр.20) — delivery_place + IATA-маппинг
 
 **Дата:** 2026-03-19

@@ -182,6 +182,7 @@ _TYPE_SCHEMAS: dict[str, str] = {
     ),
     "transport_doc": (
         "awb_number, shipper_name, shipper_address, consignee_name, consignee_address,\n"
+        "consignee_inn, consignee_kpp, consignee_ogrn,\n"
         "departure_airport, destination_airport, transport_type (10=sea, 30=auto, 40=air),\n"
         "flight_number, vehicle_reg_number, vessel_name, vehicle_country_code,\n"
         "container_numbers: [string], departure_country (ISO alpha-2)"

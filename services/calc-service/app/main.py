@@ -16,8 +16,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 app.include_router(payments.router)
 
 
+# Liveness
 @app.get("/health")
 async def health():
+    return {"status": "ok", "service": settings.SERVICE_NAME}
+
+
+# Readiness (no critical external deps — autonomous service)
+@app.get("/ready")
+async def readiness():
     return {"status": "ok", "service": settings.SERVICE_NAME}
 
 

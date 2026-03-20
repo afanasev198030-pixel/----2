@@ -101,10 +101,11 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 15s
 
   file-service:
     build:
@@ -118,6 +119,8 @@ services:
     depends_on:
       minio:
         condition: service_healthy
+      gotenberg:
+        condition: service_healthy
     environment:
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
@@ -128,10 +131,11 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
   ai-service:
     build:
@@ -144,8 +148,14 @@ services:
       - ./services/ai-service/app:/app/app
       - ./docs:/app/docs:ro
     depends_on:
-      - core-api
-      - calc-service
+      core-api:
+        condition: service_healthy
+      calc-service:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       CORE_API_URL: http://core-api:8001
       CALC_SERVICE_URL: http://calc-service:8005
@@ -171,13 +181,16 @@ services:
       CHROMADB_PORT: 8000
       PHOENIX_HOST: phoenix
       PHOENIX_PORT: 6006
+      REDIS_BROKER_URL: redis://redis:6379/2
+      TASK_QUEUE_ENABLED: ${TASK_QUEUE_ENABLED:-true}
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8003/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 20s
 
   calc-service:
     build:
@@ -196,7 +209,7 @@ services:
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8005/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -211,16 +224,69 @@ services:
     volumes:
       - ./services/integration-service/app:/app/app
     depends_on:
-      - core-api
+      core-api:
+        condition: service_healthy
     environment:
       CORE_API_URL: http://core-api:8001
     env_file:
       - .env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8004/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+
+  ai-worker:
+    build:
+      context: .
+      dockerfile: services/ai-service/Dockerfile
+    container_name: customs-ai-worker
+    command: ["arq", "app.workers.tasks.WorkerSettings"]
+    volumes:
+      - ./services/ai-service/app:/app/app
+      - ./docs:/app/docs:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      core-api:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    environment:
+      CORE_API_URL: http://core-api:8001
+      CALC_SERVICE_URL: http://calc-service:8005
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_API_KEY: ${LLM_API_KEY:-${OPENAI_API_KEY}}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-deepseek-reasoner}
+      LLM_PROJECT_ID: ${LLM_PROJECT_ID:-}
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+      OCR_BASE_URL: ${OCR_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      OCR_API_KEY: ${OCR_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-deepseek-ai/DeepSeek-OCR-2}
+      OCR_PROJECT_ID: ${OCR_PROJECT_ID:-}
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      REDIS_BROKER_URL: redis://redis:6379/2
+      TASK_QUEUE_ENABLED: "true"
+      ARQ_MAX_JOBS: "3"
+      ARQ_JOB_TIMEOUT_SECONDS: "1800"
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; r = redis.from_url('redis://redis:6379/2', socket_connect_timeout=3); r.ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   nginx:
     image: nginx:alpine
@@ -232,6 +298,11 @@ services:
     depends_on:
       - core-api
       - file-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:
@@ -250,6 +321,12 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - WDS_SOCKET_PORT=3000
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   gotenberg:
     image: gotenberg/gotenberg:8
@@ -259,6 +336,12 @@ services:
       - "--api-timeout=120s"
     expose:
       - "3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   chromadb:
     image: chromadb/chroma:latest

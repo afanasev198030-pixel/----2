@@ -694,13 +694,14 @@ _DEFAULT_POST: tuple[str, str, str] = (
 
 
 def _parse_transport_doc_llm(text: str, filename: str) -> dict:
-    """Извлечь идентификатор ТС из транспортного документа (AWB / CMR / B/L) — для графы 21.
+    """Извлечь данные из транспортного документа (AWB / CMR / B/L).
 
-    Определяет тип документа и извлекает:
-    - vehicle_id: итоговый идентификатор для гр. 21 (номер рейса / рег. номер ТС / название судна)
+    Извлекает:
+    - vehicle_id: идентификатор для гр. 21
     - vehicle_type: тип ТС (air / road / sea / rail)
     - transport_country_code: ISO2 страна регистрации ТС
     - awb_number: номер AWB (только для авиа)
+    - consignee_*: данные получателя для гр. 8
     """
     result: dict = {
         "vehicle_id": None,
@@ -710,6 +711,11 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
         "shipper_name": None,
         "shipper_address": None,
         "destination_airport": None,
+        "consignee_name": None,
+        "consignee_address": None,
+        "consignee_inn": None,
+        "consignee_kpp": None,
+        "consignee_ogrn": None,
     }
     if not text or len(text.strip()) < 20:
         return result
@@ -756,8 +762,18 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
 - shipper_address: ПОЛНЫЙ адрес отправителя (графа 2 ДТ).
     Искать в полях: "Shipper's Address", "Address", "Адрес отправителя" — обычно сразу под именем отправителя.
     Включить: улицу, город, почтовый индекс, страну.
+- consignee_name: наименование ПОЛУЧАТЕЛЯ груза (графа 8 ДТ) — ОБЯЗАТЕЛЬНО НА РУССКОМ ЯЗЫКЕ.
+    Искать в полях: "Consignee", "Consignee's Name", "Получатель", "Грузополучатель".
+    ВАЖНО: если в документе наименование только на иностранном языке (англ./кит.) —
+    перевести/транслитерировать на русский (например "AG-Logistik LLC" → "ООО «АГ-ЛОГИСТИК»").
+- consignee_address: ПОЛНЫЙ адрес получателя — ОБЯЗАТЕЛЬНО НА РУССКОМ ЯЗЫКЕ.
+    Искать рядом с именем получателя. Включить: улицу, город, индекс, страну.
+    Если адрес на иностранном языке — перевести на русский.
+- consignee_inn: ИНН получателя (10 или 12 цифр). Искать: "ИНН", "INN", "Tax ID", "TIN".
+- consignee_kpp: КПП получателя (9 цифр). Искать: "КПП", "KPP".
+- consignee_ogrn: ОГРН/ОГРНИП получателя (13 или 15 цифр). Искать: "ОГРН", "OGRN".
 
-ВАЖНО: shipper_name, shipper_address и destination_airport обязательны для граф 2 и 29 ДТ.
+ВАЖНО: shipper_name, shipper_address, destination_airport, consignee_name обязательны для граф 2, 8 и 29 ДТ.
 
 Текст документа:
 {text[:6000]}
@@ -780,8 +796,14 @@ JSON:"""},
         result["departure_airport"] = dep or None
         dest = (data.get("destination_airport") or "").strip().upper()
         result["destination_airport"] = dest or None
+        result["consignee_name"] = data.get("consignee_name")
+        result["consignee_address"] = data.get("consignee_address")
+        result["consignee_inn"] = (data.get("consignee_inn") or "").strip() or None
+        result["consignee_kpp"] = (data.get("consignee_kpp") or "").strip() or None
+        result["consignee_ogrn"] = (data.get("consignee_ogrn") or "").strip() or None
         logger.info("transport_doc_parsed", filename=filename,
-                    vehicle_id=result["vehicle_id"], doc_type=result["vehicle_type"])
+                    vehicle_id=result["vehicle_id"], doc_type=result["vehicle_type"],
+                    consignee_name=result["consignee_name"])
     except Exception as e:
         logger.warning("transport_doc_parse_failed", filename=filename, error=str(e))
     return result
@@ -1619,24 +1641,64 @@ JSON:"""},
 
         declarant_inn_kpp = _extract_inn_kpp(contract.get("buyer")) or _extract_inn_kpp(inv.get("buyer"))
 
-        # ── Графы 8 и 9: по умолчанию «СМ. ГРАФУ 14 ДТ» ──
-        # Исключение: трёхсторонний договор с отдельными получателем / ответственным лицом
-        is_trilateral = bool(contract.get("is_trilateral"))
-        contract_receiver = contract.get("receiver") or contract.get("consignee")
-        contract_financial = contract.get("financial_responsible") or contract.get("financial_party")
-
+        # ── Графа 8: получатель из транспортного документа ──
+        # Источник — ТОЛЬКО transport_doc. Извлекаем consignee, сравниваем ИНН/КПП/ОГРН
+        # с декларантом (гр.14). Совпадают → «СМ. ГРАФУ 14 ДТ», нет → данные из transport_doc.
         buyer_matches_declarant = True
+        consignee_data = None
+
+        transport_consignee_name = (transport.get("consignee_name") or "").strip()
+        if transport_consignee_name:
+            cons_inn = (transport.get("consignee_inn") or "").strip()
+            cons_kpp = (transport.get("consignee_kpp") or "").strip()
+            cons_ogrn = (transport.get("consignee_ogrn") or "").strip()
+
+            decl_inn = (buyer.get("inn") or "").strip() if buyer else ""
+            decl_kpp = (buyer.get("kpp") or "").strip() if buyer else ""
+            decl_ogrn = (buyer.get("ogrn") or "").strip() if buyer else ""
+
+            can_compare = bool(cons_inn or cons_ogrn)
+            if can_compare:
+                inn_ok = (cons_inn == decl_inn) if (cons_inn and decl_inn) else True
+                kpp_ok = (cons_kpp == decl_kpp) if (cons_kpp and decl_kpp) else True
+                ogrn_ok = (cons_ogrn == decl_ogrn) if (cons_ogrn and decl_ogrn) else True
+                identifiers_match = inn_ok and kpp_ok and ogrn_ok
+            else:
+                identifiers_match = False
+
+            if can_compare and identifiers_match:
+                buyer_matches_declarant = True
+                logger.info("graph_8_consignee_matches_declarant",
+                            consignee_inn=cons_inn, declarant_inn=decl_inn,
+                            msg="Графа 8: получатель совпадает с декларантом → «СМ. ГРАФУ 14 ДТ»")
+            elif can_compare:
+                buyer_matches_declarant = False
+                consignee_data = _extract_party([{
+                    "name": transport_consignee_name,
+                    "address": transport.get("consignee_address"),
+                    "country_code": "RU",
+                    "inn": cons_inn or None,
+                    "kpp": cons_kpp or None,
+                    "ogrn": cons_ogrn or None,
+                }], "buyer")
+                logger.info("graph_8_consignee_from_transport_doc",
+                            consignee_name=transport_consignee_name, consignee_inn=cons_inn,
+                            msg="Графа 8: получатель отличается от декларанта")
+            else:
+                buyer_matches_declarant = True
+                logger.warning("graph_8_consignee_no_identifiers",
+                               consignee_name=transport_consignee_name,
+                               msg="Графа 8: у получателя нет ИНН/ОГРН — нельзя сравнить с декларантом, «СМ. ГРАФУ 14 ДТ»")
+        else:
+            logger.info("graph_8_no_consignee_in_transport",
+                        msg="Графа 8: получатель не найден в транспортном документе → «СМ. ГРАФУ 14 ДТ»")
+
+        # ── Графа 9: по умолчанию «СМ. ГРАФУ 14 ДТ» ──
+        # Отдельное фин. ответственное лицо — ТОЛЬКО при наличии трёхстороннего договора.
+        is_trilateral = bool(contract.get("is_trilateral"))
+        contract_financial = contract.get("financial_responsible") or contract.get("financial_party")
         responsible_person_matches_declarant = True
         responsible_person_data = None
-
-        if is_trilateral and contract_receiver:
-            receiver_party = _extract_party([contract_receiver], "buyer")
-            if receiver_party and receiver_party.get("name"):
-                buyer = receiver_party
-                buyer_matches_declarant = False
-                logger.info("trilateral_receiver_found",
-                            name=receiver_party.get("name"),
-                            msg="Графа 8: получатель из трёхстороннего договора")
 
         if is_trilateral and contract_financial:
             fin_party = _extract_party([contract_financial], "financial")
@@ -2204,7 +2266,11 @@ JSON:"""},
         sender_src = "transport_doc" if transport_shipper else ("application" if app_forwarder else "transport_invoice")
         ev.record("seller", sender, sender_src, confidence=0.9 if sender_src == "transport_doc" else 0.8, graph=2)
         buyer_src = "contract" if contract.get("buyer") or contract.get("buyer_name") else "invoice"
-        ev.record("buyer", buyer, buyer_src, confidence=0.85 if buyer_src == "contract" else 0.8, graph=8)
+        ev.record("buyer", buyer, buyer_src, confidence=0.85 if buyer_src == "contract" else 0.8, graph=14)
+        if consignee_data:
+            ev.record("consignee", consignee_data, "transport_doc", confidence=0.9, graph=8)
+        else:
+            ev.record("consignee", "СМ. ГРАФУ 14 ДТ", "transport_doc", confidence=1.0, graph=8)
         ev.record("currency", currency, "contract", confidence=0.97 if currency else 0.3, graph=22)
         ev.record("total_amount", total_amount, "invoice", confidence=0.85, graph=22)
         # Графа 20: Инкотермс.
@@ -2388,6 +2454,7 @@ JSON:"""},
             "seller": sender,
             "buyer": buyer,
             "buyer_matches_declarant": buyer_matches_declarant,
+            "consignee": consignee_data,
             "currency": currency,
             "total_amount": total_amount,
             "incoterms": inco_val,
@@ -2842,7 +2909,7 @@ JSON:"""},
   "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
   "declarant": {{"name": "ТОЛЬКО НА РУССКОМ", "address": "ТОЛЬКО НА РУССКОМ", "inn": "...", "kpp": "...", "ogrn": "..."}},
   "buyer_matches_declarant": true,
-  "receiver": null,
+  "consignee": null,
   "financial_responsible": null,
   "trading_partner_country": "ISO2 (гр.11)",
   "declarant_inn_kpp": "ИНН/КПП (гр.14)",
@@ -3632,7 +3699,7 @@ JSON:"""
         # источников, защищены от перезаписи LLM (если уже имеют значение).
         _PRIORITY_FIELDS = {
             "type_code", "deal_nature_code",
-            "seller", "buyer", "buyer_matches_declarant",
+            "seller", "buyer", "buyer_matches_declarant", "consignee",
             "responsible_person", "responsible_person_matches_declarant",
             "transport_id", "transport_doc_number",
             "currency", "country_origin", "incoterms",
