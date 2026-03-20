@@ -353,11 +353,11 @@ services:
     environment:
       - ANONYMIZED_TELEMETRY=false
     healthcheck:
-      test: ["CMD-SHELL", "perl -e 'use IO::Socket::INET; exit(IO::Socket::INET->new(PeerAddr=>\"localhost\",PeerPort=>8000,Proto=>\"tcp\",Timeout=>2) ? 0 : 1);'"]
-      interval: 30s
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      interval: 15s
       timeout: 10s
-      retries: 3
-      start_period: 10s
+      retries: 10
+      start_period: 30s
 
   phoenix:
     image: arizephoenix/phoenix:latest
