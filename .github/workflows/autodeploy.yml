@@ -103,7 +103,19 @@ jobs:
                 ${DC} build core-api ai-service file-service calc-service integration-service
 
                 echo "==> [backend] Ensuring dependencies are up..."
-                ${DC} up -d postgres redis minio chromadb
+                ${DC} up -d postgres redis minio chromadb gotenberg
+
+                echo "==> [backend] Waiting for dependencies to be healthy..."
+                for i in $(seq 1 40); do
+                  HEALTHY=true
+                  for svc in customs-postgres customs-redis customs-minio customs-chromadb; do
+                    STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo "missing")
+                    if [ "$STATUS" != "healthy" ]; then HEALTHY=false; break; fi
+                  done
+                  if [ "$HEALTHY" = true ]; then echo "All dependencies healthy."; break; fi
+                  if [ "$i" -eq 40 ]; then echo "Dependencies not healthy in time."; exit 1; fi
+                  sleep 5
+                done
 
                 echo "==> [backend] Running DB migrations (from fresh image)..."
                 ${DC} run --rm core-api alembic upgrade head
@@ -113,6 +125,9 @@ jobs:
 
                 echo "==> [backend] Restarting backend containers..."
                 ${DC} up -d core-api ai-service file-service calc-service integration-service
+
+                echo "==> [backend] Starting ai-worker..."
+                ${DC} up -d ai-worker
               fi
 
               if [ "${FRONTEND_CHANGED}" = "true" ]; then

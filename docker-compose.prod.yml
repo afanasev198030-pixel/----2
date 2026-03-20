@@ -109,10 +109,11 @@ services:
     environment:
       - ANONYMIZED_TELEMETRY=false
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
-      interval: 30s
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+      interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 10
+      start_period: 30s
     networks:
       - customs-net
 
@@ -224,6 +225,55 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+
+  ai-worker:
+    build:
+      context: .
+      dockerfile: services/ai-service/Dockerfile
+    container_name: customs-ai-worker
+    command: ["arq", "app.workers.tasks.WorkerSettings"]
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      core-api:
+        condition: service_healthy
+      ai-service:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    environment:
+      CORE_API_URL: http://core-api:8001
+      CALC_SERVICE_URL: http://calc-service:8005
+      LLM_PROVIDER: ${LLM_PROVIDER:-deepseek}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-deepseek-reasoner}
+      LLM_PROJECT_ID: ${LLM_PROJECT_ID:-}
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
+      OCR_ENABLED: ${OCR_ENABLED:-false}
+      OCR_BASE_URL: ${OCR_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      OCR_API_KEY: ${OCR_API_KEY:-}
+      OCR_MODEL: ${OCR_MODEL:-deepseek-ai/DeepSeek-OCR-2}
+      OCR_PROJECT_ID: ${OCR_PROJECT_ID:-}
+      OCR_TIMEOUT: ${OCR_TIMEOUT:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      CHROMADB_HOST: chromadb
+      CHROMADB_PORT: 8000
+      REDIS_BROKER_URL: redis://redis:6379/2
+      TASK_QUEUE_ENABLED: "true"
+      ARQ_MAX_JOBS: "3"
+      ARQ_JOB_TIMEOUT_SECONDS: "1800"
+    networks:
+      - customs-net
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import redis; r = redis.from_url('redis://redis:6379/2', socket_connect_timeout=3); r.ping()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   calc-service:
     build:
