@@ -13,7 +13,7 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379/1
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/1
       - CORE_API_URL=http://core-api:8001
       - FILE_SERVICE_URL=http://file-service:8002
       - AI_SERVICE_URL=http://ai-service:8003
@@ -37,16 +37,16 @@ services:
     container_name: customs-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-customs}
-      POSTGRES_USER: ${POSTGRES_USER:-customs_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-customs_pass}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
+    expose:
+      - "5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-customs_user}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,10 +64,11 @@ services:
     image: redis:7
     container_name: customs-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    expose:
+      - "6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,13 +88,13 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - miniodata:/data
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    expose:
+      - "9000"
+      - "9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -138,8 +139,8 @@ services:
     image: chromadb/chroma:latest
     container_name: customs-chromadb
     restart: unless-stopped
-    ports:
-      - "8100:8000"
+    expose:
+      - "8000"
     volumes:
       - chromadata:/chroma/chroma
     environment:
@@ -166,8 +167,8 @@ services:
       dockerfile: services/core-api/Dockerfile
     container_name: customs-core-api
     restart: unless-stopped
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -176,11 +177,11 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_DB: ${POSTGRES_DB:-customs}
-      POSTGRES_USER: ${POSTGRES_USER:-customs_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-customs_pass}
-      REDIS_URL: redis://redis:6379/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       JWT_EXPIRATION_MINUTES: 60
       LOG_LEVEL: INFO
@@ -206,8 +207,8 @@ services:
       dockerfile: services/file-service/Dockerfile
     container_name: customs-file-service
     restart: unless-stopped
-    ports:
-      - "8002:8002"
+    expose:
+      - "8002"
     depends_on:
       minio:
         condition: service_healthy
@@ -215,8 +216,8 @@ services:
         condition: service_healthy
     environment:
       MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: documents
       MINIO_SECURE: "false"
       GOTENBERG_URL: http://gotenberg:3000
@@ -242,8 +243,8 @@ services:
       dockerfile: services/ai-service/Dockerfile
     container_name: customs-ai-service
     restart: unless-stopped
-    ports:
-      - "8003:8003"
+    expose:
+      - "8003"
     depends_on:
       core-api:
         condition: service_healthy
@@ -271,7 +272,7 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: 8000
-      REDIS_BROKER_URL: redis://redis:6379/2
+      REDIS_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
       SERVICE_NAME: ai-service
       LOG_LEVEL: INFO
     healthcheck:
@@ -326,12 +327,12 @@ services:
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: 8000
-      REDIS_BROKER_URL: redis://redis:6379/2
+      REDIS_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/2
       TASK_QUEUE_ENABLED: "true"
       ARQ_MAX_JOBS: "3"
       ARQ_JOB_TIMEOUT_SECONDS: "1800"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import redis; r = redis.from_url('redis://redis:6379/2', socket_connect_timeout=3); r.ping()\""]
+      test: ["CMD-SHELL", "python -c \"import os,redis; r = redis.from_url('redis://:' + os.environ.get('REDIS_PASSWORD','') + '@redis:6379/2', socket_connect_timeout=3); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -352,10 +353,10 @@ services:
       dockerfile: services/calc-service/Dockerfile
     container_name: customs-calc-service
     restart: unless-stopped
-    ports:
-      - "8005:8005"
+    expose:
+      - "8005"
     environment:
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       SERVICE_NAME: calc-service
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8005/ready"]
@@ -378,8 +379,8 @@ services:
       dockerfile: services/integration-service/Dockerfile
     container_name: customs-integration-service
     restart: unless-stopped
-    ports:
-      - "8004:8004"
+    expose:
+      - "8004"
     depends_on:
       core-api:
         condition: service_healthy
@@ -437,8 +438,8 @@ services:
       dockerfile: Dockerfile
     container_name: customs-frontend
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     depends_on:
       - nginx
     healthcheck:

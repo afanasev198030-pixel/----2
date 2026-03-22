@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    TELEGRAM_BOT_TOKEN: str = "YOUR_BOT_TOKEN_HERE"
+    TELEGRAM_BOT_TOKEN: str = ""
     CORE_API_URL: str = "http://core-api:8001"
     FILE_SERVICE_URL: str = "http://file-service:8002"
     AI_SERVICE_URL: str = "http://ai-service:8003"
