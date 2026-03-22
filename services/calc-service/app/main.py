@@ -5,7 +5,10 @@ import structlog
 from app.config import get_settings
 from app.routers import payments
 from app.middleware.tracing import TracingMiddleware
+from app.utils.logging import setup_logging
 
+# Setup structured logging first
+setup_logging()
 logger = structlog.get_logger()
 settings = get_settings()
 

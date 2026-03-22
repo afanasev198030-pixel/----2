@@ -62,3 +62,9 @@ def get_correlation_id() -> str:
     """Retrieve current correlation_id from structlog context."""
     ctx = structlog.contextvars.get_contextvars()
     return ctx.get("correlation_id", "")
+
+
+def tracing_headers() -> dict[str, str]:
+    """Build headers dict with X-Request-ID for outbound httpx calls."""
+    cid = get_correlation_id()
+    return {"X-Request-ID": cid} if cid else {}

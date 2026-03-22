@@ -144,6 +144,9 @@ _worker_cfg = get_settings()
 
 async def _worker_startup(ctx: dict):
     """Fetch LLM config from core-api DB on worker start (mirrors ai-service startup)."""
+    from app.utils.logging import setup_logging
+    setup_logging()
+
     import os
     settings = get_settings()
     try:

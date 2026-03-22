@@ -2,6 +2,7 @@ version: '3.8'
 
 # Production docker-compose — bridge network mode
 # Запуск: docker-compose -f docker-compose.prod.yml up --build -d
+# Resource limits рассчитаны для сервера 32 GB RAM / 8 CPU
 
 services:
   bot-service:
@@ -21,6 +22,13 @@ services:
         condition: service_healthy
       core-api:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
     networks:
       - customs-net
 
@@ -42,6 +50,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.00'
+        reservations:
+          memory: 1G
     networks:
       - customs-net
 
@@ -56,6 +71,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
     networks:
       - customs-net
 
@@ -77,6 +99,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.00'
+        reservations:
+          memory: 256M
     networks:
       - customs-net
 
@@ -95,6 +124,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.00'
+        reservations:
+          memory: 256M
     networks:
       - customs-net
 
@@ -114,6 +150,13 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.00'
+        reservations:
+          memory: 512M
     networks:
       - customs-net
 
@@ -141,14 +184,21 @@ services:
       JWT_ALGORITHM: HS256
       JWT_EXPIRATION_MINUTES: 60
       LOG_LEVEL: INFO
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.00'
+        reservations:
+          memory: 512M
+    networks:
+      - customs-net
 
   file-service:
     build:
@@ -170,14 +220,21 @@ services:
       MINIO_BUCKET: documents
       MINIO_SECURE: "false"
       GOTENBERG_URL: http://gotenberg:3000
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.00'
+        reservations:
+          memory: 128M
+    networks:
+      - customs-net
 
   ai-service:
     build:
@@ -217,14 +274,21 @@ services:
       REDIS_BROKER_URL: redis://redis:6379/2
       SERVICE_NAME: ai-service
       LOG_LEVEL: INFO
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.00'
+        reservations:
+          memory: 512M
+    networks:
+      - customs-net
 
   ai-worker:
     build:
@@ -266,14 +330,21 @@ services:
       TASK_QUEUE_ENABLED: "true"
       ARQ_MAX_JOBS: "3"
       ARQ_JOB_TIMEOUT_SECONDS: "1800"
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import redis; r = redis.from_url('redis://redis:6379/2', socket_connect_timeout=3); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.00'
+        reservations:
+          memory: 1G
+    networks:
+      - customs-net
 
   calc-service:
     build:
@@ -286,13 +357,20 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       SERVICE_NAME: calc-service
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8005/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
+    networks:
+      - customs-net
 
   integration-service:
     build:
@@ -309,13 +387,20 @@ services:
       CORE_API_URL: http://core-api:8001
       SERVICE_NAME: integration-service
       LOG_LEVEL: INFO
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8004/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
+    networks:
+      - customs-net
 
   nginx:
     image: nginx:alpine
@@ -331,13 +416,20 @@ services:
       - ai-service
       - integration-service
       - calc-service
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/"]
       interval: 30s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
+        reservations:
+          memory: 64M
+    networks:
+      - customs-net
 
   frontend:
     build:
@@ -349,14 +441,21 @@ services:
       - "3000:3000"
     depends_on:
       - nginx
-    networks:
-      - customs-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
+        reservations:
+          memory: 64M
+    networks:
+      - customs-net
 
 volumes:
   pgdata:

@@ -207,4 +207,6 @@ async def main():
 
 
 if __name__ == "__main__":
+    from app.utils.logging import setup_logging
+    setup_logging()
     asyncio.run(main())

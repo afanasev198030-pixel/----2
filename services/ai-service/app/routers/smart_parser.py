@@ -188,7 +188,9 @@ async def parse_smart(
 
         crew = DeclarationCrew()
         crew._progress_callback = lambda step, detail, pct: _send_event(request_id, step, detail, pct)
-        result = crew.process_documents(file_data)
+
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, crew.process_documents, file_data)
 
         _send_event(request_id, "complete", "Готово!", 100)
 
@@ -259,23 +261,10 @@ async def parse_smart(
         reset_usage_context(context_tokens)
 
 
-@router.post("/parse-debug")
-async def parse_debug(
-    files: list[UploadFile] = File(...),
-):
-    """
-    Debug endpoint: LLM-only pipeline trace.
-    Stages per document: ocr -> classify_and_extract.
-    Compilation: llm_compile -> post_process -> validation.
-    Does NOT run HS classification, risks, or precedents.
-    """
+def _run_parse_debug(file_data: list[tuple[bytes, str]]) -> dict:
+    """Sync helper for parse-debug — runs in thread pool to avoid blocking event loop."""
     import time as _time
     t_start = _time.monotonic()
-
-    if not files:
-        raise HTTPException(status_code=400, detail="No files uploaded")
-    if len(files) > 10:
-        raise HTTPException(status_code=400, detail="Max 10 files for debug")
 
     from app.services.ocr_service import extract_text_debug
     from app.services.llm_parser import classify_and_extract_debug
@@ -284,11 +273,7 @@ async def parse_debug(
     documents = []
     parsed_docs: dict = {}
 
-    for f in files:
-        content = await f.read()
-        if not content:
-            continue
-        fname = f.filename or "document.pdf"
+    for content, fname in file_data:
         doc_trace: dict = {"filename": fname, "stages": {}}
 
         ocr_result = extract_text_debug(content, fname)
@@ -327,7 +312,6 @@ async def parse_debug(
         extracted["_filename"] = fname
         extracted["doc_type"] = doc_type
 
-        # ── Vision OCR quality gate ──
         vision_retry_info: dict = {}
         from app.services.agent_crew import _check_needs_vision_retry
         missing_fields = _check_needs_vision_retry(doc_type, extracted)
@@ -475,6 +459,35 @@ async def parse_debug(
         "compilation": compilation,
         "total_duration_ms": total_ms,
     }
+
+
+@router.post("/parse-debug")
+async def parse_debug(
+    files: list[UploadFile] = File(...),
+):
+    """
+    Debug endpoint: LLM-only pipeline trace.
+    Stages per document: ocr -> classify_and_extract.
+    Compilation: llm_compile -> post_process -> validation.
+    Does NOT run HS classification, risks, or precedents.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+    if len(files) > 10:
+        raise HTTPException(status_code=400, detail="Max 10 files for debug")
+
+    file_data = []
+    for f in files:
+        content = await f.read()
+        if not content:
+            continue
+        file_data.append((content, f.filename or "document.pdf"))
+
+    if not file_data:
+        raise HTTPException(status_code=400, detail="No valid files to process")
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _run_parse_debug, file_data)
 
 
 class ClassifyHSRequest(BaseModel):
