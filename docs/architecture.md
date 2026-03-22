@@ -130,7 +130,7 @@ flowchart TD
 
 **Docker Compose:**
 - `docker-compose.yml` — dev (volume mounts для быстрой разработки).
-- `docker-compose.prod.yml` — production (bridge network `customs-net`, restart policies).
+- `docker-compose.prod.yml` — production (bridge network `customs-net`, restart policies, все порты закрыты кроме nginx:80, Redis с паролем).
 
 **Healthchecks (Этап 1.2):**
 
@@ -199,7 +199,7 @@ Docker Compose healthchecks используют `/ready`. `depends_on` с `cond
 | 1.2 | Healthchecks (readiness + liveness) | **ВЫПОЛНЕНО** | Все сервисы: `/health` (liveness, всегда 200) + `/ready` (readiness, проверяет зависимости). core-api: PostgreSQL + Redis. ai-service: ChromaDB heartbeat + Redis. file-service: MinIO + Gotenberg. integration-service: core-api. Docker Compose: healthchecks переключены на `/ready`, добавлены healthchecks для gotenberg, nginx, frontend, ai-worker. `depends_on` приведён в соответствие с реальным графом зависимостей |
 | 1.3 | Унификация logging (structlog JSON) | **ВЫПОЛНЕНО** | Все сервисы: единый `app/utils/logging.py` с `structlog.configure` (`JSONRenderer` + `PrintLoggerFactory` + `merge_contextvars`). JSON-логи в stdout с полями `service_name`, `correlation_id`, `timestamp`, `level`. `TracingMiddleware` во всех HTTP-сервисах: `X-Request-ID` → `correlation_id`. Функция `tracing_headers()` для межсервисных вызовов. ai-worker: `setup_logging()` в `_worker_startup`. bot-service: `fetch_telegram_config()` вынесен из `config.py`. CLI-скрипты: `setup_logging()` в `__main__` |
 | 1.4 | Resource limits в docker-compose | **ВЫПОЛНЕНО** | `deploy.resources` (limits + reservations) во всех контейнерах. Сервер 32 GB / 8 CPU. Тяжёлые: ai-worker 4G/4cpu, ai-service 2G/2cpu, postgres 2G/2cpu, chromadb 2G/1cpu. Средние: core-api 1G/2cpu, gotenberg 1G/1cpu, minio 1G/1cpu. Лёгкие: file/calc/integration/bot/redis 512M/0.5cpu, nginx 256M. Dev: frontend 2G (webpack-dev-server), prod: 256M (nginx static). Суммарно limits ~16.5 GB, reservations ~5 GB |
-| 1.5 | Секреты в prod-compose | В очереди | Дефолтные пароли (`customs_pass`, `change-me-in-production`) |
+| 1.5 | Секреты в prod-compose | **ВЫПОЛНЕНО** | Убраны дефолтные пароли (`customs_pass`, `minioadmin`, `change-me-in-production`) из `docker-compose.prod.yml` — `${VAR}` без fallback. Redis: `requirepass ${REDIS_PASSWORD}`, connection strings обновлены во всех сервисах. Закрыты внутренние порты (`ports` → `expose`): postgres, redis, minio, chromadb, все API-сервисы, frontend — наружу только `nginx:80`. Python config: убраны дефолтные секреты (file-service `minioadmin`, bot-service token). `chat.py`: Redis URL из `settings.REDIS_BROKER_URL`. Создан `.env.production.example` с инструкциями генерации секретов |
 | 1.6 | Pinned image versions | В очереди | `minio:latest`, `chromadb/chroma:latest` — нет воспроизводимости |
 | 1.7 | Phoenix в prod | В очереди | ai-service пытается подключиться к `phoenix` в prod, где его нет |
 | 1.8 | Observability (Loki/Prometheus/Grafana) | В очереди | Централизованные логи и метрики |
@@ -278,9 +278,10 @@ Docker Compose healthchecks используют `/ready`. `depends_on` с `cond
 - **Healthchecks:** Liveness (`/health`) + Readiness (`/ready`) во всех сервисах — Этап 1.2.
 - **Logging:** structlog JSON (`PrintLoggerFactory` + `merge_contextvars`) во всех сервисах, `correlation_id` через `X-Request-ID` — Этап 1.3.
 - **Resource Limits:** `deploy.resources` (memory + CPU limits/reservations) во всех контейнерах — Этап 1.4.
+- **Secrets Hardening:** prod-compose без дефолтных паролей, Redis `requirepass`, внутренние порты закрыты, `.env.production.example` — Этап 1.5.
 
 ---
 
-**Последнее обновление:** 22 марта 2026 (завершены Этапы 1.1, 1.2, 1.3, 1.4; fix: ai-service non-blocking sync fallback)
+**Последнее обновление:** 22 марта 2026 (завершены Этапы 1.1–1.5; fix: ai-service non-blocking sync fallback)
 
 Этот документ актуализируется при каждом значительном изменении архитектуры или завершении этапа рефакторинга.

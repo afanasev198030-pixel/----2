@@ -2,6 +2,80 @@
 
 ---
 
+## Этап 1.5: Секреты в prod-compose
+
+**Дата:** 2026-03-22
+**Ветка:** `feature/prod-secrets-hardening`
+
+### Обзор
+
+Устранение дефолтных паролей-заглушек из production-конфигурации, добавление аутентификации Redis, закрытие внутренних портов наружу и создание шаблона `.env.production.example`.
+
+---
+
+### 1. Убраны дефолтные секреты из docker-compose.prod.yml
+
+**Проблема**: production-compose содержал fallback-значения вроде `${POSTGRES_PASSWORD:-customs_pass}`, `${JWT_SECRET_KEY:-change-me-in-production}`, `${MINIO_SECRET_KEY:-minioadmin}`. Если `.env` на сервере забыт или неполон — система стартовала с публично известными паролями (они видны в `.env.example` и git-истории).
+
+**Решение**: все секретные переменные теперь используют `${VAR}` без `:-default`. Если переменная не задана — Docker Compose предупредит, а сервис не сможет аутентифицироваться (вместо тихого запуска с заглушкой).
+
+Затронуты:
+- `POSTGRES_PASSWORD`, `POSTGRES_USER`, `POSTGRES_DB` — postgres, core-api
+- `JWT_SECRET_KEY` — core-api
+- `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` — minio
+- `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY` — file-service
+
+### 2. Redis — аутентификация в prod
+
+**Проблема**: Redis не требовал пароля, а порт 6379 был открыт наружу. Любой с доступом к серверу мог подключиться и читать/модифицировать данные (кэш, ARQ-очередь, сессии бота).
+
+**Решение**:
+- Добавлен `command: redis-server --requirepass ${REDIS_PASSWORD}`
+- Healthcheck обновлён: `redis-cli -a ${REDIS_PASSWORD} ping | grep PONG`
+- Connection strings всех сервисов обновлены: `redis://redis:6379/N` → `redis://:${REDIS_PASSWORD}@redis:6379/N`
+- Затронуты: bot-service, core-api, ai-service, ai-worker, calc-service
+
+### 3. Закрыты внутренние порты
+
+**Проблема**: PostgreSQL (5432), Redis (6379), MinIO (9000/9001), ChromaDB (8100), все API-сервисы (8001-8005) и frontend (3000) были проброшены на хост через `ports`. Это позволяло обращаться к ним напрямую, минуя Nginx (и JWT-авторизацию).
+
+**Решение**: `ports` заменены на `expose` для всех внутренних сервисов. Единственный открытый порт — `nginx:80` (единая точка входа с X-Request-ID и проксированием).
+
+| До (ports) | После (expose) |
+|-----------|----------------|
+| postgres 5432 | expose 5432 |
+| redis 6379 | expose 6379 |
+| minio 9000, 9001 | expose 9000, 9001 |
+| chromadb 8100→8000 | expose 8000 |
+| core-api 8001 | expose 8001 |
+| file-service 8002 | expose 8002 |
+| ai-service 8003 | expose 8003 |
+| calc-service 8005 | expose 8005 |
+| integration-service 8004 | expose 8004 |
+| frontend 3000 | expose 3000 |
+| **nginx 80** | **ports 80 (оставлен)** |
+
+### 4. Python config — убраны дефолтные секреты
+
+- **file-service/config.py**: `MINIO_ACCESS_KEY` и `MINIO_SECRET_KEY` — убран дефолт `"minioadmin"`. Pydantic не даст запустить сервис без явного значения.
+- **bot-service/config.py**: `TELEGRAM_BOT_TOKEN` — убран дефолт `"YOUR_BOT_TOKEN_HERE"`, заменён на пустую строку.
+- **ai-service/routers/chat.py**: захардкоженный `redis.from_url("redis://redis:6379/2")` заменён на `get_settings().REDIS_BROKER_URL` из config.
+
+### 5. Создан `.env.production.example`
+
+Шаблон для production-деплоя с инструкциями по генерации секретов (`openssl rand -hex 16/32`), группировкой по обязательности, и комментариями по каждой переменной.
+
+**Затронутые файлы (7 файлов):**
+- `docker-compose.prod.yml` — секреты, Redis password, ports→expose
+- `services/file-service/app/config.py`
+- `services/bot-service/app/config.py`
+- `services/ai-service/app/routers/chat.py`
+- `.env.example` — добавлен `REDIS_PASSWORD`
+- `.env.production.example` — новый файл
+- `docs/architecture.md` — статус 1.5 → ВЫПОЛНЕНО
+
+---
+
 ## Этап 1.3: Унификация logging + Этап 1.4: Resource Limits + ai-service non-blocking fix
 
 **Дата:** 2026-03-22
