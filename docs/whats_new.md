@@ -2,6 +2,93 @@
 
 ---
 
+## Этап 1.3: Унификация logging + Этап 1.4: Resource Limits + ai-service non-blocking fix
+
+**Дата:** 2026-03-22
+**Ветка:** `feature/infra-logging-limits`
+
+### Обзор
+
+Унификация structlog JSON-логирования во всех сервисах, добавление resource limits (memory + CPU) во все Docker-контейнеры, и исправление блокировки event loop в ai-service при LLM-обработке.
+
+---
+
+### 1. Унификация logging — structlog JSON (Этап 1.3)
+
+**Проблема**: ai-service, calc-service, bot-service, file-service и integration-service не имели единого `structlog.configure()` с `JSONRenderer`. Логи выводились в plain text, `correlation_id` и `service_name` не попадали в вывод — трассировка между сервисами была невозможна.
+
+**Решение**: единый шаблон `app/utils/logging.py` во всех сервисах.
+
+- **`setup_logging()`** — стандартная функция в каждом сервисе: `JSONRenderer` + `PrintLoggerFactory` + `merge_contextvars` + фильтрация по `LOG_LEVEL`.
+- **`merge_contextvars`** — критический процессор: обеспечивает попадание `correlation_id` и `service_name` в каждую JSON-строку лога.
+- **`PrintLoggerFactory`** — вместо `LoggerFactory` (stdlib), чтобы логи гарантированно попадали в stdout (не терялись при отсутствии Python logging handlers).
+- **`TracingMiddleware`** — во всех HTTP-сервисах прокидывает `X-Request-ID` → `correlation_id` через `structlog.contextvars`.
+- **`tracing_headers()`** — helper для межсервисных вызовов (передаёт `X-Request-ID` в исходящие HTTP-запросы).
+- **ai-worker** — вызывает `setup_logging()` в `_worker_startup` для JSON-логов в фоновых задачах.
+- **bot-service** — `fetch_telegram_config()` вынесен из `config.py` в `main.py` (устранено логирование до инициализации structlog).
+- **CLI-скрипты** (`offline_eval.py`, `update_tnved_online.py`) — вызывают `setup_logging()` в `__main__`.
+- **`__init__.py`** — добавлены в `app/utils/` для file-service, calc-service, bot-service, integration-service.
+
+**Затронутые файлы (20 файлов, 6 сервисов):**
+- `*/app/utils/logging.py` — создан/обновлён в каждом сервисе
+- `*/app/main.py` — убраны дублирующие `setup_logging()`, импорт из `utils`
+- `*/app/middleware/tracing.py` — добавлен `tracing_headers()`
+- `bot-service/app/config.py` — рефакторинг `fetch_telegram_config()`
+
+---
+
+### 2. Resource Limits в Docker Compose (Этап 1.4)
+
+**Проблема**: ни один контейнер не имел ограничений по памяти и CPU. При пиковой нагрузке (LLM-обработка, PDF-конвертация) один контейнер мог забрать всю RAM хоста и вызвать OOM-killer, который убивал случайный процесс (например, PostgreSQL).
+
+**Решение**: `deploy.resources` (limits + reservations) во всех контейнерах.
+
+Лимиты рассчитаны для production-сервера 32 GB RAM / 8 CPU:
+
+| Категория | Сервис | Memory | CPU |
+|-----------|--------|--------|-----|
+| Тяжёлый | ai-worker | 4G | 4.0 |
+| Тяжёлый | ai-service | 2G | 2.0 |
+| Тяжёлый | postgres | 2G | 2.0 |
+| Тяжёлый | chromadb | 2G | 1.0 |
+| Средний | core-api | 1G | 2.0 |
+| Средний | gotenberg | 1G | 1.0 |
+| Средний | minio | 1G | 1.0 |
+| Лёгкий | file-service | 512M | 1.0 |
+| Лёгкий | calc/integration/bot/redis | 512M | 0.5 |
+| Лёгкий | nginx | 256M | 0.5 |
+| Dev only | frontend (webpack) | 2G | 1.0 |
+| Prod only | frontend (nginx static) | 256M | 0.5 |
+| Dev only | phoenix | 1G | 0.5 |
+
+- **Суммарно limits**: ~16.5 GB (~51% от 32 GB) — запас для ОС и пиков.
+- **Суммарно reservations**: ~5 GB — гарантированный минимум.
+- **frontend dev**: потребовал 2G + `NODE_OPTIONS=--max-old-space-size=1536` (webpack-dev-server React + TS + MUI).
+
+**Затронутые файлы:**
+- `docker-compose.yml` — все 15 сервисов
+- `docker-compose.prod.yml` — все 14 сервисов
+
+---
+
+### 3. ai-service — non-blocking sync fallback
+
+**Проблема**: при sync fallback (`TASK_QUEUE_ENABLED=false` или ошибка enqueue в ARQ) вызов `crew.process_documents()` блокировал asyncio event loop FastAPI на минуты. Docker healthcheck не получал ответа на `/health` и `/ready`, помечал контейнер как `unhealthy`.
+
+**Решение**: `asyncio.run_in_executor()` для всех блокирующих вызовов.
+
+- **`/parse-smart` sync fallback** — `crew.process_documents(file_data)` обёрнут в `await loop.run_in_executor(None, ...)`. Тяжёлая LLM-обработка идёт в ThreadPoolExecutor, event loop свободен для healthchecks.
+- **`/parse-debug`** — вся обработка (OCR + classify + compile) вынесена в sync-функцию `_run_parse_debug()` и запускается через `run_in_executor()`.
+- **`/ready`** — sync-вызовы `chromadb.heartbeat()` и `redis.ping()` обёрнуты в `run_in_executor()` — healthcheck не зависнет при проблемах с сетью.
+
+**Результат**: `/health` отвечает за 18ms, `/ready` за 11-26ms. ai-service стабильно `healthy` даже при обработке LLM-задач.
+
+**Затронутые файлы:**
+- `services/ai-service/app/routers/smart_parser.py`
+- `services/ai-service/app/main.py`
+
+---
+
 ## Этап 1.1: Task Queue (ARQ) + Этап 1.2: Healthchecks
 
 **Дата:** 2026-03-20

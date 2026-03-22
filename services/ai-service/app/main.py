@@ -7,7 +7,10 @@ from app.routers import parser, classifier, risk
 from app.routers import smart_parser
 from app.routers import chat
 from app.middleware.tracing import TracingMiddleware
+from app.utils.logging import setup_logging
 
+# Setup structured logging first
+setup_logging()
 logger = structlog.get_logger()
 settings = get_settings()
 
@@ -42,45 +45,51 @@ async def health():
     return {"status": "ok", "service": settings.SERVICE_NAME}
 
 
-# Readiness — checks real dependencies
+# Readiness — checks real dependencies (non-blocking)
 @app.get("/ready")
 async def readiness():
+    import asyncio
     from fastapi.responses import JSONResponse
-    checks = {}
-    all_ok = True
 
-    # ChromaDB
-    try:
-        from app.services.index_manager import get_index_manager
-        idx = get_index_manager()
-        if idx._chroma_client:
-            idx._chroma_client.heartbeat()
-            checks["chromadb"] = {"status": "ok"}
-        else:
-            checks["chromadb"] = {"status": "error", "detail": "client not initialized"}
+    loop = asyncio.get_event_loop()
+
+    def _check_deps() -> tuple[dict, bool]:
+        checks = {}
+        all_ok = True
+
+        try:
+            from app.services.index_manager import get_index_manager
+            idx = get_index_manager()
+            if idx._chroma_client:
+                idx._chroma_client.heartbeat()
+                checks["chromadb"] = {"status": "ok"}
+            else:
+                checks["chromadb"] = {"status": "error", "detail": "client not initialized"}
+                all_ok = False
+        except Exception as e:
+            checks["chromadb"] = {"status": "error", "detail": str(e)[:200]}
             all_ok = False
-    except Exception as e:
-        checks["chromadb"] = {"status": "error", "detail": str(e)[:200]}
-        all_ok = False
 
-    # Redis (ARQ broker)
-    try:
-        import redis as _redis
-        r = _redis.from_url(settings.REDIS_BROKER_URL, socket_connect_timeout=3)
-        r.ping()
-        r.close()
-        checks["redis"] = {"status": "ok"}
-    except Exception as e:
-        checks["redis"] = {"status": "error", "detail": str(e)[:200]}
-        all_ok = False
+        try:
+            import redis as _redis
+            r = _redis.from_url(settings.REDIS_BROKER_URL, socket_connect_timeout=3)
+            r.ping()
+            r.close()
+            checks["redis"] = {"status": "ok"}
+        except Exception as e:
+            checks["redis"] = {"status": "error", "detail": str(e)[:200]}
+            all_ok = False
 
-    # LLM configured (informational, not blocking)
-    current_settings = get_settings()
-    checks["llm"] = {
-        "status": "ok" if current_settings.has_llm else "degraded",
-        "provider": current_settings.LLM_PROVIDER,
-        "model": current_settings.effective_model,
-    }
+        current_settings = get_settings()
+        checks["llm"] = {
+            "status": "ok" if current_settings.has_llm else "degraded",
+            "provider": current_settings.LLM_PROVIDER,
+            "model": current_settings.effective_model,
+        }
+
+        return checks, all_ok
+
+    checks, all_ok = await loop.run_in_executor(None, _check_deps)
 
     status_code = 200 if all_ok else 503
     return JSONResponse(

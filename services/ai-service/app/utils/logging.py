@@ -2,11 +2,17 @@ import logging
 import structlog
 from structlog.processors import JSONRenderer, TimeStamper, add_log_level
 
-from app.config import settings
+from app.config import get_settings
 
 
 def setup_logging() -> None:
-    """Configure structlog with JSON formatting."""
+    """Configure structlog with JSON formatting for ai-service.
+
+    Используется единый формат логов со всеми сервисами.
+    Поддерживает contextvars (correlation_id, service_name).
+    """
+    settings = get_settings()
+
     log_level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
@@ -28,6 +34,8 @@ def setup_logging() -> None:
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
-    
-    # Bind service_name from settings to structlog context
-    structlog.contextvars.bind_contextvars(service_name=settings.SERVICE_NAME)
+
+    # Bind default context
+    structlog.contextvars.bind_contextvars(
+        service_name=settings.SERVICE_NAME,
+    )

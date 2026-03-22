@@ -47,8 +47,7 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Setup logging and log service start. Load OpenAI key from DB."""
-    setup_logging()
+    """Log service start. Load OpenAI key from DB."""
     logger.info(
         "service_started",
         service_name=settings.SERVICE_NAME,

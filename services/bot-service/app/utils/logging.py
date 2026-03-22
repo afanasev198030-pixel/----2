@@ -6,7 +6,7 @@ from app.config import settings
 
 
 def setup_logging() -> None:
-    """Configure structlog with JSON formatting."""
+    """Configure structlog for bot-service."""
     log_level_map = {
         "DEBUG": logging.DEBUG,
         "INFO": logging.INFO,
@@ -28,6 +28,7 @@ def setup_logging() -> None:
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
-    
-    # Bind service_name from settings to structlog context
-    structlog.contextvars.bind_contextvars(service_name=settings.SERVICE_NAME)
+
+    structlog.contextvars.bind_contextvars(
+        service_name=settings.SERVICE_NAME,
+    )

@@ -16,6 +16,13 @@ services:
         condition: service_healthy
       core-api:
         condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
 
   postgres:
     image: postgres:15
@@ -36,6 +43,13 @@ services:
       retries: 5
     env_file:
       - .env
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.00'
+        reservations:
+          memory: 1G
 
   redis:
     image: redis:7
@@ -47,6 +61,13 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
 
   minio:
     image: minio/minio:latest
@@ -67,6 +88,13 @@ services:
       retries: 5
     env_file:
       - .env
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.00'
+        reservations:
+          memory: 256M
 
   core-api:
     build:
@@ -106,6 +134,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.00'
+        reservations:
+          memory: 512M
 
   file-service:
     build:
@@ -136,6 +171,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.00'
+        reservations:
+          memory: 128M
 
   ai-service:
     build:
@@ -191,6 +233,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.00'
+        reservations:
+          memory: 512M
 
   calc-service:
     build:
@@ -213,6 +262,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
 
   integration-service:
     build:
@@ -235,6 +291,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.50'
+        reservations:
+          memory: 128M
 
   ai-worker:
     build:
@@ -287,6 +350,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.00'
+        reservations:
+          memory: 1G
 
   nginx:
     image: nginx:alpine
@@ -303,6 +373,13 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.50'
+        reservations:
+          memory: 64M
 
   frontend:
     build:
@@ -321,12 +398,20 @@ services:
       - CHOKIDAR_USEPOLLING=true
       - WATCHPACK_POLLING=true
       - WDS_SOCKET_PORT=3000
+      - NODE_OPTIONS=--max-old-space-size=1536
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/"]
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.00'
+        reservations:
+          memory: 512M
 
   gotenberg:
     image: gotenberg/gotenberg:8
@@ -342,6 +427,13 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.00'
+        reservations:
+          memory: 256M
 
   chromadb:
     image: chromadb/chroma:latest
@@ -358,6 +450,13 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.00'
+        reservations:
+          memory: 512M
 
   phoenix:
     image: arizephoenix/phoenix:latest
@@ -368,6 +467,13 @@ services:
       - phoenixdata:/phoenix
     environment:
       - PHOENIX_PORT=6006
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.50'
+        reservations:
+          memory: 256M
 
 volumes:
   pgdata:

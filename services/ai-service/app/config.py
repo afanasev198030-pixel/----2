@@ -1,8 +1,8 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-import structlog
 
-logger = structlog.get_logger()
+# logging will be configured in utils/logging.py
+# we keep import only where needed to avoid circular imports
 
 
 class Settings(BaseSettings):
@@ -101,4 +101,9 @@ class Settings(BaseSettings):
 
 @lru_cache()
 def get_settings() -> Settings:
+    """Return cached settings instance.
+
+    Note: setup_logging() should be called *before* first get_settings()
+    to ensure proper context binding.
+    """
     return Settings()
