@@ -332,7 +332,7 @@ services:
       ARQ_MAX_JOBS: "3"
       ARQ_JOB_TIMEOUT_SECONDS: "1800"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import os,redis; r = redis.from_url('redis://:' + os.environ.get('REDIS_PASSWORD','') + '@redis:6379/2', socket_connect_timeout=3); r.ping()\""]
+      test: ["CMD-SHELL", "python -c \"import os,redis; r = redis.from_url(os.environ.get('REDIS_BROKER_URL','redis://redis:6379/2'), socket_connect_timeout=3); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 3
