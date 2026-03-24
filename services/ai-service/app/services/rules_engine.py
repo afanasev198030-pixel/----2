@@ -400,6 +400,24 @@ def validate_declaration(result: dict, evidence_map: dict | None = None) -> list
             except (ValueError, TypeError):
                 pass
 
+    # graph22_vs_graph42: sum(items[].line_total) vs total_amount
+    if items:
+        try:
+            items_sum = sum(float(it.get("line_total") or 0) for it in items)
+            header_total = result.get("total_amount")
+            if header_total is not None and items_sum > 0:
+                header_val = float(header_total)
+                diff = abs(header_val - items_sum)
+                threshold = max(header_val, items_sum) * 0.01
+                if diff > threshold:
+                    _issue("graph22_vs_graph42_mismatch", "warning",
+                           f"Графа 22: сумма позиций (∑ гр.42) = {items_sum:.2f} "
+                           f"≠ итогу инвойса = {header_val:.2f}, "
+                           f"расхождение {diff:.2f}. Проверьте позиции и итог.",
+                           graph=22, field="total_amount")
+        except (ValueError, TypeError):
+            pass
+
     # forms_count hint
     if items and not result.get("forms_count"):
         expected = math.ceil(len(items) / 3)

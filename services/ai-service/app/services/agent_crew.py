@@ -1733,23 +1733,19 @@ JSON:"""},
             return code
         # Графа 16 (header-level origin) вычисляется после сбора items (ниже)
 
-        # Источник items: ИНВОЙС НА ТОВАРЫ (приоритет) > Packing List.
-        # Спецификация НЕ является источником позиций для декларации —
-        # она содержит весь заказ, а на таможню едет только то, что в инвойсе/PL.
-        # Спецификация используется только для перекрёстной сверки.
+        # Источник items: ТОЛЬКО инвойс на товары.
+        # Packing List — источник весов/упаковки, но НЕ источник позиций (гр. 42).
+        # Спецификация — только для перекрёстной сверки.
         inv_items = inv.get("items", [])
         packing_items = packing.get("items", []) if packing else []
 
         if inv_items:
             raw_items = inv_items
             items_source = "invoice"
-        elif packing_items:
-            raw_items = packing_items
-            items_source = "packing_list"
         else:
             raw_items = []
             items_source = "none"
-            logger.warning("no_items_found", msg="Нет позиций в инвойсе и PL — загрузите инвойс на товары")
+            logger.warning("no_items_found", msg="Нет позиций в инвойсе — загрузите инвойс на товары")
 
         logger.info("items_source", source=items_source, count=len(raw_items))
 
@@ -3081,8 +3077,39 @@ JSON:"""
             result["total_net_weight"] = round(total_net, 3)
 
         total_invoice = sum(_safe_float(it.get("line_total")) or 0.0 for it in items)
-        if total_invoice > 0 and not result.get("total_amount"):
+        invoice_total_amount = _safe_float(result.get("total_amount")) or 0.0
+
+        if total_invoice > 0 and invoice_total_amount > 0:
+            diff = abs(total_invoice - invoice_total_amount)
+            threshold = max(invoice_total_amount, total_invoice) * 0.01
+            if diff > threshold:
+                logger.warning(
+                    "graph22_vs_graph42_mismatch",
+                    sum_items=round(total_invoice, 2),
+                    invoice_total=round(invoice_total_amount, 2),
+                    diff=round(diff, 2),
+                    msg=(
+                        f"Графа 22: сумма позиций (гр.42) = {round(total_invoice, 2)} "
+                        f"≠ итогу инвойса = {round(invoice_total_amount, 2)}, "
+                        f"расхождение {round(diff, 2)}"
+                    ),
+                )
+                result.setdefault("issues", []).append({
+                    "id": "graph22_vs_graph42_mismatch",
+                    "severity": "warning",
+                    "graph": 22,
+                    "field": "total_amount",
+                    "message": (
+                        f"Графа 22: рассчитанная сумма позиций (∑ гр.42) = {round(total_invoice, 2)} "
+                        f"не совпадает с итоговой суммой инвойса = {round(invoice_total_amount, 2)}. "
+                        f"Расхождение: {round(diff, 2)}. Проверьте позиции и итог инвойса."
+                    ),
+                })
             result["total_amount"] = round(total_invoice, 2)
+        elif total_invoice > 0:
+            result["total_amount"] = round(total_invoice, 2)
+            logger.info("graph22_from_items_sum", total=round(total_invoice, 2),
+                        msg="Графа 22: итог инвойса отсутствует, сумма рассчитана из позиций")
 
         # ── Exchange rate (гр. 23) ──
         currency = (result.get("currency") or "").upper()
