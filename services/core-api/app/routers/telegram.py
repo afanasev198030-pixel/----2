@@ -11,7 +11,7 @@ import redis.asyncio as redis
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import User
-from app.models.declaration import Declaration, DeclarationStatus
+from app.models.declaration import Declaration, DeclarationStatus, ProcessingStatus
 from app.models.document import Document, DocumentType
 from app.models.declaration_log import DeclarationLog
 from app.schemas import TelegramLinkRequest, TelegramLinkResponse, TelegramLogRequest
@@ -165,7 +165,9 @@ async def bot_create_declaration(
 
     declaration = Declaration(
         company_id=company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
+        processing_status=ProcessingStatus.NOT_STARTED.value,
+        signature_status="unsigned",
         created_by=user_id,
     )
     db.add(declaration)
@@ -176,7 +178,7 @@ async def bot_create_declaration(
         declaration_id=declaration.id,
         user_id=user_id,
         action="create",
-        new_value={"status": "draft", "source": "telegram"},
+        new_value={"status": "new", "source": "telegram"},
     )
     db.add(log_entry)
     await db.commit()

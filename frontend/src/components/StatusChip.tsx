@@ -15,71 +15,29 @@ interface StatusChipProps {
 }
 
 const statusConfig: Record<string, { label: string; bg: string; color: string; icon?: React.ReactElement }> = {
-  draft: {
-    label: 'Черновик',
+  new: {
+    label: 'Новая',
     bg: '#f5f5f5',
     color: '#616161',
     icon: <EditIcon sx={{ fontSize: 14 }} />,
   },
-  checking_lvl1: {
-    label: 'Проверка ур.1',
-    bg: '#e3f2fd',
-    color: '#1565c0',
-    icon: <ClockIcon sx={{ fontSize: 14 }} />,
-  },
-  checking_lvl2: {
-    label: 'Проверка ур.2',
-    bg: '#e3f2fd',
-    color: '#1565c0',
-    icon: <ClockIcon sx={{ fontSize: 14 }} />,
-  },
-  final_check: {
-    label: 'Фин. проверка',
+  requires_attention: {
+    label: 'Требует внимания',
     bg: '#fff3e0',
     color: '#e65100',
-    icon: <SearchIcon sx={{ fontSize: 14 }} />,
+    icon: <WarningIcon sx={{ fontSize: 14 }} />,
   },
-  signed: {
-    label: 'Подписана',
-    bg: '#f3e5f5',
-    color: '#7b1fa2',
-    icon: <VerifiedIcon sx={{ fontSize: 14 }} />,
+  ready_to_send: {
+    label: 'Готово к отправке',
+    bg: '#e8f5e9',
+    color: '#1b5e20',
+    icon: <CheckIcon sx={{ fontSize: 14 }} />,
   },
   sent: {
     label: 'Отправлена',
     bg: '#e1f5fe',
     color: '#0277bd',
     icon: <SendIcon sx={{ fontSize: 14 }} />,
-  },
-  registered: {
-    label: 'Зарегистрирована',
-    bg: '#e0f2f1',
-    color: '#00695c',
-    icon: <CheckIcon sx={{ fontSize: 14 }} />,
-  },
-  released: {
-    label: 'Выпущена',
-    bg: '#e8f5e9',
-    color: '#1b5e20',
-    icon: <CheckIcon sx={{ fontSize: 14 }} />,
-  },
-  rejected: {
-    label: 'Отклонена',
-    bg: '#ffebee',
-    color: '#c62828',
-    icon: <ErrorIcon sx={{ fontSize: 14 }} />,
-  },
-  docs_requested: {
-    label: 'Запрос документов',
-    bg: '#fff8e1',
-    color: '#f57f17',
-    icon: <WarningIcon sx={{ fontSize: 14 }} />,
-  },
-  inspection: {
-    label: 'Досмотр',
-    bg: '#fbe9e7',
-    color: '#bf360c',
-    icon: <SearchIcon sx={{ fontSize: 14 }} />,
   },
 };
 

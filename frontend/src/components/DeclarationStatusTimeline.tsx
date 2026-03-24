@@ -7,43 +7,17 @@ import StatusChip from './StatusChip';
 import { Declaration, DeclarationStatus, DeclarationStatusHistoryEntry } from '../types';
 
 const MAIN_FLOW: DeclarationStatus[] = [
-  'draft',
-  'checking_lvl1',
-  'checking_lvl2',
-  'final_check',
-  'signed',
+  'new',
+  'requires_attention',
+  'ready_to_send',
   'sent',
-  'registered',
-  'released',
 ];
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Черновик',
-  checking_lvl1: 'Проверка уровня 1',
-  checking_lvl2: 'Проверка уровня 2',
-  final_check: 'Финальная проверка',
-  signed: 'Подписана',
+  new: 'Новая',
+  requires_attention: 'Требует внимания',
+  ready_to_send: 'Готово к отправке',
   sent: 'Отправлена',
-  registered: 'Зарегистрирована',
-  docs_requested: 'Запрошены документы',
-  inspection: 'Досмотр',
-  released: 'Выпущена',
-  rejected: 'Отклонена',
-};
-
-const SPECIAL_STATUS_CONFIG: Record<string, { severity: 'info' | 'warning' | 'error'; description: string }> = {
-  docs_requested: {
-    severity: 'warning',
-    description: 'По кейсу не хватает документов или данных. После дозагрузки пакет нужно перепроверить.',
-  },
-  inspection: {
-    severity: 'warning',
-    description: 'Кейс ушел в досмотр. Важно держать документы и историю изменений под рукой.',
-  },
-  rejected: {
-    severity: 'error',
-    description: 'Отправка или обработка отклонена. Нужен разбор причины и корректировка пакета.',
-  },
 };
 
 const getStatusLabel = (status?: string | null): string => {
@@ -93,9 +67,6 @@ export default function DeclarationStatusTimeline({ declaration }: DeclarationSt
   }, [currentStatus, history]);
 
   const lastEvent = history.length > 0 ? history[history.length - 1] : null;
-  const specialStatus = currentStatus && !MAIN_FLOW.includes(currentStatus as DeclarationStatus)
-    ? SPECIAL_STATUS_CONFIG[currentStatus]
-    : null;
 
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
@@ -128,18 +99,7 @@ export default function DeclarationStatusTimeline({ declaration }: DeclarationSt
         })}
       </Stepper>
 
-      {specialStatus && (
-        <Alert severity={specialStatus.severity} sx={{ mt: 1.5 }}>
-          <Typography variant="body2" fontWeight={700}>
-            {getStatusLabel(currentStatus)}
-          </Typography>
-          <Typography variant="caption" display="block">
-            {lastEvent?.status_text || specialStatus.description}
-          </Typography>
-        </Alert>
-      )}
-
-      {!specialStatus && lastEvent?.status_text && (
+      {lastEvent?.status_text && (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
           Последнее событие: {lastEvent.status_text}
         </Typography>

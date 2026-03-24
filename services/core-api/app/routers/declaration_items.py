@@ -146,7 +146,7 @@ async def create_item(
     declaration = await get_declaration_or_404(declaration_id, db, current_user)
     
     # Check if declaration can be modified
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot add items to declaration with status: {declaration.status}",
@@ -244,7 +244,7 @@ async def update_item(
     declaration = await get_declaration_or_404(declaration_id, db, current_user)
     
     # Check if declaration can be modified
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot update items in declaration with status: {declaration.status}",
@@ -314,7 +314,7 @@ async def delete_item(
     declaration = await get_declaration_or_404(declaration_id, db, current_user)
     
     # Check if declaration can be modified
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot delete items from declaration with status: {declaration.status}",

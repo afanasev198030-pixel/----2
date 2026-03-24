@@ -21,17 +21,22 @@ from .base import Base
 
 
 class DeclarationStatus(str, PyEnum):
-    DRAFT = "draft"
-    CHECKING_LVL1 = "checking_lvl1"
-    CHECKING_LVL2 = "checking_lvl2"
-    FINAL_CHECK = "final_check"
-    SIGNED = "signed"
+    NEW = "new"
+    REQUIRES_ATTENTION = "requires_attention"
+    READY_TO_SEND = "ready_to_send"
     SENT = "sent"
-    REGISTERED = "registered"
-    DOCS_REQUESTED = "docs_requested"
-    INSPECTION = "inspection"
-    RELEASED = "released"
-    REJECTED = "rejected"
+
+
+class ProcessingStatus(str, PyEnum):
+    NOT_STARTED = "not_started"
+    PROCESSING = "processing"
+    AUTO_FILLED = "auto_filled"
+    PROCESSING_ERROR = "processing_error"
+
+
+class SignatureStatus(str, PyEnum):
+    UNSIGNED = "unsigned"
+    SIGNED = "signed"
 
 
 class SpotStatus(str, PyEnum):
@@ -51,7 +56,7 @@ class Declaration(Base):
     )
     number_internal: Mapped[Optional[str]] = mapped_column(String(50))
     type_code: Mapped[Optional[str]] = mapped_column(String(10))
-    status: Mapped[str] = mapped_column(String(20), default="draft")
+    status: Mapped[str] = mapped_column(String(30), default="new")
     company_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.companies.id"), nullable=False
     )
@@ -99,7 +104,8 @@ class Declaration(Base):
 
     # Task Queue fields for async AI processing
     ai_task_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    processing_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, default=None)
+    processing_status: Mapped[str] = mapped_column(String(30), default="not_started")
+    signature_status: Mapped[str] = mapped_column(String(20), default="unsigned")
     place_and_date: Mapped[Optional[str]] = mapped_column(String(200))
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("core.users.id")

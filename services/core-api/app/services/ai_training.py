@@ -76,7 +76,7 @@ async def collect_hs_training_examples(
     result = await db.execute(
         select(Declaration)
         .where(
-            Declaration.status.in_([DeclarationStatus.SENT.value, DeclarationStatus.RELEASED.value]),
+            Declaration.status == DeclarationStatus.SENT.value,
         )
         .options(
             selectinload(Declaration.items),

@@ -47,17 +47,20 @@ export interface Counterparty {
 }
 
 export type DeclarationStatus =
-  | 'draft'
-  | 'checking_lvl1'
-  | 'checking_lvl2'
-  | 'final_check'
-  | 'signed'
-  | 'sent'
-  | 'registered'
-  | 'docs_requested'
-  | 'inspection'
-  | 'released'
-  | 'rejected';
+  | 'new'
+  | 'requires_attention'
+  | 'ready_to_send'
+  | 'sent';
+
+export type ProcessingStatus =
+  | 'not_started'
+  | 'processing'
+  | 'auto_filled'
+  | 'processing_error';
+
+export type SignatureStatus =
+  | 'unsigned'
+  | 'signed';
 
 export interface AiIssue {
   code: string;
@@ -116,6 +119,8 @@ export interface Declaration {
   number_internal?: string;
   type_code?: string;
   status: DeclarationStatus;
+  processing_status?: ProcessingStatus;
+  signature_status?: SignatureStatus;
   company_id: string;
   sender_counterparty_id?: string;
   receiver_counterparty_id?: string;

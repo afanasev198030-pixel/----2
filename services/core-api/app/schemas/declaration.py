@@ -206,6 +206,8 @@ class DeclarationResponse(BaseModel):
     warehouse_requisites: Optional[str] = None
     transit_offices: Optional[str] = None
     destination_office_code: Optional[str] = None
+    processing_status: Optional[str] = None
+    signature_status: str = "unsigned"
     evidence_map: Optional[dict[str, Any]] = None
     ai_confidence: Optional[Decimal] = None
     ai_issues: Optional[list[dict]] = None
@@ -266,6 +268,8 @@ class DeclarationListResponse(BaseModel):
     number_internal: Optional[str]
     type_code: Optional[str]
     status: str
+    processing_status: Optional[str] = None
+    signature_status: str = "unsigned"
     company_id: uuid.UUID
     total_invoice_value: Optional[Decimal]
     currency_code: Optional[str]

@@ -9,11 +9,10 @@ interface KanbanViewProps {
 }
 
 const COLUMNS = [
-  { key: 'draft', label: 'Черновик', color: '#9e9e9e', statuses: ['draft'] },
-  { key: 'checking', label: 'На проверке', color: '#ff9800', statuses: ['checking_lvl1', 'checking_lvl2', 'final_check'] },
-  { key: 'signed', label: 'Подписано', color: '#2196f3', statuses: ['signed', 'sent'] },
-  { key: 'released', label: 'Выпущено', color: '#4caf50', statuses: ['released', 'registered'] },
-  { key: 'rejected', label: 'Отклонено', color: '#f44336', statuses: ['rejected', 'docs_requested', 'inspection'] },
+  { key: 'new', label: 'Новые', color: '#9e9e9e', statuses: ['new'] },
+  { key: 'attention', label: 'Требуют внимания', color: '#ff9800', statuses: ['requires_attention'] },
+  { key: 'ready', label: 'Готовы к отправке', color: '#4caf50', statuses: ['ready_to_send'] },
+  { key: 'sent', label: 'Отправлены', color: '#2196f3', statuses: ['sent'] },
 ];
 
 const KanbanView = ({ declarations, onClickDeclaration }: KanbanViewProps) => {

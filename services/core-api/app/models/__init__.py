@@ -2,7 +2,7 @@ from .base import Base
 from .user import User, UserRole
 from .company import Company
 from .counterparty import Counterparty, CounterpartyType
-from .declaration import Declaration, DeclarationStatus, SpotStatus
+from .declaration import Declaration, DeclarationStatus, ProcessingStatus, SignatureStatus, SpotStatus
 from .declaration_item import DeclarationItem
 from .document import Document, DocumentType
 from .classifier import Classifier
@@ -33,6 +33,8 @@ __all__ = [
     "CounterpartyType",
     "Declaration",
     "DeclarationStatus",
+    "ProcessingStatus",
+    "SignatureStatus",
     "SpotStatus",
     "DeclarationItem",
     "Document",

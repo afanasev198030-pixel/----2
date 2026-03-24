@@ -293,7 +293,10 @@ async def internal_task_complete(data: dict, db=Depends(get_db)):
     result = await db.execute(select(Declaration).where(Declaration.id == decl_uuid))
     decl = result.scalar_one_or_none()
     if decl:
-        decl.processing_status = "complete" if task_status == "success" else "failed"
+        from app.models.declaration import ProcessingStatus
+        from app.services.declaration_state_service import set_processing_status
+        new_proc = ProcessingStatus.AUTO_FILLED if task_status == "success" else ProcessingStatus.PROCESSING_ERROR
+        set_processing_status(decl, new_proc, db)
         await db.commit()
         logger.info(
             "task_complete_callback",

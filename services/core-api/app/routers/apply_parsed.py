@@ -18,12 +18,17 @@ import structlog
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import (
-    Declaration, DeclarationStatus, DeclarationItem,
+    Declaration, DeclarationStatus, ProcessingStatus, DeclarationItem,
     Counterparty, Document, DeclarationLog, User, Company, Classifier,
     CustomsPayment,
 )
 from app.models.declaration_item_document import DeclarationItemDocument
 from app.schemas.declaration import DeclarationResponse
+from app.services.declaration_state_service import (
+    recalculate_declaration_state,
+    reset_signature_if_needed,
+    set_processing_status,
+)
 from app.utils.declaration_helpers import (
     merge_company_inn_kpp as _build_declarant_inn_kpp,
     normalize_digits as _normalize_digits,
@@ -1094,10 +1099,10 @@ async def apply_parsed_data(
     if not declaration:
         raise HTTPException(status_code=404, detail="Declaration not found")
 
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot apply parsed data to declaration with status: {declaration.status}",
+            detail=f"Cannot apply parsed data to a sent declaration",
         )
 
     counters = {"counterparties": 0, "items": 0, "documents": 0}
@@ -1442,6 +1447,14 @@ async def apply_parsed_data(
             ],
         )
 
+        set_processing_status(
+            declaration, ProcessingStatus.AUTO_FILLED, db,
+            user_id=str(current_user.id),
+        )
+        reset_signature_if_needed(declaration, db, user_id=str(current_user.id))
+        if declaration.status != DeclarationStatus.NEW.value:
+            await recalculate_declaration_state(declaration, db, user_id=str(current_user.id))
+
         await db.commit()
 
         logger.info(
@@ -1493,7 +1506,9 @@ async def create_from_parsed(
     declaration = Declaration(
         type_code=data.type_code or "IM40",
         company_id=current_user.company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
+        processing_status=ProcessingStatus.NOT_STARTED.value,
+        signature_status="unsigned",
         created_by=current_user.id,
     )
     db.add(declaration)

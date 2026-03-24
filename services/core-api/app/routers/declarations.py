@@ -22,6 +22,10 @@ from app.models import (
 )
 from app.models.hs_code_history import HsCodeHistory
 from app.models.parse_issue import ParseIssue
+from app.services.declaration_state_service import (
+    recalculate_declaration_state,
+    reset_signature_if_needed,
+)
 from app.schemas import (
     DeclarationCreate,
     DeclarationUpdate,
@@ -214,7 +218,7 @@ async def create_declaration(
     declaration = Declaration(
         type_code=data.type_code,
         company_id=data.company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
         created_by=current_user.id,
         number_internal=data.number_internal,
         sender_counterparty_id=data.sender_counterparty_id,
@@ -258,12 +262,12 @@ async def create_declaration(
         declaration_id=declaration.id,
         user_id=current_user.id,
         action="create",
-        new_value={"status": "draft", "type_code": data.type_code},
+        new_value={"status": "new", "type_code": data.type_code},
     )
     db.add(log_entry)
     status_history_entry = DeclarationStatusHistory(
         declaration_id=declaration.id,
-        status_code=DeclarationStatus.DRAFT.value,
+        status_code=DeclarationStatus.NEW.value,
         status_text="Декларация создана",
         source="system",
     )
@@ -352,7 +356,7 @@ async def update_declaration(
         )
     
     # Check status
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot update declaration with status: {declaration.status}",
@@ -441,6 +445,10 @@ async def update_declaration(
         await log_action(db, current_user.id, "update_declaration",
             resource_type="declaration", resource_id=str(id),
             details={"changed": list(changed_fields.keys())}, request=request)
+
+        reset_signature_if_needed(declaration, db, user_id=str(current_user.id))
+        await recalculate_declaration_state(declaration, db, user_id=str(current_user.id))
+
     await db.commit()
     
     # Re-fetch with relationships
@@ -486,7 +494,7 @@ async def delete_declaration(
         )
     
     # Check status
-    if declaration.status != DeclarationStatus.DRAFT:
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot delete declaration with status: {declaration.status}",
@@ -560,7 +568,7 @@ async def duplicate_declaration(
     new_declaration = Declaration(
         type_code=original.type_code,
         company_id=original.company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
         created_by=current_user.id,
         number_internal=original.number_internal,
         sender_counterparty_id=original.sender_counterparty_id,

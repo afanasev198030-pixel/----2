@@ -131,13 +131,13 @@ export default function NextActionsPanel({
       });
     }
 
-    if ((preSend?.passed ?? false) && declaration.status === 'draft') {
+    if ((preSend?.passed ?? false) && declaration.status !== 'sent') {
       push({
         key: 'ready',
         severity: 'success',
-        title: 'Кейс готов к следующему этапу',
-        description: 'По сохранённой версии блокирующих проблем нет. Можно переходить к финальной проверке и отправке.',
-        buttonLabel: 'Проверить финально',
+        title: 'Декларация готова к отправке',
+        description: 'Блокирующих проблем нет. Можно подписать и отправить.',
+        buttonLabel: 'Подписать и отправить',
         onClick: onGoToReview,
       });
     }

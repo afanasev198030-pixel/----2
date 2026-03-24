@@ -71,10 +71,10 @@ const BrokerDashboard = () => {
     return {
       clients: clientsData?.length || 0,
       inProgress: items.filter((d: Declaration) =>
-        ['draft', 'checking_lvl1', 'checking_lvl2', 'final_check'].includes(d.status)
+        ['new', 'requires_attention'].includes(d.status)
       ).length,
-      released: items.filter((d: Declaration) => d.status === 'released').length,
-      rejected: items.filter((d: Declaration) => d.status === 'rejected').length,
+      released: items.filter((d: Declaration) => d.status === 'ready_to_send').length,
+      rejected: items.filter((d: Declaration) => d.status === 'sent').length,
     };
   }, [declarationsData?.items, clientsData]);
 
@@ -89,10 +89,9 @@ const BrokerDashboard = () => {
     const items = declarationsData?.items || [];
     const counts: Record<string, number> = {};
     items.forEach((d: Declaration) => {
-      const label = d.status === 'draft' ? 'Черновик'
-        : d.status === 'released' ? 'Выпущено'
-        : d.status === 'rejected' ? 'Отклонено'
-        : d.status.includes('checking') ? 'На проверке'
+      const label = d.status === 'new' ? 'Новая'
+        : d.status === 'requires_attention' ? 'Требует внимания'
+        : d.status === 'ready_to_send' ? 'Готово к отправке'
         : d.status === 'sent' ? 'Отправлено'
         : d.status === 'signed' ? 'Подписано'
         : 'Прочее';
@@ -213,7 +212,7 @@ const BrokerDashboard = () => {
               transition: 'all 0.2s',
               '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
             }}
-            onClick={() => navigate('/declarations?status=released')}
+            onClick={() => navigate('/declarations?status=ready')}
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
@@ -221,7 +220,7 @@ const BrokerDashboard = () => {
                   <Typography variant="h4" color="success.main" fontWeight={700}>
                     {declLoading ? <Skeleton width={40} /> : metrics.released}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Выпущено</Typography>
+                  <Typography variant="body2" color="text.secondary" mt={0.5}>Готовы к отправке</Typography>
                 </Box>
                 <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <CheckIcon color="success" />
@@ -236,15 +235,15 @@ const BrokerDashboard = () => {
               transition: 'all 0.2s',
               '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
             }}
-            onClick={() => navigate('/declarations?status=rejected')}
+            onClick={() => navigate('/declarations?status=sent')}
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
-                  <Typography variant="h4" color="error.main" fontWeight={700}>
+                  <Typography variant="h4" color="info.main" fontWeight={700}>
                     {declLoading ? <Skeleton width={40} /> : metrics.rejected}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Отклонено</Typography>
+                  <Typography variant="body2" color="text.secondary" mt={0.5}>Отправлены</Typography>
                 </Box>
                 <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <ErrorIcon color="error" />

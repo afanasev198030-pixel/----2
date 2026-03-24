@@ -12,17 +12,10 @@ interface HistoryPanelProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Черновик',
-  checking_lvl1: 'Проверка ур. 1',
-  checking_lvl2: 'Проверка ур. 2',
-  final_check: 'Финальная проверка',
-  signed: 'Подписана',
+  new: 'Новая',
+  requires_attention: 'Требует внимания',
+  ready_to_send: 'Готово к отправке',
   sent: 'Отправлена',
-  registered: 'Зарегистрирована',
-  docs_requested: 'Нужны документы',
-  inspection: 'Досмотр',
-  released: 'Выпущена',
-  rejected: 'Отклонена',
 };
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: ReactNode }> = {

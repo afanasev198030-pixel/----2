@@ -70,10 +70,10 @@ const ClientDetailPage = () => {
     return {
       total: declarations.length,
       inProgress: declarations.filter((d: Declaration) =>
-        ['draft', 'checking_lvl1', 'checking_lvl2', 'final_check'].includes(d.status)
+        ['new', 'requires_attention'].includes(d.status)
       ).length,
-      released: declarations.filter((d: Declaration) => d.status === 'released').length,
-      rejected: declarations.filter((d: Declaration) => d.status === 'rejected').length,
+      released: declarations.filter((d: Declaration) => d.status === 'ready_to_send').length,
+      rejected: declarations.filter((d: Declaration) => d.status === 'sent').length,
     };
   }, [declarations]);
 
@@ -238,7 +238,7 @@ const ClientDetailPage = () => {
                 <Typography variant="h4" color="success.main" fontWeight={700}>
                   {declLoading ? <Skeleton width={30} /> : metrics.released}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mt={0.5}>Выпущено</Typography>
+                <Typography variant="body2" color="text.secondary" mt={0.5}>Готовы к отправке</Typography>
               </CardContent>
             </Card>
             <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
@@ -246,7 +246,7 @@ const ClientDetailPage = () => {
                 <Typography variant="h4" color="error.main" fontWeight={700}>
                   {declLoading ? <Skeleton width={30} /> : metrics.rejected}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mt={0.5}>Отклонено</Typography>
+                <Typography variant="body2" color="text.secondary" mt={0.5}>Отправлены</Typography>
               </CardContent>
             </Card>
           </Box>

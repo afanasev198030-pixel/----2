@@ -16,7 +16,7 @@ import {
 } from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
 import {
-  getDeclaration, updateDeclaration, patchEvidenceMap,
+  getDeclaration, updateDeclaration, patchEvidenceMap, openDeclaration,
 } from '../api/declarations';
 import { getItems } from '../api/items';
 import { getDocuments } from '../api/documents';
@@ -153,6 +153,16 @@ const DeclarationEditPage = () => {
     }
   }, [decl, reset]);
 
+  const openedRef = useRef(false);
+  useEffect(() => {
+    if (decl && decl.status === 'new' && !openedRef.current) {
+      openedRef.current = true;
+      openDeclaration(decl.id)
+        .then(() => queryClient.invalidateQueries({ queryKey: ['declaration', id] }))
+        .catch(() => {});
+    }
+  }, [decl, id, queryClient]);
+
   // Auto-step if items loaded later
   useEffect(() => {
     if (!initialStepRef.current && items.length > 0) {
@@ -226,8 +236,7 @@ const DeclarationEditPage = () => {
 
   useEffect(() => {
     if (!id || !loadedRef.current) return;
-    // Only auto-save drafts
-    if (decl?.status !== 'draft') return;
+    if (decl?.status === 'sent') return;
     // Only auto-save on the actual form step, never on upload/result transition.
     if (activeStep !== 1) return;
     // Never auto-save untouched or freshly reset form state.

@@ -69,9 +69,9 @@ type SortField = 'number_internal' | 'created_at' | 'type_code' | 'status' | 'to
 type SortOrder = 'asc' | 'desc';
 
 const STATUS_PARAM_MAP: Record<string, string[]> = {
-  in_progress: ['draft', 'checking_lvl1', 'checking_lvl2', 'final_check'],
-  released: ['released'],
-  rejected: ['rejected'],
+  in_progress: ['new', 'requires_attention'],
+  ready: ['ready_to_send'],
+  sent: ['sent'],
 };
 
 const DeclarationsListPage = () => {
@@ -342,9 +342,9 @@ const DeclarationsListPage = () => {
     const allItems = data?.items || [];
     return {
       total: allItems.length,
-      checking: allItems.filter((d: Declaration) => ['checking_lvl1', 'checking_lvl2', 'final_check'].includes(d.status)).length,
-      released: allItems.filter((d: Declaration) => d.status === 'released').length,
-      attention: allItems.filter((d: Declaration) => ['rejected', 'docs_requested'].includes(d.status)).length,
+      checking: allItems.filter((d: Declaration) => d.status === 'requires_attention').length,
+      released: allItems.filter((d: Declaration) => d.status === 'ready_to_send').length,
+      attention: allItems.filter((d: Declaration) => d.status === 'sent').length,
     };
   }, [data?.items]);
 
@@ -432,12 +432,10 @@ const DeclarationsListPage = () => {
       <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
         {[
           { label: 'Все', value: null },
-          { label: 'Черновики', value: ['draft'] },
-          { label: 'На проверке', value: ['checking_lvl1', 'checking_lvl2', 'final_check'] },
-          { label: 'Подписано', value: ['signed'] },
+          { label: 'Новые', value: ['new'] },
+          { label: 'Требуют внимания', value: ['requires_attention'] },
+          { label: 'Готовы к отправке', value: ['ready_to_send'] },
           { label: 'Отправлено', value: ['sent'] },
-          { label: 'Выпущено', value: ['released'] },
-          { label: 'Отклонено', value: ['rejected'] },
         ].map((chip) => (
           <Chip
             key={chip.label}
@@ -477,12 +475,12 @@ const DeclarationsListPage = () => {
           </Card>
 
           <Card
-            onClick={() => handleMetricClick(['checking_lvl1', 'checking_lvl2', 'final_check'])}
+            onClick={() => handleMetricClick(['requires_attention'])}
             sx={{
               cursor: 'pointer',
               transition: 'all 0.2s',
-              border: isMetricActive(['checking_lvl1', 'checking_lvl2', 'final_check']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['checking_lvl1', 'checking_lvl2', 'final_check']) ? 'warning.main' : 'transparent',
+              border: isMetricActive(['requires_attention']) ? '2px solid' : '2px solid transparent',
+              borderColor: isMetricActive(['requires_attention']) ? 'warning.main' : 'transparent',
               '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
             }}
           >
@@ -492,7 +490,7 @@ const DeclarationsListPage = () => {
                   <Typography variant="h4" color="warning.main" fontWeight={700}>
                     {metrics.checking}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>На проверке</Typography>
+                  <Typography variant="body2" color="text.secondary" mt={0.5}>Требуют внимания</Typography>
                 </Box>
                 <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <SendIcon color="warning" />
@@ -502,12 +500,12 @@ const DeclarationsListPage = () => {
           </Card>
 
           <Card
-            onClick={() => handleMetricClick(['released'])}
+            onClick={() => handleMetricClick(['ready_to_send'])}
             sx={{
               cursor: 'pointer',
               transition: 'all 0.2s',
-              border: isMetricActive(['released']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['released']) ? 'success.main' : 'transparent',
+              border: isMetricActive(['ready_to_send']) ? '2px solid' : '2px solid transparent',
+              borderColor: isMetricActive(['ready_to_send']) ? 'success.main' : 'transparent',
               '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
             }}
           >
@@ -517,7 +515,7 @@ const DeclarationsListPage = () => {
                   <Typography variant="h4" color="success.main" fontWeight={700}>
                     {metrics.released}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Выпущены</Typography>
+                  <Typography variant="body2" color="text.secondary" mt={0.5}>Готовы к отправке</Typography>
                 </Box>
                 <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <CheckIcon color="success" />
@@ -527,22 +525,22 @@ const DeclarationsListPage = () => {
           </Card>
 
           <Card
-            onClick={() => handleMetricClick(['rejected', 'docs_requested'])}
+            onClick={() => handleMetricClick(['sent'])}
             sx={{
               cursor: 'pointer',
               transition: 'all 0.2s',
-              border: isMetricActive(['rejected', 'docs_requested']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['rejected', 'docs_requested']) ? 'error.main' : 'transparent',
+              border: isMetricActive(['sent']) ? '2px solid' : '2px solid transparent',
+              borderColor: isMetricActive(['sent']) ? 'info.main' : 'transparent',
               '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
             }}
           >
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
-                  <Typography variant="h4" color="error.main" fontWeight={700}>
+                  <Typography variant="h4" color="info.main" fontWeight={700}>
                     {metrics.attention}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Требуют внимания</Typography>
+                  <Typography variant="body2" color="text.secondary" mt={0.5}>Отправлены</Typography>
                 </Box>
                 <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <ErrorIcon color="error" />
