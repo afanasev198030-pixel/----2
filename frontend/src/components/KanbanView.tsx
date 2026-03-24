@@ -1,7 +1,6 @@
-import { Box, Paper, Typography, Chip, Card, CardContent } from '@mui/material';
-import StatusChip from './StatusChip';
+import { Box, Typography } from '@mui/material';
+import DeclarationCard from './DeclarationCard';
 import { Declaration } from '../types';
-import dayjs from 'dayjs';
 
 interface KanbanViewProps {
   declarations: Declaration[];
@@ -9,51 +8,168 @@ interface KanbanViewProps {
 }
 
 const COLUMNS = [
-  { key: 'new', label: 'Новые', color: '#9e9e9e', statuses: ['new'] },
-  { key: 'attention', label: 'Требуют внимания', color: '#ff9800', statuses: ['requires_attention'] },
-  { key: 'ready', label: 'Готовы к отправке', color: '#4caf50', statuses: ['ready_to_send'] },
-  { key: 'sent', label: 'Отправлены', color: '#2196f3', statuses: ['sent'] },
+  {
+    key: 'new',
+    label: 'Новая',
+    statuses: ['new'],
+    dotColor: '#3b82f6',
+    headerBg: 'rgba(239,246,255,0.6)',
+    borderColor: 'rgba(191,219,254,0.4)',
+    countBg: 'rgba(219,234,254,0.8)',
+    countColor: '#1d4ed8',
+  },
+  {
+    key: 'attention',
+    label: 'Требует внимания',
+    statuses: ['requires_attention'],
+    dotColor: '#f59e0b',
+    headerBg: 'rgba(255,251,235,0.6)',
+    borderColor: 'rgba(253,230,138,0.4)',
+    countBg: 'rgba(254,243,199,0.8)',
+    countColor: '#b45309',
+  },
+  {
+    key: 'ready',
+    label: 'Готово к отправке',
+    statuses: ['ready_to_send'],
+    dotColor: '#10b981',
+    headerBg: 'rgba(236,253,245,0.6)',
+    borderColor: 'rgba(167,243,208,0.4)',
+    countBg: 'rgba(209,250,229,0.8)',
+    countColor: '#047857',
+  },
+  {
+    key: 'sent',
+    label: 'Отправлено',
+    statuses: ['sent'],
+    dotColor: '#94a3b8',
+    headerBg: 'rgba(248,250,252,0.8)',
+    borderColor: 'rgba(226,232,240,0.4)',
+    countBg: '#f1f5f9',
+    countColor: '#64748b',
+  },
 ];
 
 const KanbanView = ({ declarations, onClickDeclaration }: KanbanViewProps) => {
   return (
-    <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 2, minHeight: 400 }}>
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, 1fr)',
+        gap: 2.5,
+        minHeight: 400,
+      }}
+    >
       {COLUMNS.map((col) => {
         const items = declarations.filter(d => col.statuses.includes(d.status));
         return (
-          <Box key={col.key} sx={{ minWidth: 250, flex: '1 0 250px' }}>
-            <Paper sx={{ bgcolor: col.color + '15', borderTop: `3px solid ${col.color}`, borderRadius: 2, p: 1.5, minHeight: 350 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                <Typography variant="subtitle2" fontWeight={700}>{col.label}</Typography>
-                <Chip label={items.length} size="small" sx={{ bgcolor: col.color, color: 'white', fontWeight: 700, height: 22 }} />
-              </Box>
-              {items.length === 0 && (
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 4 }}>
-                  Нет деклараций
+          <Box key={col.key} sx={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            {/* Column header */}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                px: 1.5,
+                py: 1.25,
+                borderRadius: '12px',
+                bgcolor: col.headerBg,
+                border: '1px solid',
+                borderColor: col.borderColor,
+                mb: 1.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Box
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: col.dotColor,
+                  }}
+                />
+                <Typography
+                  sx={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#334155',
+                    letterSpacing: '-0.01em',
+                  }}
+                >
+                  {col.label}
                 </Typography>
-              )}
+              </Box>
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  px: 1,
+                  py: 0.25,
+                  borderRadius: '6px',
+                  bgcolor: col.countBg,
+                  color: col.countColor,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {items.length}
+              </Typography>
+            </Box>
+
+            {/* Cards */}
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1,
+                flex: 1,
+                overflowY: 'auto',
+                maxHeight: 'calc(100vh - 340px)',
+                pr: 0.25,
+                '&::-webkit-scrollbar': { width: 4 },
+                '&::-webkit-scrollbar-thumb': {
+                  borderRadius: 2,
+                  bgcolor: '#e2e8f0',
+                },
+              }}
+            >
               {items.map((decl) => (
-                <Card key={decl.id} sx={{ mb: 1, cursor: 'pointer', '&:hover': { boxShadow: 3 }, transition: 'box-shadow 0.2s' }}
-                  onClick={() => onClickDeclaration(decl.id)}>
-                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2" fontWeight={600} color="primary.main">
-                        {decl.type_code || 'IM40'}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {dayjs(decl.created_at).format('DD.MM')}
-                      </Typography>
-                    </Box>
-                    {decl.total_invoice_value && (
-                      <Typography variant="body2">
-                        {decl.currency_code} {Number(decl.total_invoice_value).toLocaleString('ru-RU')}
-                      </Typography>
-                    )}
-                    <StatusChip status={decl.status} />
-                  </CardContent>
-                </Card>
+                <DeclarationCard
+                  key={decl.id}
+                  declaration={decl}
+                  onClick={onClickDeclaration}
+                />
               ))}
-            </Paper>
+              {items.length === 0 && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    py: 6,
+                    textAlign: 'center',
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: '50%',
+                      bgcolor: '#f1f5f9',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mb: 1,
+                    }}
+                  >
+                    <Typography sx={{ color: '#cbd5e1', fontSize: 16 }}>∅</Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
+                    Нет деклараций
+                  </Typography>
+                </Box>
+              )}
+            </Box>
           </Box>
         );
       })}

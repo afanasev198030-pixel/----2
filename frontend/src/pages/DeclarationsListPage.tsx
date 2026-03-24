@@ -23,8 +23,6 @@ import {
   FormControl,
   InputLabel,
   Chip,
-  Card,
-  CardContent,
   TextField,
   InputAdornment,
   Tooltip,
@@ -40,10 +38,10 @@ import {
 import {
   Add as AddIcon,
   Search as SearchIcon,
-  WorkOutline as WorkIcon,
-  SendOutlined as SendIcon,
-  ErrorOutline as ErrorIcon,
+  Description as WorkIcon,
+  Warning as WarningIcon,
   CheckCircleOutline as CheckIcon,
+  Send as SendIcon,
   OpenInNew as OpenIcon,
   ContentCopy as CopyIcon,
   Print as PrintIcon,
@@ -55,12 +53,14 @@ import {
   FileDownload as FileDownloadIcon,
   ViewList as TableViewIcon,
   ViewColumn as KanbanIcon,
+  FiberManualRecord as DotIcon,
 } from '@mui/icons-material';
 import { getDeclarations, getDeclaration, createDeclaration, deleteDeclaration } from '../api/declarations';
 import { getMe } from '../api/auth';
 import client from '../api/client';
 import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
+import MetricCard from '../components/MetricCard';
 import KanbanView from '../components/KanbanView';
 import { Declaration } from '../types';
 import dayjs from 'dayjs';
@@ -94,7 +94,7 @@ const DeclarationsListPage = () => {
   const [rowActionDeclarationId, setRowActionDeclarationId] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('kanban');
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
     open: false, message: '', severity: 'success',
   });
@@ -263,13 +263,10 @@ const DeclarationsListPage = () => {
     setPage(1);
   };
 
-  // Client-side filtering and sorting
   const filteredAndSortedItems = useMemo(() => {
     if (!data?.items) return [];
-
     let filtered = [...data.items];
 
-    // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase().trim();
       filtered = filtered.filter((decl: Declaration) => {
@@ -281,12 +278,10 @@ const DeclarationsListPage = () => {
       });
     }
 
-    // Apply status filter
     if (statusFilter) {
       filtered = filtered.filter((decl: Declaration) => statusFilter.includes(decl.status));
     }
 
-    // Apply date range filter
     if (dateFrom) {
       filtered = filtered.filter((decl: Declaration) => decl.created_at >= dateFrom);
     }
@@ -294,11 +289,9 @@ const DeclarationsListPage = () => {
       filtered = filtered.filter((decl: Declaration) => decl.created_at.slice(0, 10) <= dateTo);
     }
 
-    // Apply sorting
     filtered.sort((a: Declaration, b: Declaration) => {
       let aValue: any;
       let bValue: any;
-
       switch (sortField) {
         case 'number_internal':
           aValue = a.number_internal || a.id;
@@ -323,7 +316,6 @@ const DeclarationsListPage = () => {
         default:
           return 0;
       }
-
       if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -332,446 +324,465 @@ const DeclarationsListPage = () => {
     return filtered;
   }, [data?.items, searchQuery, statusFilter, dateFrom, dateTo, sortField, sortOrder]);
 
-  // Check if all values in "Стоимость" column are empty
   const hasAnyValue = useMemo(() => {
     return filteredAndSortedItems.some((decl: Declaration) => decl.total_invoice_value != null);
   }, [filteredAndSortedItems]);
 
-  // Calculate metrics from filtered items
   const metrics = useMemo(() => {
     const allItems = data?.items || [];
     return {
       total: allItems.length,
-      checking: allItems.filter((d: Declaration) => d.status === 'requires_attention').length,
-      released: allItems.filter((d: Declaration) => d.status === 'ready_to_send').length,
-      attention: allItems.filter((d: Declaration) => d.status === 'sent').length,
+      new: allItems.filter((d: Declaration) => d.status === 'new').length,
+      requires_attention: allItems.filter((d: Declaration) => d.status === 'requires_attention').length,
+      ready_to_send: allItems.filter((d: Declaration) => d.status === 'ready_to_send').length,
+      sent: allItems.filter((d: Declaration) => d.status === 'sent').length,
     };
   }, [data?.items]);
 
-  const isMetricActive = (statuses: string[] | null) => {
-    if (statusFilter === null && statuses === null) return true;
-    if (statusFilter === null || statuses === null) return false;
-    return JSON.stringify(statusFilter.sort()) === JSON.stringify(statuses.sort());
-  };
+  const todayStr = dayjs().format('dddd, D MMMM YYYY');
 
   return (
-    <AppLayout breadcrumbs={[{ label: 'Декларации' }]}>
-      {/* Search and Create */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2 }}>
-        <TextField
-          size="small"
-          placeholder="Поиск по номеру, ИНН, контрагенту..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          sx={{
-            width: { xs: '100%', sm: 400 },
-            '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' },
-          }}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon />
-              </InputAdornment>
-            ),
-          }}
-        />
-        <ToggleButtonGroup value={viewMode} exclusive onChange={(_, v) => v && setViewMode(v)} size="small" sx={{ mr: 'auto', ml: 1 }}>
-          <ToggleButton value="table"><TableViewIcon fontSize="small" /></ToggleButton>
-          <ToggleButton value="kanban"><KanbanIcon fontSize="small" /></ToggleButton>
-        </ToggleButtonGroup>
-        <Button
-          size="small"
-          onClick={handleExportCSV}
-          startIcon={<FileDownloadIcon />}
-          sx={{ textTransform: 'none', borderRadius: 2 }}
-        >
-          Excel
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setCreateDialogOpen(true)}
-          sx={{ fontWeight: 600, borderRadius: 2, px: 3, textTransform: 'none' }}
-        >
-          Создать
-        </Button>
-      </Box>
-
-      {/* Date Filters */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
-        <TextField
-          size="small"
-          type="date"
-          label="С даты"
-          value={dateFrom}
-          onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 180, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' } }}
-        />
-        <TextField
-          size="small"
-          type="date"
-          label="По дату"
-          value={dateTo}
-          onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-          InputLabelProps={{ shrink: true }}
-          sx={{ width: 180, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' } }}
-        />
-        {(dateFrom || dateTo || statusFilter) && (
-          <Button
-            size="small"
-            onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(null); setSearchQuery(''); setPage(1); }}
-            sx={{ textTransform: 'none', borderRadius: 2 }}
-          >
-            Сбросить фильтры
-          </Button>
-        )}
-      </Box>
-
-      {/* Quick Filter Chips */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
-        {[
-          { label: 'Все', value: null },
-          { label: 'Новые', value: ['new'] },
-          { label: 'Требуют внимания', value: ['requires_attention'] },
-          { label: 'Готовы к отправке', value: ['ready_to_send'] },
-          { label: 'Отправлено', value: ['sent'] },
-        ].map((chip) => (
-          <Chip
-            key={chip.label}
-            label={chip.label}
-            size="small"
-            variant={JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 'filled' : 'outlined'}
-            color={JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 'primary' : 'default'}
-            onClick={() => { setStatusFilter(chip.value); setPage(1); }}
-            sx={{ fontWeight: JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 700 : 400 }}
-          />
-        ))}
-      </Box>
-
-      {/* Metrics */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
-          <Card
-            onClick={() => handleMetricClick(null)}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(null) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(null) ? 'primary.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="info.main" fontWeight={700}>{metrics.total}</Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Всего деклараций</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <WorkIcon color="info" />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            onClick={() => handleMetricClick(['requires_attention'])}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(['requires_attention']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['requires_attention']) ? 'warning.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="warning.main" fontWeight={700}>
-                    {metrics.checking}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Требуют внимания</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <SendIcon color="warning" />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            onClick={() => handleMetricClick(['ready_to_send'])}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(['ready_to_send']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['ready_to_send']) ? 'success.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="success.main" fontWeight={700}>
-                    {metrics.released}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Готовы к отправке</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckIcon color="success" />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            onClick={() => handleMetricClick(['sent'])}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(['sent']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['sent']) ? 'info.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="info.main" fontWeight={700}>
-                    {metrics.attention}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Отправлены</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ErrorIcon color="error" />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
+    <AppLayout noPadding>
+      <Box sx={{ maxWidth: 1440, mx: 'auto', px: { xs: 2, md: 3 }, pt: 2.5, pb: 3 }}>
+        {/* Page title + date + actions */}
+        <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', mb: 2.5 }}>
+          <Box>
+            <Typography sx={{ fontSize: 20, fontWeight: 700, color: 'text.primary', letterSpacing: '-0.02em' }}>
+              Декларации
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.25 }}>
+              {todayStr} · {metrics.total} деклараций в работе
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <DotIcon sx={{ fontSize: 8, color: '#10b981', animation: 'pulse 2s infinite' }} />
+              <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>Обновлено только что</Typography>
+            </Box>
+          </Box>
         </Box>
 
-        {viewMode === 'kanban' ? (
-          <KanbanView declarations={filteredAndSortedItems} onClickDeclaration={(id) => navigate(`/declarations/${id}/edit`)} />
-        ) : (
-        <>
-        {/* Table */}
-        <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-          <Table>
-            {selectedIds.size > 0 && (
-              <Box sx={{ p: 1, bgcolor: '#e3f2fd', display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography variant="body2">Выбрано: {selectedIds.size}</Typography>
-                <Button size="small" color="error" variant="contained" onClick={handleBulkDelete}>Удалить выбранные</Button>
-                <Button size="small" onClick={() => setSelectedIds(new Set())}>Снять выделение</Button>
-              </Box>
+        {/* KPI Metrics */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 3 }}>
+          <MetricCard
+            icon={<WorkIcon sx={{ fontSize: 18, color: '#2563eb' }} />}
+            label="Новые"
+            value={metrics.new}
+            accentColor="rgba(191,219,254,0.8)"
+            iconBg="#eff6ff"
+            onClick={() => handleMetricClick(['new'])}
+          />
+          <MetricCard
+            icon={<WarningIcon sx={{ fontSize: 18, color: '#d97706' }} />}
+            label="Требуют внимания"
+            value={metrics.requires_attention}
+            accentColor="rgba(253,230,138,0.8)"
+            iconBg="#fffbeb"
+            onClick={() => handleMetricClick(['requires_attention'])}
+          />
+          <MetricCard
+            icon={<CheckIcon sx={{ fontSize: 18, color: '#059669' }} />}
+            label="Готово к отправке"
+            value={metrics.ready_to_send}
+            accentColor="rgba(167,243,208,0.8)"
+            iconBg="#ecfdf5"
+            onClick={() => handleMetricClick(['ready_to_send'])}
+          />
+          <MetricCard
+            icon={<SendIcon sx={{ fontSize: 18, color: '#64748b' }} />}
+            label="Отправлено"
+            value={metrics.sent}
+            accentColor="rgba(226,232,240,0.6)"
+            iconBg="#f1f5f9"
+            onClick={() => handleMetricClick(['sent'])}
+          />
+        </Box>
+
+        {/* Toolbar: search, filters, view toggle, actions */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, gap: 1.5, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+            <TextField
+              size="small"
+              placeholder="Поиск по номеру, типу..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              sx={{
+                width: { xs: '100%', sm: 320 },
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: 'white',
+                  borderColor: '#e2e8f0',
+                },
+              }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 18, color: '#94a3b8' }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <TextField
+              size="small"
+              type="date"
+              label="С даты"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: 150, '& .MuiOutlinedInput-root': { bgcolor: 'white' } }}
+            />
+            <TextField
+              size="small"
+              type="date"
+              label="По дату"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: 150, '& .MuiOutlinedInput-root': { bgcolor: 'white' } }}
+            />
+            {(dateFrom || dateTo || statusFilter) && (
+              <Button
+                size="small"
+                onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(null); setSearchQuery(''); setPage(1); }}
+                sx={{ fontSize: 11, color: 'text.secondary' }}
+              >
+                Сбросить
+              </Button>
             )}
-            <TableHead>
-              <TableRow>
-                <TableCell padding="checkbox" sx={{ width: 40 }}>
-                  <Checkbox
-                    size="small"
-                    checked={filteredAndSortedItems?.length > 0 && selectedIds.size === filteredAndSortedItems?.length}
-                    indeterminate={selectedIds.size > 0 && selectedIds.size < (filteredAndSortedItems?.length || 0)}
-                    onChange={toggleSelectAll}
-                  />
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'number_internal'}
-                    direction={sortField === 'number_internal' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('number_internal')}
-                  >
-                    Номер ДТ
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'created_at'}
-                    direction={sortField === 'created_at' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('created_at')}
-                  >
-                    Дата
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'type_code'}
-                    direction={sortField === 'type_code' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('type_code')}
-                  >
-                    Направление
-                  </TableSortLabel>
-                </TableCell>
-                <TableCell>
-                  <TableSortLabel
-                    active={sortField === 'status'}
-                    direction={sortField === 'status' ? sortOrder : 'asc'}
-                    onClick={() => handleSort('status')}
-                  >
-                    Статус
-                  </TableSortLabel>
-                </TableCell>
-                {hasAnyValue && (
-                  <TableCell align="right">
-                    <TableSortLabel
-                      active={sortField === 'total_invoice_value'}
-                      direction={sortField === 'total_invoice_value' ? sortOrder : 'asc'}
-                      onClick={() => handleSort('total_invoice_value')}
-                    >
-                      Стоимость
-                    </TableSortLabel>
-                  </TableCell>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={(_, v) => v && setViewMode(v)}
+              size="small"
+              sx={{
+                '& .MuiToggleButton-root': {
+                  borderColor: '#e2e8f0',
+                  px: 1.5,
+                  '&.Mui-selected': {
+                    bgcolor: '#f1f5f9',
+                    color: '#0f172a',
+                  },
+                },
+              }}
+            >
+              <ToggleButton value="kanban">
+                <KanbanIcon sx={{ fontSize: 18 }} />
+              </ToggleButton>
+              <ToggleButton value="table">
+                <TableViewIcon sx={{ fontSize: 18 }} />
+              </ToggleButton>
+            </ToggleButtonGroup>
+
+            <Tooltip title="Экспорт CSV">
+              <IconButton
+                size="small"
+                onClick={handleExportCSV}
+                sx={{
+                  bgcolor: 'white',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  '&:hover': { bgcolor: '#f8fafc' },
+                }}
+              >
+                <FileDownloadIcon sx={{ fontSize: 18, color: '#64748b' }} />
+              </IconButton>
+            </Tooltip>
+
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setCreateDialogOpen(true)}
+              size="small"
+              sx={{
+                bgcolor: '#0f172a',
+                color: 'white',
+                fontWeight: 600,
+                px: 2.5,
+                py: 0.75,
+                '&:hover': { bgcolor: '#1e293b' },
+              }}
+            >
+              Создать декларацию
+            </Button>
+          </Box>
+        </Box>
+
+        {/* Status filter chips */}
+        <Box sx={{ display: 'flex', gap: 0.75, mb: 2.5, flexWrap: 'wrap' }}>
+          {[
+            { label: 'Все', value: null },
+            { label: 'Новые', value: ['new'] },
+            { label: 'Требуют внимания', value: ['requires_attention'] },
+            { label: 'Готовы к отправке', value: ['ready_to_send'] },
+            { label: 'Отправлено', value: ['sent'] },
+          ].map((chip) => {
+            const isActive = JSON.stringify(statusFilter) === JSON.stringify(chip.value);
+            return (
+              <Chip
+                key={chip.label}
+                label={chip.label}
+                size="small"
+                onClick={() => { setStatusFilter(chip.value); setPage(1); }}
+                sx={{
+                  fontWeight: isActive ? 600 : 400,
+                  fontSize: 11,
+                  bgcolor: isActive ? '#0f172a' : 'white',
+                  color: isActive ? 'white' : '#64748b',
+                  border: isActive ? 'none' : '1px solid #e2e8f0',
+                  '&:hover': {
+                    bgcolor: isActive ? '#1e293b' : '#f8fafc',
+                  },
+                }}
+              />
+            );
+          })}
+        </Box>
+
+        {/* Kanban or Table */}
+        {viewMode === 'kanban' ? (
+          <KanbanView
+            declarations={filteredAndSortedItems}
+            onClickDeclaration={(id) => navigate(`/declarations/${id}/edit`)}
+          />
+        ) : (
+          <>
+            <TableContainer
+              component={Paper}
+              sx={{
+                borderRadius: '12px',
+                border: '1px solid #e2e8f0',
+                boxShadow: 'none',
+                overflow: 'hidden',
+              }}
+            >
+              <Table>
+                {selectedIds.size > 0 && (
+                  <Box sx={{ p: 1, bgcolor: '#eff6ff', display: 'flex', alignItems: 'center', gap: 2, borderBottom: '1px solid #bfdbfe' }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#1e40af' }}>
+                      Выбрано: {selectedIds.size}
+                    </Typography>
+                    <Button size="small" color="error" variant="contained" onClick={handleBulkDelete} sx={{ fontSize: 11 }}>
+                      Удалить выбранные
+                    </Button>
+                    <Button size="small" onClick={() => setSelectedIds(new Set())} sx={{ fontSize: 11 }}>
+                      Снять выделение
+                    </Button>
+                  </Box>
                 )}
-                <TableCell align="center">Действия</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {isLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i}>
-                    <TableCell padding="checkbox"><Skeleton variant="rectangular" width={18} height={18} sx={{ borderRadius: 0.5 }} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={120} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={70} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={100} /></TableCell>
-                    {hasAnyValue && <TableCell><Skeleton variant="text" width={90} /></TableCell>}
-                    <TableCell><Skeleton variant="text" width={60} /></TableCell>
-                  </TableRow>
-                ))
-              ) : filteredAndSortedItems.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={hasAnyValue ? 6 : 5} align="center" sx={{ py: 8 }}>
-                    <Box sx={{ textAlign: 'center' }}>
-                      <WorkIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-                      <Typography variant="h6" color="text.secondary" gutterBottom>
-                        {searchQuery || statusFilter ? 'Нет деклараций по фильтрам' : 'Нет деклараций'}
-                      </Typography>
-                      <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
-                        {searchQuery || statusFilter
-                          ? 'Попробуйте изменить параметры поиска'
-                          : !meData?.company_id
-                            ? 'Ваш аккаунт не привязан к компании. Обратитесь к администратору для привязки.'
-                            : 'Создайте первую декларацию — загрузите PDF-документы и AI заполнит все данные'}
-                      </Typography>
-                      {!searchQuery && !statusFilter && meData?.company_id && (
-                        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateDialogOpen(true)}>
-                          Создать декларацию
-                        </Button>
-                      )}
-                    </Box>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredAndSortedItems.map((declaration: Declaration) => (
-                  <TableRow
-                    key={declaration.id}
-                    hover
-                    selected={selectedIds.has(declaration.id)}
-                    sx={{ cursor: 'pointer', '&:last-child td': { borderBottom: 0 } }}
-                    onClick={() => navigate(`/declarations/${declaration.id}/edit`)}
-                  >
-                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox size="small" checked={selectedIds.has(declaration.id)} onChange={() => toggleSelect(declaration.id)} />
-                    </TableCell>
-                    <TableCell>
-                      {declaration.number_internal ? (
-                        <Tooltip title={declaration.number_internal} placement="top" arrow>
-                          <Typography noWrap sx={{ maxWidth: 200, fontWeight: 600, color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}>
-                            {declaration.number_internal}
-                          </Typography>
-                        </Tooltip>
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                          Не присвоен
-                        </Typography>
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      <Typography variant="body2">{dayjs(declaration.created_at).format('DD.MM.YYYY')}</Typography>
-                      <Typography variant="caption" color="text.secondary">{dayjs(declaration.created_at).format('HH:mm')}</Typography>
-                    </TableCell>
-
-                    <TableCell>
-                      <Chip
-                        icon={declaration.type_code?.startsWith('IM') ? <ImportIcon sx={{ fontSize: '14px !important' }} /> : <ExportIcon sx={{ fontSize: '14px !important' }} />}
-                        label={declaration.type_code?.startsWith('IM') ? 'Импорт' : 'Экспорт'}
+                <TableHead>
+                  <TableRow>
+                    <TableCell padding="checkbox" sx={{ width: 40 }}>
+                      <Checkbox
                         size="small"
-                        sx={{
-                          bgcolor: declaration.type_code?.startsWith('IM') ? '#e3f2fd' : '#fff3e0',
-                          color: declaration.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
-                          fontWeight: 500,
-                          fontSize: 11,
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.5,
-                          '& .MuiChip-icon': {
-                            color: declaration.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
-                          },
-                        }}
+                        checked={filteredAndSortedItems?.length > 0 && selectedIds.size === filteredAndSortedItems?.length}
+                        indeterminate={selectedIds.size > 0 && selectedIds.size < (filteredAndSortedItems?.length || 0)}
+                        onChange={toggleSelectAll}
                       />
                     </TableCell>
-
                     <TableCell>
-                      <StatusChip status={declaration.status} />
+                      <TableSortLabel
+                        active={sortField === 'number_internal'}
+                        direction={sortField === 'number_internal' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('number_internal')}
+                      >
+                        Номер ДТ
+                      </TableSortLabel>
                     </TableCell>
-
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'created_at'}
+                        direction={sortField === 'created_at' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('created_at')}
+                      >
+                        Дата
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'type_code'}
+                        direction={sortField === 'type_code' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('type_code')}
+                      >
+                        Направление
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'status'}
+                        direction={sortField === 'status' ? sortOrder : 'asc'}
+                        onClick={() => handleSort('status')}
+                      >
+                        Статус
+                      </TableSortLabel>
+                    </TableCell>
                     {hasAnyValue && (
                       <TableCell align="right">
-                        <Typography variant="body2" fontWeight={500}>
-                          {declaration.total_invoice_value
-                            ? `${declaration.currency_code || '₽'} ${Number(declaration.total_invoice_value).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`
-                            : 'Не указана'}
-                        </Typography>
+                        <TableSortLabel
+                          active={sortField === 'total_invoice_value'}
+                          direction={sortField === 'total_invoice_value' ? sortOrder : 'asc'}
+                          onClick={() => handleSort('total_invoice_value')}
+                        >
+                          Стоимость
+                        </TableSortLabel>
                       </TableCell>
                     )}
-
-                    <TableCell align="center">
-                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                        <Tooltip title="Редактировать">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/declarations/${declaration.id}/edit`); }}
-                            sx={{ borderRadius: 1.5, '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}
-                          >
-                            <OpenIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Ещё">
-                          <IconButton
-                            size="small"
-                            onClick={(e) => handleRowActionClick(e, declaration.id)}
-                            sx={{ borderRadius: 1.5, '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}
-                          >
-                            <MoreVertIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
+                    <TableCell align="center" sx={{ width: 100 }}>Действия</TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {isLoading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell padding="checkbox"><Skeleton variant="rectangular" width={18} height={18} sx={{ borderRadius: 0.5 }} /></TableCell>
+                        <TableCell><Skeleton variant="text" width={120} /></TableCell>
+                        <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                        <TableCell><Skeleton variant="text" width={70} /></TableCell>
+                        <TableCell><Skeleton variant="text" width={100} /></TableCell>
+                        {hasAnyValue && <TableCell><Skeleton variant="text" width={90} /></TableCell>}
+                        <TableCell><Skeleton variant="text" width={60} /></TableCell>
+                      </TableRow>
+                    ))
+                  ) : filteredAndSortedItems.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={hasAnyValue ? 7 : 6} align="center" sx={{ py: 8 }}>
+                        <Box sx={{ textAlign: 'center' }}>
+                          <Box sx={{ width: 56, height: 56, borderRadius: '50%', bgcolor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2 }}>
+                            <WorkIcon sx={{ fontSize: 28, color: '#cbd5e1' }} />
+                          </Box>
+                          <Typography sx={{ fontSize: 15, fontWeight: 600, color: 'text.secondary', mb: 0.5 }}>
+                            {searchQuery || statusFilter ? 'Нет деклараций по фильтрам' : 'Нет деклараций'}
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, color: '#94a3b8', mb: 3 }}>
+                            {searchQuery || statusFilter
+                              ? 'Попробуйте изменить параметры поиска'
+                              : !meData?.company_id
+                                ? 'Ваш аккаунт не привязан к компании'
+                                : 'Создайте первую декларацию'}
+                          </Typography>
+                          {!searchQuery && !statusFilter && meData?.company_id && (
+                            <Button
+                              variant="contained"
+                              startIcon={<AddIcon />}
+                              onClick={() => setCreateDialogOpen(true)}
+                              sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}
+                            >
+                              Создать декларацию
+                            </Button>
+                          )}
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAndSortedItems.map((declaration: Declaration) => (
+                      <TableRow
+                        key={declaration.id}
+                        hover
+                        selected={selectedIds.has(declaration.id)}
+                        sx={{ cursor: 'pointer', '&:last-child td': { borderBottom: 0 } }}
+                        onClick={() => navigate(`/declarations/${declaration.id}/edit`)}
+                      >
+                        <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                          <Checkbox size="small" checked={selectedIds.has(declaration.id)} onChange={() => toggleSelect(declaration.id)} />
+                        </TableCell>
+                        <TableCell>
+                          {declaration.number_internal ? (
+                            <Typography noWrap sx={{ maxWidth: 200, fontWeight: 600, fontSize: 13, color: '#0f172a' }}>
+                              {declaration.number_internal}
+                            </Typography>
+                          ) : (
+                            <Typography sx={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                              Не присвоен
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Typography sx={{ fontSize: 13 }}>{dayjs(declaration.created_at).format('DD.MM.YYYY')}</Typography>
+                          <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>{dayjs(declaration.created_at).format('HH:mm')}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            icon={declaration.type_code?.startsWith('IM') ? <ImportIcon sx={{ fontSize: '13px !important' }} /> : <ExportIcon sx={{ fontSize: '13px !important' }} />}
+                            label={declaration.type_code?.startsWith('IM') ? 'Импорт' : 'Экспорт'}
+                            size="small"
+                            sx={{
+                              bgcolor: declaration.type_code?.startsWith('IM') ? '#eff6ff' : '#fffbeb',
+                              color: declaration.type_code?.startsWith('IM') ? '#1e40af' : '#92400e',
+                              border: `1px solid ${declaration.type_code?.startsWith('IM') ? '#bfdbfe' : '#fde68a'}`,
+                              fontWeight: 500,
+                              fontSize: 10,
+                              '& .MuiChip-icon': {
+                                color: declaration.type_code?.startsWith('IM') ? '#1e40af' : '#92400e',
+                              },
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <StatusChip status={declaration.status} />
+                        </TableCell>
+                        {hasAnyValue && (
+                          <TableCell align="right">
+                            <Typography sx={{ fontSize: 13, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+                              {declaration.total_invoice_value
+                                ? `${declaration.currency_code || '₽'} ${Number(declaration.total_invoice_value).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`
+                                : '—'}
+                            </Typography>
+                          </TableCell>
+                        )}
+                        <TableCell align="center">
+                          <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                            <Tooltip title="Открыть">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/declarations/${declaration.id}/edit`); }}
+                                sx={{
+                                  borderRadius: '8px',
+                                  '&:hover': { bgcolor: '#f1f5f9' },
+                                }}
+                              >
+                                <OpenIcon sx={{ fontSize: 16, color: '#64748b' }} />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Ещё">
+                              <IconButton
+                                size="small"
+                                onClick={(e) => handleRowActionClick(e, declaration.id)}
+                                sx={{
+                                  borderRadius: '8px',
+                                  '&:hover': { bgcolor: '#f1f5f9' },
+                                }}
+                              >
+                                <MoreVertIcon sx={{ fontSize: 16, color: '#64748b' }} />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
 
-        {/* Pagination */}
-        {data && (
-          <TablePagination
-            component="div"
-            count={data.total}
-            page={page - 1}
-            onPageChange={(_, newPage) => setPage(newPage + 1)}
-            rowsPerPage={perPage}
-            onRowsPerPageChange={(e) => {
-              setPerPage(Number(e.target.value));
-              setPage(1);
-            }}
-            rowsPerPageOptions={[10, 20, 50]}
-            labelRowsPerPage="Строк на странице:"
-            labelDisplayedRows={({ from, to, count }) => `${from}-${to} из ${count !== -1 ? count : `более чем ${to}`}`}
-            sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}
-          />
-        )}
-        </>
+            {data && (
+              <TablePagination
+                component="div"
+                count={data.total}
+                page={page - 1}
+                onPageChange={(_, newPage) => setPage(newPage + 1)}
+                rowsPerPage={perPage}
+                onRowsPerPageChange={(e) => {
+                  setPerPage(Number(e.target.value));
+                  setPage(1);
+                }}
+                rowsPerPageOptions={[10, 20, 50]}
+                labelRowsPerPage="Строк на странице:"
+                labelDisplayedRows={({ from, to, count }) => `${from}-${to} из ${count !== -1 ? count : `более чем ${to}`}`}
+                sx={{ mt: 2 }}
+              />
+            )}
+          </>
         )}
 
         {/* Row Action Menu */}
@@ -781,65 +792,86 @@ const DeclarationsListPage = () => {
           onClose={handleRowActionClose}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+          slotProps={{
+            paper: {
+              sx: {
+                borderRadius: '12px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
+                border: '1px solid #e2e8f0',
+                mt: 0.5,
+              },
+            },
+          }}
         >
-          <MenuItem onClick={() => { handleRowActionClose(); if (rowActionDeclarationId) navigate(`/declarations/${rowActionDeclarationId}/view`); }}>
-            <PdfIcon fontSize="small" sx={{ mr: 1 }} />
+          <MenuItem
+            onClick={() => { handleRowActionClose(); if (rowActionDeclarationId) navigate(`/declarations/${rowActionDeclarationId}/view`); }}
+            sx={{ fontSize: 13, gap: 1.5, py: 1 }}
+          >
+            <PdfIcon sx={{ fontSize: 16, color: '#64748b' }} />
             Просмотр ДТ
           </MenuItem>
-          <MenuItem onClick={handleDuplicate}>
-            <CopyIcon fontSize="small" sx={{ mr: 1 }} />
+          <MenuItem onClick={handleDuplicate} sx={{ fontSize: 13, gap: 1.5, py: 1 }}>
+            <CopyIcon sx={{ fontSize: 16, color: '#64748b' }} />
             Дублировать
           </MenuItem>
-          <MenuItem onClick={handleExportPdf}>
-            <PrintIcon fontSize="small" sx={{ mr: 1 }} />
+          <MenuItem onClick={handleExportPdf} sx={{ fontSize: 13, gap: 1.5, py: 1 }}>
+            <PrintIcon sx={{ fontSize: 16, color: '#64748b' }} />
             Экспорт PDF
           </MenuItem>
-          <MenuItem onClick={handleDelete} sx={{ color: 'error.main' }}>
-            <DeleteIcon fontSize="small" sx={{ mr: 1 }} />
+          <MenuItem onClick={handleDelete} sx={{ fontSize: 13, gap: 1.5, py: 1, color: '#dc2626' }}>
+            <DeleteIcon sx={{ fontSize: 16 }} />
             Удалить
           </MenuItem>
         </Menu>
 
-      {/* Create dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} PaperProps={{ sx: { borderRadius: 3, minWidth: 400 } }}>
-        <DialogTitle sx={{ fontWeight: 600 }}>Создать декларацию</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mt: 2 }}>
-            <InputLabel>Тип декларации</InputLabel>
-            <Select
-              value={newTypeCode}
-              onChange={(e) => setNewTypeCode(e.target.value as 'IM40' | 'EX10')}
-              label="Тип декларации"
+        {/* Create dialog */}
+        <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 600, fontSize: 16 }}>Создать декларацию</DialogTitle>
+          <DialogContent>
+            <FormControl fullWidth sx={{ mt: 2 }}>
+              <InputLabel>Тип декларации</InputLabel>
+              <Select
+                value={newTypeCode}
+                onChange={(e) => setNewTypeCode(e.target.value as 'IM40' | 'EX10')}
+                label="Тип декларации"
+              >
+                <MenuItem value="IM40">Импорт (IM40) — выпуск для внутреннего потребления</MenuItem>
+                <MenuItem value="EX10">Экспорт (EX10)</MenuItem>
+              </Select>
+            </FormControl>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setCreateDialogOpen(false)} sx={{ color: '#64748b' }}>
+              Отмена
+            </Button>
+            <Button
+              onClick={handleCreate}
+              variant="contained"
+              disabled={createMutation.isPending}
+              sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' }, px: 3 }}
             >
-              <MenuItem value="IM40">Импорт (IM40) — выпуск для внутреннего потребления</MenuItem>
-              <MenuItem value="EX10">Экспорт (EX10)</MenuItem>
-            </Select>
-          </FormControl>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setCreateDialogOpen(false)} sx={{ color: 'text.secondary' }}>Отмена</Button>
-          <Button onClick={handleCreate} variant="contained" disabled={createMutation.isPending} sx={{ px: 4 }}>
-            Создать
-          </Button>
-        </DialogActions>
-      </Dialog>
+              Создать
+            </Button>
+          </DialogActions>
+        </Dialog>
 
-      {/* Snackbar notifications */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
+        {/* Snackbar */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={4000}
           onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-          severity={snackbar.severity}
-          variant="filled"
-          sx={{ width: '100%' }}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
+          <Alert
+            onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+            severity={snackbar.severity}
+            variant="filled"
+            sx={{ width: '100%', borderRadius: '10px' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
     </AppLayout>
   );
 };
