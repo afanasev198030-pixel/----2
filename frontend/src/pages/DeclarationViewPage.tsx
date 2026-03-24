@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { Print as PrintIcon, Edit as EditIcon, PictureAsPdf } from '@mui/icons-material';
+import {
+  Box, Button, CircularProgress, Typography, IconButton, Tooltip, Chip, Drawer, Paper,
+} from '@mui/material';
+import {
+  Print as PrintIcon, Edit as EditIcon, PictureAsPdf,
+  ArrowBack as ArrowBackIcon, Folder as FolderIcon,
+  Close as CloseIcon, Code as XmlIcon,
+  AccessTime as ClockIcon, CheckCircle as CheckCircleIcon,
+  Warning as WarningIcon, Send as SendIcon,
+  VerifiedUser as SignIcon, Visibility as EyeIcon,
+  Description as FileTextIcon, ErrorOutline as ErrorIcon,
+} from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
+import StatusChip from '../components/StatusChip';
 import client from '../api/client';
 import { calculatePayments, PaymentResult } from '../api/calc';
+import { getDocuments } from '../api/documents';
+import { Document as DocType } from '../types';
+import dayjs from 'dayjs';
 
 const f = (v: any) => v ?? '';
 const num = (v: any, d = 2) =>
@@ -252,6 +266,13 @@ const PaymentRows = ({
   </table>
 );
 
+const DOC_TYPE_LABELS: Record<string, string> = {
+  contract: 'Контракт', invoice: 'Инвойс', packing_list: 'Упаковочный лист',
+  transport_doc: 'Транспортный документ', specification: 'Спецификация',
+  tech_description: 'Тех. описание', certificate_origin: 'Сертификат происхождения',
+  other: 'Прочее',
+};
+
 const DeclarationViewPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -264,6 +285,8 @@ const DeclarationViewPage = () => {
   const [payments, setPayments] = useState<PaymentResult | null>(null);
   const [itemDocsMap, setItemDocsMap] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
+  const [docsOpen, setDocsOpen] = useState(false);
+  const [docs, setDocs] = useState<DocType[]>([]);
 
   useEffect(() => {
     const load = async () => {
@@ -300,6 +323,11 @@ const DeclarationViewPage = () => {
         if (d.declarant_counterparty_id) setDeclarant(await loadCp(d.declarant_counterparty_id));
         if (d.financial_counterparty_id) setFinancial(await loadCp(d.financial_counterparty_id));
 
+        try {
+          const loadedDocs = await getDocuments(id!);
+          setDocs(loadedDocs);
+        } catch {}
+
         if (its.length > 0) {
           try {
             const payItems = its.map((i: any) => ({
@@ -330,16 +358,16 @@ const DeclarationViewPage = () => {
 
   if (loading)
     return (
-      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
-        <Box sx={{ textAlign: 'center', py: 4 }}>
+      <AppLayout noPadding>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
           <CircularProgress />
         </Box>
       </AppLayout>
     );
   if (!decl)
     return (
-      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
-        <Typography sx={{ py: 4 }}>Не найдена</Typography>
+      <AppLayout noPadding>
+        <Typography sx={{ py: 4, px: 3 }}>Не найдена</Typography>
       </AppLayout>
     );
 
@@ -356,44 +384,167 @@ const DeclarationViewPage = () => {
   const cpLine = (cp: any) =>
     cp ? `${cp.name || ''} ${cp.country_code || ''} ${cp.address || ''}` : 'НЕ УКАЗАН';
 
+  const evidenceFields = decl.evidence_map ? Object.keys(decl.evidence_map).length : 0;
+  const aiIssueCount = (decl.ai_issues || []).filter((i: any) => !i.resolved).length;
+
   return (
-    <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТ' }]}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2, gap: 1 }} className="no-print">
-        <Button
-          variant="outlined"
-          onClick={() => navigate(`/declarations/${id}/dts-view`)}
-        >
-          Просмотр ДТС
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<EditIcon />}
-          onClick={() => navigate(`/declarations/${id}/edit`)}
-        >
-          Редактировать
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<PictureAsPdf />}
-          onClick={async () => {
-            try {
-              const resp = await client.get(`/declarations/${id}/export-pdf`, { responseType: 'blob' });
-              const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `DT_${(id || '').slice(0, 8)}.pdf`;
-              a.click();
-            } catch (e) {
-              console.error(e);
-            }
+    <AppLayout noPadding>
+      {/* Sticky Header */}
+      <Box
+        className="no-print"
+        sx={{
+          position: 'sticky', top: 56, zIndex: 40,
+          bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid #e2e8f0',
+          px: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          height: 52,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Tooltip title="Назад">
+            <IconButton onClick={() => navigate(decl ? `/declarations/${id}` : '/declarations')} size="small" sx={{ bgcolor: '#f1f5f9', '&:hover': { bgcolor: '#e2e8f0' } }}>
+              <ArrowBackIcon sx={{ fontSize: 18, color: '#64748b' }} />
+            </IconButton>
+          </Tooltip>
+          <Box sx={{ width: 1, height: 20, bgcolor: '#e2e8f0' }} />
+          <Button
+            size="small"
+            onClick={() => setDocsOpen(!docsOpen)}
+            startIcon={<FolderIcon sx={{ fontSize: 14 }} />}
+            sx={{
+              fontSize: 11, fontWeight: 500, borderRadius: '8px', px: 1.5,
+              bgcolor: docsOpen ? '#eff6ff' : 'white',
+              color: docsOpen ? '#2563eb' : '#64748b',
+              border: `1px solid ${docsOpen ? '#bfdbfe' : '#e2e8f0'}`,
+              '&:hover': { bgcolor: docsOpen ? '#dbeafe' : '#f8fafc' },
+            }}
+          >
+            Документы
+            <Chip label={docs.length} size="small" sx={{ ml: 0.5, height: 18, fontSize: 9, bgcolor: docsOpen ? '#dbeafe' : '#f1f5f9', color: docsOpen ? '#1d4ed8' : '#64748b' }} />
+          </Button>
+          <Box sx={{ width: 1, height: 20, bgcolor: '#e2e8f0' }} />
+          <Box>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+              Полная декларация
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
+            {decl.number_internal || decl.id?.slice(0, 8).toUpperCase()}
+          </Typography>
+        </Box>
+
+        <StatusChip status={decl.status} size="medium" />
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Button size="small" startIcon={<PictureAsPdf sx={{ fontSize: 14 }} />} variant="outlined"
+            sx={{ color: '#64748b', borderColor: '#e2e8f0', fontSize: 11 }}
+            onClick={async () => {
+              try {
+                const resp = await client.get(`/declarations/${id}/export-pdf`, { responseType: 'blob' });
+                const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+                const a = document.createElement('a');
+                a.href = url; a.download = `DT_${(id || '').slice(0, 8)}.pdf`; a.click();
+              } catch (e) { console.error(e); }
+            }}>
+            PDF
+          </Button>
+          <Button size="small" startIcon={<XmlIcon sx={{ fontSize: 14 }} />} variant="outlined" sx={{ color: '#64748b', borderColor: '#e2e8f0', fontSize: 11 }}>
+            XML
+          </Button>
+          <Button size="small" startIcon={<PrintIcon sx={{ fontSize: 14 }} />} variant="outlined"
+            sx={{ color: '#64748b', borderColor: '#e2e8f0', fontSize: 11 }}
+            onClick={() => window.print()}>
+            Печать
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Summary Strip */}
+      <Box
+        className="no-print"
+        sx={{
+          bgcolor: 'white', borderBottom: '1px solid #e2e8f0',
+          px: 2.5, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          minHeight: 40,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <StripMetric icon={<CheckCircleIcon sx={{ fontSize: 14, color: '#10b981' }} />} label="Полей" value={`${evidenceFields}`} />
+          <Box sx={{ width: 1, height: 16, bgcolor: '#e2e8f0' }} />
+          <StripMetric icon={<WarningIcon sx={{ fontSize: 14, color: aiIssueCount > 0 ? '#f59e0b' : '#94a3b8' }} />} label="Замечаний" value={`${aiIssueCount}`} warn={aiIssueCount > 0} />
+          <StripMetric icon={<FileTextIcon sx={{ fontSize: 14, color: '#94a3b8' }} />} label="Документы" value={`${docs.length}`} />
+          <StripMetric icon={<EditIcon sx={{ fontSize: 14, color: '#94a3b8' }} />} label="Товаров" value={`${items.length}`} />
+        </Box>
+        <Box sx={{ display: 'flex', gap: 0.75 }}>
+          <Button size="small" onClick={() => navigate(`/declarations/${id}/edit`)} sx={{ fontSize: 11, color: '#64748b' }}>
+            Редактировать
+          </Button>
+          <Button size="small" onClick={() => navigate(`/declarations/${id}/dts-view`)} sx={{ fontSize: 11, color: '#7c3aed' }}>
+            ДТС
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Main layout: sidebar + form */}
+      <Box sx={{ display: 'flex', minHeight: 'calc(100vh - 200px)' }}>
+        {/* Docs Sidebar */}
+        <Drawer
+          variant="persistent"
+          anchor="left"
+          open={docsOpen}
+          PaperProps={{
+            sx: {
+              position: 'relative', width: 280,
+              borderRight: '1px solid #e2e8f0', bgcolor: 'white',
+            },
           }}
         >
-          PDF
-        </Button>
-        <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>
-          Печать
-        </Button>
-      </Box>
+          <Box sx={{ p: 2, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Документы</Typography>
+              <Typography sx={{ fontSize: 10, color: '#94a3b8', mt: 0.25 }}>{docs.length} загружено</Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setDocsOpen(false)}>
+              <CloseIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
+            </IconButton>
+          </Box>
+          <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
+            {docs.map((doc: DocType) => (
+              <Box
+                key={doc.id}
+                sx={{
+                  mx: 1, mb: 0.5, px: 1.5, py: 1.25, borderRadius: '10px',
+                  border: '1px solid #f1f5f9', cursor: 'pointer',
+                  '&:hover': { bgcolor: '#f8fafc', borderColor: '#e2e8f0' },
+                  transition: 'all 0.15s',
+                }}
+              >
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
+                  <Box sx={{ p: 0.75, borderRadius: '8px', bgcolor: '#ecfdf5', flexShrink: 0 }}>
+                    <FileTextIcon sx={{ fontSize: 16, color: '#059669' }} />
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography noWrap sx={{ fontSize: 11, fontWeight: 500, color: '#1e293b' }}>
+                      {DOC_TYPE_LABELS[doc.doc_type] || doc.doc_type}
+                    </Typography>
+                    <Typography sx={{ fontSize: 10, color: '#94a3b8' }}>
+                      {doc.original_filename}
+                    </Typography>
+                  </Box>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+          <Box sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
+            <Button fullWidth size="small" onClick={() => navigate(`/declarations/${id}/edit`)}
+              sx={{ fontSize: 11, color: '#2563eb' }}>
+              + Загрузить документ
+            </Button>
+          </Box>
+        </Drawer>
+
+        {/* Form content */}
+        <Box sx={{ flex: 1, overflowY: 'auto', p: 3, bgcolor: '#f8f8fa', transition: 'margin-left 0.3s' }}>
 
       {/* ═══════════════════ ДТ1 — ОСНОВНОЙ ЛИСТ ═══════════════════ */}
       <div className="dt-sheet" style={FORM}>
@@ -860,6 +1011,39 @@ const DeclarationViewPage = () => {
         );
       })}
 
+        </Box>
+      </Box>
+
+      {/* Bottom Bar */}
+      <Box
+        className="no-print"
+        sx={{
+          position: 'sticky', bottom: 0, zIndex: 40,
+          bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)',
+          borderTop: '1px solid #e2e8f0',
+          px: 2.5, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          height: 46,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <BottomInd icon={<CheckCircleIcon sx={{ fontSize: 14 }} />} text={`${aiIssueCount === 0 ? '0 ошибок' : `${aiIssueCount} замечаний`}`} color={aiIssueCount === 0 ? '#059669' : '#d97706'} bg={aiIssueCount === 0 ? '#ecfdf5' : '#fffbeb'} />
+          <BottomInd icon={<EditIcon sx={{ fontSize: 14 }} />} text={`${items.length} товаров`} color="#2563eb" bg="#eff6ff" />
+          <BottomInd icon={<FileTextIcon sx={{ fontSize: 14 }} />} text={`${docs.length} документов`} color="#64748b" bg="#f8fafc" />
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Button size="small" variant="outlined"
+            startIcon={<SignIcon sx={{ fontSize: 14 }} />}
+            sx={{ fontSize: 11, color: '#64748b', borderColor: '#e2e8f0' }}>
+            ЭЦП
+          </Button>
+          <Button size="small" variant="contained"
+            startIcon={<SendIcon sx={{ fontSize: 14 }} />}
+            sx={{ fontSize: 11, fontWeight: 500, bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}>
+            Подписать и отправить
+          </Button>
+        </Box>
+      </Box>
+
       <style>{`
         @media print {
           .no-print { display: none !important; }
@@ -872,5 +1056,24 @@ const DeclarationViewPage = () => {
     </AppLayout>
   );
 };
+
+function StripMetric({ icon, label, value, warn }: { icon: React.ReactNode; label: string; value: string; warn?: boolean }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 11 }}>
+      {icon}
+      <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>{label}</Typography>
+      <Typography sx={{ fontSize: 11, fontWeight: 500, color: warn ? '#d97706' : '#1e293b' }}>{value}</Typography>
+    </Box>
+  );
+}
+
+function BottomInd({ icon, text, color, bg }: { icon: React.ReactNode; text: string; color: string; bg: string }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 11, color, bgcolor: bg, px: 1.25, py: 0.5, borderRadius: '8px' }}>
+      {icon}
+      <Typography sx={{ fontSize: 11 }}>{text}</Typography>
+    </Box>
+  );
+}
 
 export default DeclarationViewPage;

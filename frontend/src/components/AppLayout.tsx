@@ -1,4 +1,4 @@
-import { ReactNode, useMemo, useContext } from 'react';
+import { ReactNode, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -12,20 +12,11 @@ import {
   Settings as SettingsIcon,
   Logout as LogoutIcon,
   NavigateNext as NavNextIcon,
-  Home as HomeIcon,
   Notifications as NotificationsIcon,
-  DarkMode as DarkModeIcon,
-  LightMode as LightModeIcon,
+  GridView as GridViewIcon,
 } from '@mui/icons-material';
 import { getMe, logout } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
-import { ThemeToggleContext } from '../index';
-
-interface AppLayoutProps {
-  children: ReactNode;
-  breadcrumbs?: Array<{ label: string; path?: string }>;
-  noPadding?: boolean;
-}
 
 import {
   AdminPanelSettings as AdminIcon,
@@ -37,27 +28,32 @@ import {
   BugReport as BugReportIcon,
 } from '@mui/icons-material';
 
+interface AppLayoutProps {
+  children: ReactNode;
+  breadcrumbs?: Array<{ label: string; path?: string }>;
+  noPadding?: boolean;
+}
+
 const NAV_ITEMS = [
-  { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon fontSize="small" />, adminOnly: false },
-  { label: 'Клиенты', path: '/clients', icon: <PeopleIcon fontSize="small" />, adminOnly: false },
-  { label: 'Декларации', path: '/declarations', icon: <DeclarationsIcon fontSize="small" />, adminOnly: false },
-  { label: 'Настройки', path: '/settings', icon: <SettingsIcon fontSize="small" />, adminOnly: true },
+  { label: 'Dashboard', path: '/dashboard', icon: <DashboardIcon sx={{ fontSize: 16 }} />, adminOnly: false },
+  { label: 'Клиенты', path: '/clients', icon: <PeopleIcon sx={{ fontSize: 16 }} />, adminOnly: false },
+  { label: 'Декларации', path: '/declarations', icon: <DeclarationsIcon sx={{ fontSize: 16 }} />, adminOnly: false },
+  { label: 'Настройки', path: '/settings', icon: <SettingsIcon sx={{ fontSize: 16 }} />, adminOnly: true },
 ];
 
-const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [
-  { label: 'AI-стратегии', path: '/admin/strategies', icon: <StrategyIcon fontSize="small" /> },
-  { label: 'Пользователи', path: '/admin/users', icon: <PeopleIcon fontSize="small" /> },
-  { label: 'Аудит', path: '/admin/audit', icon: <AuditIcon fontSize="small" /> },
-  { label: 'База знаний', path: '/admin/knowledge', icon: <BookIcon fontSize="small" /> },
-  { label: 'Чек-листы', path: '/admin/checklists', icon: <ChecklistIcon fontSize="small" /> },
-  { label: 'AI-затраты', path: '/admin/ai-costs', icon: <CostIcon fontSize="small" /> },
-  { label: 'Дебаг парсинга', path: '/admin/parse-debug', icon: <BugReportIcon fontSize="small" /> },
+const ADMIN_NAV_ITEMS = [
+  { label: 'AI-стратегии', path: '/admin/strategies', icon: <StrategyIcon sx={{ fontSize: 16 }} /> },
+  { label: 'Пользователи', path: '/admin/users', icon: <PeopleIcon sx={{ fontSize: 16 }} /> },
+  { label: 'Аудит', path: '/admin/audit', icon: <AuditIcon sx={{ fontSize: 16 }} /> },
+  { label: 'База знаний', path: '/admin/knowledge', icon: <BookIcon sx={{ fontSize: 16 }} /> },
+  { label: 'Чек-листы', path: '/admin/checklists', icon: <ChecklistIcon sx={{ fontSize: 16 }} /> },
+  { label: 'AI-затраты', path: '/admin/ai-costs', icon: <CostIcon sx={{ fontSize: 16 }} /> },
+  { label: 'Дебаг парсинга', path: '/admin/parse-debug', icon: <BugReportIcon sx={{ fontSize: 16 }} /> },
 ];
 
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const themeCtx = useContext(ThemeToggleContext);
   const { isAdmin } = useAuth();
 
   const { data: me } = useQuery({
@@ -81,7 +77,6 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
     navigate('/login');
   };
 
-  // Auto-generate breadcrumbs from path if not provided
   const autoBreadcrumbs = useMemo(() => {
     if (breadcrumbs) return breadcrumbs;
     const path = location.pathname;
@@ -101,29 +96,44 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
-        <Toolbar sx={{ px: { xs: 2, md: 4 }, minHeight: { xs: 56 } }}>
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          bgcolor: 'white',
+          borderBottom: '1px solid #e2e8f0',
+          color: '#0f172a',
+        }}
+      >
+        <Toolbar sx={{ px: { xs: 2, md: 3 }, minHeight: { xs: 56 }, gap: 1.5 }}>
+          {/* Logo */}
           <Box
             onClick={() => navigate('/dashboard')}
             sx={{
-              width: 36, height: 36, borderRadius: 2,
-              background: 'rgba(255,255,255,0.2)',
+              width: 32, height: 32, borderRadius: '10px',
+              background: 'linear-gradient(135deg, #1e293b, #0f172a)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              mr: 1.5, cursor: 'pointer',
+              cursor: 'pointer', flexShrink: 0,
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
             }}
           >
-            <Typography sx={{ color: 'white', fontWeight: 700, fontSize: 14 }}>ТД</Typography>
+            <GridViewIcon sx={{ fontSize: 16, color: 'white' }} />
           </Box>
-          <Typography
-            variant="subtitle1"
+          <Box
             onClick={() => navigate('/dashboard')}
-            sx={{ fontWeight: 700, mr: 3, cursor: 'pointer', display: { xs: 'none', md: 'block' } }}
+            sx={{ cursor: 'pointer', display: 'flex', alignItems: 'baseline', gap: 1, mr: 1 }}
           >
-            Панель брокера
-          </Typography>
+            <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#0f172a', letterSpacing: '-0.01em' }}>
+              Customs AI
+            </Typography>
+            <Box sx={{ width: 1, height: 16, bgcolor: '#e2e8f0' }} />
+            <Typography sx={{ fontSize: 12, color: '#94a3b8', display: { xs: 'none', md: 'block' } }}>
+              Панель брокера
+            </Typography>
+          </Box>
 
           {/* Main nav */}
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', gap: 0.25 }}>
             {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => (
               <Button
                 key={item.path}
@@ -131,13 +141,14 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
                 onClick={() => navigate(item.path)}
                 size="small"
                 sx={{
-                  color: 'white',
+                  color: isActive(item.path) ? '#0f172a' : '#64748b',
                   textTransform: 'none',
-                  fontWeight: isActive(item.path) ? 700 : 400,
-                  bgcolor: isActive(item.path) ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  borderRadius: 2,
+                  fontWeight: isActive(item.path) ? 600 : 400,
+                  fontSize: 12,
+                  bgcolor: isActive(item.path) ? '#f1f5f9' : 'transparent',
+                  borderRadius: '8px',
                   px: 1.5,
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                  '&:hover': { bgcolor: '#f1f5f9' },
                 }}
               >
                 {item.label}
@@ -145,18 +156,18 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
             ))}
           </Box>
 
-          {/* Admin nav (icon-only) */}
+          {/* Admin nav */}
           {isAdmin && (
-            <Box sx={{ display: 'flex', gap: 0.3, ml: 1, pl: 1, borderLeft: '1px solid rgba(255,255,255,0.25)' }}>
+            <Box sx={{ display: 'flex', gap: 0.25, ml: 0.5, pl: 1, borderLeft: '1px solid #e2e8f0' }}>
               {ADMIN_NAV_ITEMS.map((item) => (
                 <Tooltip key={item.path} title={item.label}>
                   <IconButton
                     onClick={() => navigate(item.path)}
                     size="small"
                     sx={{
-                      color: isActive(item.path) ? '#ffcc80' : 'rgba(255,255,255,0.7)',
-                      bgcolor: isActive(item.path) ? 'rgba(255,204,128,0.15)' : 'transparent',
-                      '&:hover': { bgcolor: 'rgba(255,204,128,0.2)', color: '#ffcc80' },
+                      color: isActive(item.path) ? '#7c3aed' : '#94a3b8',
+                      bgcolor: isActive(item.path) ? '#f5f3ff' : 'transparent',
+                      '&:hover': { bgcolor: '#f5f3ff', color: '#7c3aed' },
                     }}
                   >
                     {item.icon}
@@ -168,20 +179,48 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {/* Right side: theme, notifications, profile, logout */}
+          {/* Right side */}
           <Tooltip title="Уведомления">
-            <IconButton color="inherit" size="small" onClick={() => navigate('/declarations')}>
-              <NotificationsIcon fontSize="small" />
+            <IconButton
+              size="small"
+              onClick={() => navigate('/declarations')}
+              sx={{
+                position: 'relative',
+                color: '#94a3b8',
+                '&:hover': { bgcolor: '#f1f5f9', color: '#64748b' },
+              }}
+            >
+              <NotificationsIcon sx={{ fontSize: 18 }} />
+              <Box sx={{
+                position: 'absolute', top: 4, right: 4,
+                width: 6, height: 6, borderRadius: '50%',
+                bgcolor: '#ef4444', border: '2px solid white',
+              }} />
             </IconButton>
           </Tooltip>
           <Tooltip title={me?.full_name || 'Профиль'}>
-            <IconButton color="inherit" size="small" onClick={() => navigate('/profile')}>
-              <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(255,255,255,0.25)', fontSize: 11, fontWeight: 700 }}>{initials}</Avatar>
+            <IconButton size="small" onClick={() => navigate('/profile')}>
+              <Avatar
+                sx={{
+                  width: 30, height: 30,
+                  bgcolor: '#f1f5f9',
+                  color: '#64748b',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                {initials}
+              </Avatar>
             </IconButton>
           </Tooltip>
           <Tooltip title="Выйти">
-            <IconButton color="inherit" onClick={handleLogout} size="small">
-              <LogoutIcon fontSize="small" />
+            <IconButton
+              onClick={handleLogout}
+              size="small"
+              sx={{ color: '#94a3b8', '&:hover': { bgcolor: '#fef2f2', color: '#dc2626' } }}
+            >
+              <LogoutIcon sx={{ fontSize: 16 }} />
             </IconButton>
           </Tooltip>
         </Toolbar>
@@ -189,20 +228,12 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
       {/* Breadcrumbs */}
       {autoBreadcrumbs.length > 0 && (
-        <Box sx={{ px: { xs: 2, md: 4 }, pt: 1.5, pb: 0, maxWidth: 1400, mx: 'auto' }}>
-          <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ fontSize: 13 }}>
-            <Link
-              underline="hover"
-              color="inherit"
-              onClick={() => navigate('/dashboard')}
-              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', fontSize: 13 }}
-            >
-              <HomeIcon sx={{ fontSize: 16 }} /> Dashboard
-            </Link>
+        <Box sx={{ px: { xs: 2, md: 3 }, pt: 1.5, pb: 0, maxWidth: 1440, mx: 'auto' }}>
+          <Breadcrumbs separator={<NavNextIcon sx={{ fontSize: 14 }} />} sx={{ fontSize: 12 }}>
             {autoBreadcrumbs.map((crumb, i) => {
               const isLast = i === autoBreadcrumbs.length - 1;
               return isLast ? (
-                <Typography key={i} color="text.primary" sx={{ fontSize: 13, fontWeight: 600 }}>
+                <Typography key={i} sx={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>
                   {crumb.label}
                 </Typography>
               ) : (
@@ -211,7 +242,7 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
                   underline="hover"
                   color="inherit"
                   onClick={() => crumb.path && navigate(crumb.path)}
-                  sx={{ cursor: 'pointer', fontSize: 13 }}
+                  sx={{ cursor: 'pointer', fontSize: 12, color: '#94a3b8' }}
                 >
                   {crumb.label}
                 </Link>
@@ -222,7 +253,7 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
       )}
 
       {/* Page content */}
-      <Box sx={noPadding ? {} : { px: { xs: 2, md: 4 }, py: 2, maxWidth: 1400, mx: 'auto' }}>
+      <Box sx={noPadding ? {} : { px: { xs: 2, md: 3 }, py: 2, maxWidth: 1440, mx: 'auto' }}>
         {children}
       </Box>
     </Box>

@@ -10,11 +10,22 @@ import {
   CircularProgress,
   Typography,
   Alert,
+  IconButton,
+  Tooltip,
+  Chip,
 } from '@mui/material';
-import { Print as PrintIcon, Edit as EditIcon, ArrowBack as BackIcon } from '@mui/icons-material';
+import {
+  Print as PrintIcon, Edit as EditIcon, ArrowBack as BackIcon,
+  PictureAsPdf as PdfIcon, Description as FileTextIcon,
+  CheckCircle as CheckCircleIcon, Warning as WarningIcon,
+  AccessTime as ClockIcon, Send as SendIcon,
+  VerifiedUser as SignIcon,
+} from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
+import StatusChip from '../components/StatusChip';
 import client from '../api/client';
 import { Counterparty, CustomsValueDeclaration, CustomsValueItem } from '../types';
+import dayjs from 'dayjs';
 
 const f = (v: any) => (v != null && v !== '' ? String(v) : '');
 const num = (v: any, d = 2) =>
@@ -157,8 +168,8 @@ const DtsViewPage = () => {
 
   if (loading) {
     return (
-      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТС' }]}>
-        <Box sx={{ textAlign: 'center', py: 4 }}>
+      <AppLayout noPadding>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
           <CircularProgress />
         </Box>
       </AppLayout>
@@ -167,21 +178,26 @@ const DtsViewPage = () => {
 
   if (!decl) {
     return (
-      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТС' }]}>
-        <Typography sx={{ py: 4 }}>Декларация не найдена</Typography>
+      <AppLayout noPadding>
+        <Typography sx={{ py: 4, px: 3 }}>Декларация не найдена</Typography>
       </AppLayout>
     );
   }
 
   if (!dts) {
     return (
-      <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТС' }]}>
-        <Alert severity="info" sx={{ mt: 2 }}>
-          ДТС не сформирована. Перейдите в редактирование декларации и нажмите «Сформировать ДТС».
-        </Alert>
-        <Button startIcon={<BackIcon />} onClick={() => navigate(`/declarations/${id}/edit`)} sx={{ mt: 2 }}>
-          К редактированию
-        </Button>
+      <AppLayout noPadding>
+        <Box sx={{ maxWidth: 600, mx: 'auto', mt: 6, textAlign: 'center' }}>
+          <Box sx={{ width: 56, height: 56, borderRadius: '50%', bgcolor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2 }}>
+            <FileTextIcon sx={{ fontSize: 28, color: '#cbd5e1' }} />
+          </Box>
+          <Typography sx={{ fontSize: 16, fontWeight: 600, color: '#0f172a', mb: 0.5 }}>ДТС не сформирована</Typography>
+          <Typography sx={{ fontSize: 13, color: '#64748b', mb: 3 }}>Перейдите в редактирование декларации и нажмите «Сформировать ДТС»</Typography>
+          <Button variant="contained" startIcon={<BackIcon />} onClick={() => navigate(`/declarations/${id}/edit`)}
+            sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
+            К редактированию
+          </Button>
+        </Box>
       </AppLayout>
     );
   }
@@ -206,26 +222,72 @@ const DtsViewPage = () => {
     : '';
 
   return (
-    <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Просмотр ДТС-1' }]}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2, gap: 1 }} className="no-print">
-        <Button
-          variant="outlined"
-          startIcon={<BackIcon />}
-          onClick={() => navigate(`/declarations/${id}/view`)}
-        >
-          К ДТ
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={<EditIcon />}
-          onClick={() => navigate(`/declarations/${id}/edit`)}
-        >
-          Редактировать
-        </Button>
-        <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()}>
-          Печать
-        </Button>
+    <AppLayout noPadding>
+      {/* Sticky Header */}
+      <Box
+        className="no-print"
+        sx={{
+          position: 'sticky', top: 56, zIndex: 40,
+          bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid #e2e8f0',
+          px: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          height: 52,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Tooltip title="К декларации">
+            <IconButton onClick={() => navigate(`/declarations/${id}`)} size="small"
+              sx={{ bgcolor: '#f1f5f9', '&:hover': { bgcolor: '#e2e8f0' } }}>
+              <BackIcon sx={{ fontSize: 18, color: '#64748b' }} />
+            </IconButton>
+          </Tooltip>
+          <Box sx={{ width: 1, height: 20, bgcolor: '#e2e8f0' }} />
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+                ДТС-1
+              </Typography>
+              <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>·</Typography>
+              <Typography sx={{ fontSize: 12, color: '#64748b' }}>
+                {decl.number_internal || decl.id?.slice(0, 8)}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <ClockIcon sx={{ fontSize: 12, color: '#94a3b8' }} />
+              <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
+                {dts.updated_at ? dayjs(dts.updated_at).format('DD.MM.YYYY HH:mm') : 'Сформирована'}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+
+        <Chip
+          size="small"
+          label={`Метод 1 · ${items.length} товаров`}
+          sx={{ bgcolor: '#f5f3ff', color: '#7c3aed', border: '1px solid #ddd6fe', fontWeight: 500, fontSize: 11 }}
+        />
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Button size="small" onClick={() => navigate(`/declarations/${id}/view`)} variant="outlined"
+            sx={{ fontSize: 11, color: '#64748b', borderColor: '#e2e8f0' }}>
+            К ДТ
+          </Button>
+          <Button size="small" onClick={() => navigate(`/declarations/${id}/edit`)} variant="outlined"
+            startIcon={<EditIcon sx={{ fontSize: 14 }} />}
+            sx={{ fontSize: 11, color: '#64748b', borderColor: '#e2e8f0' }}>
+            Редактировать
+          </Button>
+          <Button size="small" variant="outlined"
+            startIcon={<PrintIcon sx={{ fontSize: 14 }} />}
+            onClick={() => window.print()}
+            sx={{ fontSize: 11, color: '#64748b', borderColor: '#e2e8f0' }}>
+            Печать
+          </Button>
+        </Box>
       </Box>
+
+      {/* Form content */}
+      <Box sx={{ p: 3, bgcolor: '#f8f8fa' }}>
 
       {/* ═══════ ЛИСТ 1 — Официальная форма ДТС-1 ═══════ */}
       <div className="dts-sheet" style={FORM}>
@@ -686,6 +748,43 @@ const DtsViewPage = () => {
           </div>
         </div>
       ))}
+
+      </Box>
+
+      {/* Bottom Bar */}
+      <Box
+        className="no-print"
+        sx={{
+          position: 'sticky', bottom: 0, zIndex: 40,
+          bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)',
+          borderTop: '1px solid #e2e8f0',
+          px: 2.5, py: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          height: 46,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 11, color: '#7c3aed', bgcolor: '#f5f3ff', px: 1.25, py: 0.5, borderRadius: '8px' }}>
+            <FileTextIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ fontSize: 11 }}>ДТС-1, Метод 1</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 11, color: '#64748b', bgcolor: '#f8fafc', px: 1.25, py: 0.5, borderRadius: '8px' }}>
+            <CheckCircleIcon sx={{ fontSize: 14 }} />
+            <Typography sx={{ fontSize: 11 }}>{items.length} товаров</Typography>
+          </Box>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Button size="small" variant="outlined"
+            startIcon={<SignIcon sx={{ fontSize: 14 }} />}
+            sx={{ fontSize: 11, color: '#64748b', borderColor: '#e2e8f0' }}>
+            ЭЦП
+          </Button>
+          <Button size="small" variant="contained"
+            startIcon={<SendIcon sx={{ fontSize: 14 }} />}
+            sx={{ fontSize: 11, fontWeight: 500, bgcolor: '#059669', '&:hover': { bgcolor: '#047857' } }}>
+            Подписать и отправить
+          </Button>
+        </Box>
+      </Box>
 
       <style>{`
         @media print {
