@@ -81,7 +81,7 @@ const DeclarationDashboardPage = () => {
 
   const { data: docs } = useQuery({
     queryKey: ['documents', id],
-    queryFn: () => getDocuments(id!),
+    queryFn: () => getDocuments({ declaration_id: id! }),
     enabled: !!id,
   });
 

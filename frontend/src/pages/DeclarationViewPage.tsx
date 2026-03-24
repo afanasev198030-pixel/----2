@@ -324,7 +324,7 @@ const DeclarationViewPage = () => {
         if (d.financial_counterparty_id) setFinancial(await loadCp(d.financial_counterparty_id));
 
         try {
-          const loadedDocs = await getDocuments(id!);
+          const loadedDocs = await getDocuments({ declaration_id: id! });
           setDocs(loadedDocs);
         } catch {}
 
