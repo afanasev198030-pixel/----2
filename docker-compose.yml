@@ -192,6 +192,7 @@ services:
     volumes:
       - ./services/ai-service/app:/app/app
       - ./docs:/app/docs:ro
+      - onnx_cache:/root/.cache/chroma/onnx_models
     depends_on:
       core-api:
         condition: service_healthy
@@ -311,6 +312,7 @@ services:
     volumes:
       - ./services/ai-service/app:/app/app
       - ./docs:/app/docs:ro
+      - onnx_cache:/root/.cache/chroma/onnx_models
     depends_on:
       redis:
         condition: service_healthy
@@ -483,3 +485,4 @@ volumes:
   miniodata:
   chromadata:
   phoenixdata:
+  onnx_cache:
