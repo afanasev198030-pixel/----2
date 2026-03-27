@@ -188,6 +188,13 @@ async def create_item(
         customs_value_rub=data.customs_value_rub,
         statistical_value_usd=data.statistical_value_usd,
         documents_json=data.documents_json,
+        manufacturer=data.manufacturer,
+        trademark=data.trademark,
+        model_name=data.model_name,
+        article_number=data.article_number,
+        package_type_code=data.package_type_code,
+        package_marks=data.package_marks,
+        additional_unit_code=data.additional_unit_code,
     )
     
     db.add(item)

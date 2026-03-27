@@ -528,7 +528,7 @@ GRAPH_RULES = [
         },
         "source_priority": ["transport_doc"],
         "confidence_map": {"transport_doc": 0.9},
-        "target_field": "transport_at_border",
+        "target_field": "departure_vehicle_info",
         "target_kind": "core_declaration",
     },
     {
@@ -642,7 +642,7 @@ GRAPH_RULES = [
             },
         },
         "confidence_map": {"transport_doc": 0.9},
-        "target_field": "transport_on_border_id",
+        "target_field": "border_vehicle_info",
         "target_kind": "core_declaration",
     },
     {

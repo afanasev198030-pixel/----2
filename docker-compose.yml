@@ -4,9 +4,12 @@ services:
       context: ./services/bot-service
     container_name: customs-bot-service
     restart: unless-stopped
+    profiles:
+      - bot
     env_file:
       - .env
     environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - REDIS_URL=redis://redis:6379/1
       - CORE_API_URL=http://core-api:8001
       - FILE_SERVICE_URL=http://file-service:8002

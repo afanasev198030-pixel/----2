@@ -130,10 +130,10 @@ export interface Declaration {
   country_dispatch_code?: string;
   country_origin_name?: string;
   country_destination_code?: string;
-  transport_at_border?: string;
+  departure_vehicle_info?: string;
   container_info?: string;
   incoterms_code?: string;
-  transport_on_border?: string;
+  transport_on_border?: string;  // deprecated
   currency_code?: string;
   total_invoice_value?: number;
   exchange_rate?: number;
@@ -157,7 +157,7 @@ export interface Declaration {
   declarant_ogrn?: string;
   declarant_phone?: string;
   delivery_place?: string;
-  transport_on_border_id?: string;
+  border_vehicle_info?: string;
   entry_customs_code?: string;
   goods_location?: string;
   payment_deferral?: string;
@@ -179,7 +179,9 @@ export interface Declaration {
   contract_number?: string;
   contract_date?: string;
   transport_reg_number?: string;
-  transport_nationality_code?: string;
+  departure_vehicle_country?: string;
+  border_vehicle_country?: string;
+  transport_doc_number?: string;
   goods_location_code?: string;
   goods_location_customs_code?: string;
   goods_location_zone_id?: string;

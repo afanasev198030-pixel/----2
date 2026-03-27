@@ -1,7 +1,5 @@
-version: '3.8'
-
 # Production docker-compose — bridge network mode
-# Запуск: docker-compose -f docker-compose.prod.yml up --build -d
+# Запуск: docker compose -f docker-compose.prod.yml up --build -d
 # Resource limits рассчитаны для сервера 32 GB RAM / 8 CPU
 
 services:

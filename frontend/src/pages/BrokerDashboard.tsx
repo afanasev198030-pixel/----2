@@ -110,57 +110,53 @@ const BrokerDashboard = () => {
     return Object.entries(months).map(([month, count]) => ({ month, count })).slice(-6);
   }, [declarationsData?.items]);
 
-  const COLORS = ['#2563eb', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'];
+  const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#d32f2f', '#9c27b0', '#00838f'];
   const isEmpty = !declLoading && !clientsLoading && metrics.clients === 0 && recentDeclarations.length === 0;
 
   return (
     <AppLayout>
-      {/* LLM status banners */}
+      {/* LLM status banner */}
       {aiHealth && !aiHealth.llm_configured && (
-        <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }} action={<Button color="inherit" size="small" onClick={() => navigate('/settings')}>Настройки</Button>}>
+        <Alert severity="error" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={() => navigate('/settings')}>Настройки</Button>}>
           API-ключ LLM не настроен. AI-парсинг и классификация ТН ВЭД не будут работать.
         </Alert>
       )}
       {aiHealth && aiHealth.llm_configured && aiHealth.dspy && !aiHealth.dspy.configured && (
-        <Alert severity="warning" sx={{ mb: 2, borderRadius: '12px' }} action={<Button color="inherit" size="small" onClick={() => navigate('/settings')}>Настройки</Button>}>
-          LLM подключен, но DSPy не сконфигурирован. Классификация ТН ВЭД может не работать.
+        <Alert severity="warning" sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={() => navigate('/settings')}>Настройки</Button>}>
+          LLM подключен, но DSPy не сконфигурирован. Классификация ТН ВЭД может не работать. Проверьте API-ключ.
         </Alert>
       )}
       {aiHealth === null && (
-        <Alert severity="error" sx={{ mb: 2, borderRadius: '12px' }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
           AI-сервис недоступен. Парсинг документов не будет работать.
         </Alert>
       )}
 
       {/* Welcome */}
-      <Box sx={{ mb: 3 }}>
-        <Typography sx={{ fontSize: 20, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.02em' }}>
+        <Typography variant="h5" fontWeight={700} gutterBottom>
           Добро пожаловать{meData?.full_name ? `, ${meData.full_name.split(' ')[0]}` : ''}
         </Typography>
-        <Typography sx={{ fontSize: 13, color: '#64748b', mt: 0.25 }}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           Обзор активности по клиентам и декларациям
         </Typography>
-      </Box>
 
-      {/* Onboarding empty state */}
-      {isEmpty && (
-        <Paper elevation={0} sx={{ mb: 4, p: 4, textAlign: 'center', borderRadius: '16px', border: '2px dashed #e2e8f0', bgcolor: '#f8fafc' }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 600, color: '#0f172a', mb: 0.5 }}>Начните работу</Typography>
-          <Typography sx={{ fontSize: 13, color: '#64748b', mb: 3, maxWidth: 480, mx: 'auto' }}>
-            Загрузите первый документ и создайте декларацию
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center' }}>
-            <Button variant="contained" startIcon={<PeopleIcon />} onClick={() => navigate('/clients')}
-              sx={{ bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
-              Добавить клиента
-            </Button>
-            <Button variant="outlined" startIcon={<ImportIcon />} onClick={() => navigate('/declarations')}
-              sx={{ borderColor: '#e2e8f0', color: '#64748b' }}>
-              Создать декларацию
-            </Button>
-          </Box>
-        </Paper>
-      )}
+        {/* Onboarding empty state */}
+        {isEmpty && (
+          <Card sx={{ mb: 4, p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)', border: '1px dashed #1976d2' }}>
+            <Typography variant="h6" fontWeight={700} gutterBottom>Начните работу</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 480, mx: 'auto' }}>
+              Загрузите первый документ и создайте декларацию — система поможет с заполнением и кодами ТН ВЭД.
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center' }}>
+              <Button variant="contained" startIcon={<PeopleIcon />} onClick={() => navigate('/clients')} sx={{ textTransform: 'none' }}>
+                Добавить клиента
+              </Button>
+              <Button variant="outlined" startIcon={<ImportIcon />} onClick={() => navigate('/declarations')} sx={{ textTransform: 'none' }}>
+                Создать первую декларацию
+              </Button>
+            </Box>
+          </Card>
+        )}
 
         {/* Metrics */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 4 }}>

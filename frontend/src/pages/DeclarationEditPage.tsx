@@ -262,8 +262,8 @@ const DeclarationEditPage = () => {
 
   const handleFinish = useCallback(async () => {
     await handleSave();
-    setActiveStep(2);
-  }, [handleSave]);
+    navigate(`/declarations/${id}/edit`);
+  }, [handleSave, navigate, id]);
 
   const handleApplyParsed = useCallback(async (parsed: any) => {
     if (!id) return;
@@ -320,7 +320,7 @@ const DeclarationEditPage = () => {
       queryClient.invalidateQueries({ queryKey: ['declaration-docs', id] });
       await refetchItems();
       setSnackMsg('AI заполнил декларацию');
-      setActiveStep(1);
+      navigate(`/declarations/${id}/edit`);
     } catch (e: any) {
       setSnackMsg('Ошибка: ' + (e?.response?.data?.detail || e.message));
     }
@@ -482,7 +482,7 @@ const DeclarationEditPage = () => {
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="country" value={watchedValues.country_destination_code || ''} onChange={(c) => updateField('country_destination_code', c)} label={lbl("Назначение (17)", "country_destination_code")} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="incoterms" value={watchedValues.incoterms_code || ''} onChange={(c) => updateField('incoterms_code', c)} label={lbl("Incoterms (20)", "incoterms_code")} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Город поставки (20)", "delivery_place")} {...register('delivery_place')} InputLabelProps={{ shrink: true }} placeholder="SHIJIAZHUANG" /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Рейс/транспорт (21)", "transport_on_border_id")} {...register('transport_on_border_id')} InputLabelProps={{ shrink: true }} placeholder="1:U3-9222" /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("ТС на границе (21)", "border_vehicle_info")} {...register('border_vehicle_info')} InputLabelProps={{ shrink: true }} placeholder="1:U3-9222" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Курс (23)" {...register('exchange_rate')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><ClassifierSelect classifierType="deal_nature" value={watchedValues.deal_nature_code || ''} onChange={(c) => updateField('deal_nature_code', c)} label={lbl("Хар. сделки (24.1)", "deal_nature_code")} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Особ. сделки (24.2)", "deal_specifics_code")} {...register('deal_specifics_code')} InputLabelProps={{ shrink: true }} placeholder="01" /></Grid>
@@ -504,7 +504,7 @@ const DeclarationEditPage = () => {
                 <Divider sx={{ my: 2 }} />
                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>Транспорт и контейнер</Typography>
                 <Grid container spacing={2} sx={{ mb: 2 }}>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Транспорт на границе (18)", "transport_at_border")} {...register('transport_at_border')} InputLabelProps={{ shrink: true }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Транспорт при отправлении (18)", "departure_vehicle_info")} {...register('departure_vehicle_info')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Контейнер (19)", "container_info")} {...register('container_info')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 1 }} placeholder="0 или 1" /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Внутр. транспорт (26)", "transport_type_inland")} {...register('transport_type_inland')} InputLabelProps={{ shrink: true }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label={lbl("Место погрузки (27)", "loading_place")} {...register('loading_place')} InputLabelProps={{ shrink: true }} /></Grid>
@@ -555,7 +555,7 @@ const DeclarationEditPage = () => {
                 <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, fontWeight: 600 }}>Транспорт на границе (гр. 21) и место товаров (гр. 30)</Typography>
                 <Grid container spacing={1}>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Рег. номер ТС на границе (21)" {...register('transport_reg_number')} InputLabelProps={{ shrink: true }} /></Grid>
-                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Страна рег. ТС" {...register('transport_nationality_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 2 }} /></Grid>
+                  <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Страна рег. ТС (18)" {...register('departure_vehicle_country')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 2 }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Код места товаров (30)" {...register('goods_location_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 2 }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Код ТО места (30)" {...register('goods_location_customs_code')} InputLabelProps={{ shrink: true }} inputProps={{ maxLength: 8 }} /></Grid>
                   <Grid item xs={6} md={3}><TextField size="small" fullWidth label="Зона ТК (30)" {...register('goods_location_zone_id')} InputLabelProps={{ shrink: true }} /></Grid>
@@ -579,6 +579,14 @@ const DeclarationEditPage = () => {
                     </Box>
                     <CounterpartyLookup type="buyer" value={watchedValues.receiver_counterparty_id || ''} label="Получатель"
                       onChange={(cId) => updateField('receiver_counterparty_id', cId || '')} />
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary">Лицо, отв. за фин. урегулирование (графа 9)</Typography>
+                      <ConfidenceBadge evidenceMap={ev} fieldName="financial_counterparty_id" />
+                    </Box>
+                    <CounterpartyLookup type="buyer" value={watchedValues.financial_counterparty_id || ''} label="Фин. лицо (9)"
+                      onChange={(cId) => updateField('financial_counterparty_id', cId || '')} />
                   </Grid>
                 </Grid>
                 <Button variant="contained" size="small" onClick={handleSave} startIcon={<Save />} sx={{ mt: 2 }}>Сохранить</Button>

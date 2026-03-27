@@ -398,7 +398,7 @@ header_graphs:
     name: "ТС при отправлении/прибытии"
     target:
       kind: core_declaration
-      field: transport_at_border
+      field: departure_vehicle_info
     sources: [transport_doc]
     validation:
       type: string
@@ -483,7 +483,7 @@ header_graphs:
         Трубопровод/ЛЭП — не заполняется.
     target:
       kind: core_declaration
-      field: transport_on_border_id
+      field: border_vehicle_info
     sources: [transport_doc]
     source_notes:
       transport_doc: |

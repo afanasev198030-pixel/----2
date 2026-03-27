@@ -29,7 +29,7 @@ export const searchHSCodes = async (query: string): Promise<Classifier[]> => {
 };
 
 export const getClassifiers = async (type: string, q?: string): Promise<Classifier[]> => {
-  const response = await client.get<Classifier[]>('/classifiers/', {
+  const response = await client.get<Classifier[]>('/classifiers', {
     params: { classifier_type: type, q },
   });
   return response.data;

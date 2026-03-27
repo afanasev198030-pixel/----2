@@ -202,8 +202,8 @@ def _build_document_matrix_checks(
     recognized_doc_types = sorted(t for t, items in docs_by_type.items() if items and t != "other")
     need_transport_doc = bool(
         declaration.transport_type_border
-        or declaration.transport_at_border
-        or declaration.transport_on_border_id
+        or declaration.departure_vehicle_info
+        or declaration.border_vehicle_info
     )
     need_packing_list = bool(
         items_count > 1
@@ -436,7 +436,7 @@ def _build_cross_document_checks(
             ),
         ))
 
-    if transport_doc and need_transport_doc and not (declaration.transport_at_border or declaration.transport_on_border_id):
+    if transport_doc and need_transport_doc and not (declaration.departure_vehicle_info or declaration.border_vehicle_info):
         checks.append(PreSendCheck(
             code="TRANSPORT_DOC_NOT_APPLIED",
             severity="warning",
