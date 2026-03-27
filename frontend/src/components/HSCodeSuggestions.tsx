@@ -60,8 +60,8 @@ const HSCodeSuggestions = ({ description, currentCode, onSelect, countryOrigin, 
               sx={{
                 display: 'flex', alignItems: 'center', gap: 1, py: 0.5, px: 1,
                 cursor: 'pointer', borderRadius: 1,
-                bgcolor: s.hs_code === currentCode ? '#e8f5e9' : 'transparent',
-                '&:hover': { bgcolor: '#f5f5f5' },
+                bgcolor: s.hs_code === currentCode ? 'rgba(236,253,245,0.8)' : 'transparent',
+                '&:hover': { bgcolor: '#f8fafc' },
               }}
             >
               <Typography variant="body2" fontWeight={700} fontFamily="monospace">{s.hs_code}</Typography>

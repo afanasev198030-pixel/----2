@@ -361,7 +361,7 @@ const DeclarationsListPage = () => {
       <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', mb: 2.5 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>Декларации</Typography>
-          <Typography sx={{ fontSize: 12, color: '#94a3b8', mt: 0.25 }}>
+          <Typography sx={{ fontSize: 13, color: '#94a3b8', mt: 0.25 }}>
             {dayjs().format('dddd, D MMMM YYYY')} · {metrics.total} деклараций в работе
           </Typography>
         </Box>
@@ -410,7 +410,7 @@ const DeclarationsListPage = () => {
               px: 2,
               py: 0.875,
               textTransform: 'none',
-              fontSize: 12,
+              fontSize: 14,
               boxShadow: 'none',
               '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.12)' },
             }}
@@ -433,7 +433,7 @@ const DeclarationsListPage = () => {
               borderRadius: '10px',
               bgcolor: 'rgba(248,250,252,0.8)',
               border: '1px solid rgba(226,232,240,0.6)',
-              fontSize: 12,
+              fontSize: 13,
               '& fieldset': { border: 'none' },
               '&:hover': { borderColor: 'rgba(203,213,225,0.8)' },
               '&.Mui-focused': { borderColor: 'rgba(148,163,184,0.6)', bgcolor: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
@@ -454,7 +454,7 @@ const DeclarationsListPage = () => {
           value={dateFrom}
           onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
           InputLabelProps={{ shrink: true }}
-          sx={{ width: 160, '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'white', fontSize: 12 } }}
+          sx={{ width: 160, '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'white', fontSize: 13 } }}
         />
         <TextField
           size="small"
@@ -463,13 +463,13 @@ const DeclarationsListPage = () => {
           value={dateTo}
           onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
           InputLabelProps={{ shrink: true }}
-          sx={{ width: 160, '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'white', fontSize: 12 } }}
+          sx={{ width: 160, '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'white', fontSize: 13 } }}
         />
         {(dateFrom || dateTo || statusFilter) && (
           <Button
             size="small"
             onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(null); setSearchQuery(''); setPage(1); }}
-            sx={{ textTransform: 'none', borderRadius: '10px', fontSize: 12, color: '#64748b' }}
+            sx={{ textTransform: 'none', borderRadius: '10px', fontSize: 13, color: '#64748b' }}
           >
             Сбросить
           </Button>
@@ -496,9 +496,9 @@ const DeclarationsListPage = () => {
               onClick={() => { setStatusFilter(chip.value); setPage(1); }}
               sx={{
                 fontWeight: isActive ? 600 : 400,
-                fontSize: 12,
+                fontSize: 13,
                 borderRadius: '8px',
-                height: 28,
+                height: 30,
                 border: isActive ? undefined : '1px solid rgba(226,232,240,0.8)',
               }}
             />
@@ -562,7 +562,7 @@ const DeclarationsListPage = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <Box>
-                <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#64748b', mb: 0.5 }}>{m.label}</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: '#64748b', mb: 0.5 }}>{m.label}</Typography>
                 <Typography
                   sx={{
                     fontSize: 26,
@@ -745,7 +745,7 @@ const DeclarationsListPage = () => {
                           bgcolor: declaration.type_code?.startsWith('IM') ? '#e3f2fd' : '#fff3e0',
                           color: declaration.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
                           fontWeight: 500,
-                          fontSize: 11,
+                          fontSize: 12,
                           textTransform: 'uppercase',
                           letterSpacing: 0.5,
                           '& .MuiChip-icon': {

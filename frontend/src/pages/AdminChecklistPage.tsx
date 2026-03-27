@@ -97,14 +97,14 @@ const AdminChecklistPage = () => {
     <AppLayout breadcrumbs={[{ label: 'Админ', path: '/admin/users' }, { label: 'Чек-листы' }]}>
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight={700}>
-            <ChecklistIcon sx={{ mr: 1, verticalAlign: 'bottom' }} />
+          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
+            <ChecklistIcon sx={{ mr: 1, verticalAlign: 'bottom', color: '#2563eb' }} />
             Чек-листы ({checklists.length})
           </Typography>
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Новый чек-лист</Button>
         </Box>
 
-        <Alert severity="info" sx={{ mb: 2 }}>
+        <Alert severity="info" sx={{ mb: 2, boxShadow: 'none', border: '1px solid rgba(226,232,240,0.9)' }}>
           Чек-листы — шаблоны проверок перед отправкой декларации. Декларант видит список пунктов и отмечает выполненные.
           Пример пунктов: «Проверить соответствие веса в инвойсе и packing list», «Убедиться что сертификат происхождения приложен».
           Критичные пункты блокируют отправку если не отмечены.
@@ -118,15 +118,15 @@ const AdminChecklistPage = () => {
           <Grid container spacing={2}>
             {checklists.map((cl: ChecklistData) => (
               <Grid item xs={12} md={6} key={cl.id}>
-                <Paper variant="outlined" sx={{ p: 2 }}>
+                <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="subtitle1" fontWeight={600}>{cl.name}</Typography>
+                    <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#0f172a' }}>{cl.name}</Typography>
                     <Box>
-                      <Chip label={cl.declaration_type} size="small" sx={{ mr: 1 }} />
-                      <Chip label={cl.is_active ? 'Активен' : 'Неактивен'} size="small" color={cl.is_active ? 'success' : 'default'} />
+                      <Chip label={cl.declaration_type} size="small" variant="outlined" sx={{ mr: 1, borderColor: 'rgba(148,163,184,0.55)', color: '#64748b', fontWeight: 600 }} />
+                      <Chip label={cl.is_active ? 'Активен' : 'Неактивен'} size="small" color={cl.is_active ? 'success' : 'default'} variant={cl.is_active ? 'filled' : 'outlined'} sx={cl.is_active ? {} : { borderColor: 'rgba(148,163,184,0.55)', color: '#64748b' }} />
                     </Box>
                   </Box>
-                  {cl.description && <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{cl.description}</Typography>}
+                  {cl.description && <Typography variant="body2" sx={{ mb: 1, color: '#64748b' }}>{cl.description}</Typography>}
                   <List dense disablePadding>
                     {(cl.items || []).map((item: ChecklistItem, idx: number) => (
                       <ListItem key={idx} disablePadding sx={{ py: 0.25 }}>
@@ -135,7 +135,7 @@ const AdminChecklistPage = () => {
                         </ListItemIcon>
                         <ListItemText
                           primary={item.label}
-                          primaryTypographyProps={{ variant: 'body2', color: item.critical ? 'error.main' : 'text.primary' }}
+                          primaryTypographyProps={{ variant: 'body2', sx: { color: item.critical ? '#dc2626' : '#0f172a' } }}
                         />
                       </ListItem>
                     ))}
@@ -159,7 +159,7 @@ const AdminChecklistPage = () => {
             <Grid item xs={4}><TextField fullWidth label="Тип ДТ" value={form.declaration_type} onChange={e => setForm({ ...form, declaration_type: e.target.value })} size="small" /></Grid>
             <Grid item xs={12}><TextField fullWidth label="Описание" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} size="small" multiline rows={2} /></Grid>
           </Grid>
-          <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Пункты чек-листа ({clItems.length})</Typography>
+          <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, color: '#0f172a', fontWeight: 600 }}>Пункты чек-листа ({clItems.length})</Typography>
           <List dense>
             {clItems.map((item, idx) => (
               <ListItem key={idx} secondaryAction={

@@ -16,7 +16,7 @@ interface RiskPanelProps {
 
 const RiskPanel = ({ riskScore, risks, source }: RiskPanelProps) => {
   const severity = riskScore <= 25 ? 'low' : riskScore <= 50 ? 'medium' : riskScore <= 75 ? 'high' : 'critical';
-  const color = severity === 'low' ? '#4caf50' : severity === 'medium' ? '#ff9800' : severity === 'high' ? '#f44336' : '#b71c1c';
+  const color = severity === 'low' ? '#059669' : severity === 'medium' ? '#d97706' : severity === 'high' ? '#dc2626' : '#991b1b';
   const label = severity === 'low' ? 'Низкий' : severity === 'medium' ? 'Средний' : severity === 'high' ? 'Высокий' : 'Критический';
 
   return (
@@ -28,7 +28,7 @@ const RiskPanel = ({ riskScore, risks, source }: RiskPanelProps) => {
           <LinearProgress
             variant="determinate"
             value={riskScore}
-            sx={{ height: 8, borderRadius: 4, bgcolor: '#eee', '& .MuiLinearProgress-bar': { bgcolor: color } }}
+            sx={{ height: 8, borderRadius: 4, bgcolor: 'rgba(241,245,249,1)', '& .MuiLinearProgress-bar': { bgcolor: color } }}
           />
         </Box>
         <Chip label={`${riskScore}/100 — ${label}`} sx={{ bgcolor: color, color: '#fff', fontWeight: 700 }} />

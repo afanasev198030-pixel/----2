@@ -90,14 +90,14 @@ const AdminKnowledgePage = () => {
     <AppLayout breadcrumbs={[{ label: 'Админ', path: '/admin/users' }, { label: 'База знаний' }]}>
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight={700}>
-            <BookIcon sx={{ mr: 1, verticalAlign: 'bottom' }} />
+          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
+            <BookIcon sx={{ mr: 1, verticalAlign: 'bottom', color: '#2563eb' }} />
             База знаний ({articles.length})
           </Typography>
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Новая статья</Button>
         </Box>
 
-        <Alert severity="info" sx={{ mb: 2 }}>
+        <Alert severity="info" sx={{ mb: 2, boxShadow: 'none', border: '1px solid rgba(226,232,240,0.9)' }}>
           Статьи базы знаний помогают AI точнее классифицировать товары. Напишите экспертные заметки, например:
           «Электронные платы для кондиционеров классифицируются в 8537, а не в 8415» — и AI будет учитывать
           это при подборе кодов ТН ВЭД. Привяжите коды ТН ВЭД к статье для точного попадания.
@@ -107,7 +107,7 @@ const AdminKnowledgePage = () => {
           <Grid item xs={8}>
             <TextField size="small" fullWidth placeholder="Поиск по статьям..." value={search}
               onChange={e => setSearch(e.target.value)}
-              InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'grey.500' }} /> }} />
+              InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: '#64748b' }} /> }} />
           </Grid>
           <Grid item xs={4}>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
@@ -127,20 +127,22 @@ const AdminKnowledgePage = () => {
           <Grid container spacing={2}>
             {articles.map((a: Article) => (
               <Grid item xs={12} md={4} key={a.id}>
-                <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column', boxShadow: 'none' }}>
                   <CardContent sx={{ flex: 1 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Chip label={a.category} size="small" color="primary" variant="outlined" />
+                      <Chip label={a.category} size="small" color="primary" variant="outlined" sx={{ borderColor: 'rgba(37,99,235,0.35)', fontWeight: 500 }} />
                       <Chip label={a.is_published ? 'Опубликовано' : 'Черновик'} size="small"
-                        color={a.is_published ? 'success' : 'default'} />
+                        color={a.is_published ? 'success' : 'default'}
+                        variant={a.is_published ? 'filled' : 'outlined'}
+                        sx={a.is_published ? {} : { borderColor: 'rgba(148,163,184,0.55)', color: '#64748b' }} />
                     </Box>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>{a.title}</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ overflow: 'hidden', maxHeight: 60 }}>
+                    <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>{a.title}</Typography>
+                    <Typography variant="body2" sx={{ overflow: 'hidden', maxHeight: 60, color: '#64748b' }}>
                       {a.content.slice(0, 150)}...
                     </Typography>
                     {a.hs_codes?.length > 0 && (
                       <Box sx={{ mt: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                        {a.hs_codes.slice(0, 3).map((c: string) => <Chip key={c} label={c} size="small" variant="outlined" />)}
+                        {a.hs_codes.slice(0, 3).map((c: string) => <Chip key={c} label={c} size="small" variant="outlined" sx={{ borderColor: 'rgba(148,163,184,0.55)', color: '#64748b' }} />)}
                       </Box>
                     )}
                   </CardContent>

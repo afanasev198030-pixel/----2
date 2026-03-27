@@ -87,8 +87,8 @@ const AdminStrategiesPage = () => {
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <AiIcon color="primary" />
-            <Typography variant="h5">AI-стратегии заполнения</Typography>
+            <AiIcon sx={{ color: '#2563eb' }} />
+            <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>AI-стратегии заполнения</Typography>
           </Box>
           <Button
             variant="contained"
@@ -99,14 +99,14 @@ const AdminStrategiesPage = () => {
           </Button>
         </Box>
 
-        <Alert severity="info" sx={{ mb: 2 }}>
+        <Alert severity="info" sx={{ mb: 2, boxShadow: 'none', border: '1px solid rgba(226,232,240,0.9)' }}>
           Стратегии задают бизнес-правила для AI: условия и инструкции, которые влияют на автозаполнение декларации.
           Например: «Если поставщик ZED Group — ставить EXW и пост Шереметьево».
         </Alert>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>Ошибка загрузки стратегий</Alert>}
+        {error && <Alert severity="error" sx={{ mb: 2, boxShadow: 'none' }}>Ошибка загрузки стратегий</Alert>}
 
-        <TableContainer component={Paper} variant="outlined">
+        <TableContainer component={Paper} variant="outlined" sx={{ boxShadow: 'none' }}>
           <Table>
             <TableHead>
               <TableRow>
@@ -126,9 +126,9 @@ const AdminStrategiesPage = () => {
                 strategies.map((s) => (
                   <TableRow key={s.id} sx={{ opacity: s.is_active ? 1 : 0.5 }}>
                     <TableCell>
-                      <Typography variant="subtitle2">{s.name}</Typography>
+                      <Typography variant="subtitle2" sx={{ color: '#0f172a', fontWeight: 600 }}>{s.name}</Typography>
                       {s.description && (
-                        <Typography variant="caption" color="text.secondary">{s.description}</Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.25 }}>{s.description}</Typography>
                       )}
                     </TableCell>
                     <TableCell>
@@ -137,7 +137,13 @@ const AdminStrategiesPage = () => {
                       </Typography>
                     </TableCell>
                     <TableCell align="center">
-                      <Chip label={s.priority} size="small" color={s.priority > 5 ? 'warning' : 'default'} />
+                      <Chip
+                        label={s.priority}
+                        size="small"
+                        color={s.priority > 5 ? 'warning' : 'default'}
+                        variant={s.priority > 5 ? 'filled' : 'outlined'}
+                        sx={s.priority > 5 ? {} : { borderColor: 'rgba(148,163,184,0.55)', color: '#64748b' }}
+                      />
                     </TableCell>
                     <TableCell align="center">
                       <Switch checked={s.is_active} onChange={() => toggleActive(s)} size="small" />

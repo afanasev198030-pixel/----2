@@ -106,23 +106,35 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: 'primary.main' }}>
-        <Toolbar sx={{ px: { xs: 2, md: 4 }, minHeight: { xs: 56 } }}>
+      <AppBar position="sticky" elevation={0} sx={{
+        bgcolor: '#ffffff',
+        borderBottom: '1px solid rgba(226,232,240,0.8)',
+        boxShadow: 'none',
+      }}>
+        <Toolbar sx={{ px: { xs: 2, md: 4 }, minHeight: { xs: 52 } }}>
+          {/* Logo / Brand */}
           <Box
             onClick={() => navigate('/dashboard')}
             sx={{
-              width: 36, height: 36, borderRadius: 2,
-              background: 'rgba(255,255,255,0.2)',
+              width: 34, height: 34, borderRadius: '10px',
+              bgcolor: '#eef2ff',
+              border: '1px solid rgba(199,210,254,0.5)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               mr: 1.5, cursor: 'pointer',
+              transition: 'background 0.15s',
+              '&:hover': { bgcolor: '#e0e7ff' },
             }}
           >
-            <Typography sx={{ color: 'white', fontWeight: 700, fontSize: 14 }}>ТД</Typography>
+            <Typography sx={{ color: '#3b82f6', fontWeight: 800, fontSize: 13, letterSpacing: '-0.02em' }}>ТД</Typography>
           </Box>
           <Typography
             variant="subtitle1"
             onClick={() => navigate('/dashboard')}
-            sx={{ fontWeight: 700, mr: 3, cursor: 'pointer', display: { xs: 'none', md: 'block' } }}
+            sx={{
+              fontWeight: 700, mr: 3, cursor: 'pointer',
+              color: '#0f172a', fontSize: 15, letterSpacing: '-0.01em',
+              display: { xs: 'none', md: 'block' },
+            }}
           >
             Панель брокера
           </Typography>
@@ -136,13 +148,21 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
                 onClick={() => navigate(item.path)}
                 size="small"
                 sx={{
-                  color: 'white',
+                  color: isActive(item.path) ? '#2563eb' : '#475569',
                   textTransform: 'none',
-                  fontWeight: isActive(item.path) ? 700 : 400,
-                  bgcolor: isActive(item.path) ? 'rgba(255,255,255,0.15)' : 'transparent',
-                  borderRadius: 2,
-                  px: 1.5,
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                  fontWeight: isActive(item.path) ? 600 : 500,
+                  bgcolor: isActive(item.path) ? '#eef2ff' : 'transparent',
+                  borderRadius: '10px',
+                  px: 1.5, py: 0.6,
+                  fontSize: 13,
+                  transition: 'all 0.15s',
+                  '&:hover': {
+                    bgcolor: isActive(item.path) ? '#e0e7ff' : '#f1f5f9',
+                    color: isActive(item.path) ? '#2563eb' : '#1e293b',
+                  },
+                  '& .MuiButton-startIcon': {
+                    color: isActive(item.path) ? '#2563eb' : '#94a3b8',
+                  },
                 }}
               >
                 {item.label}
@@ -152,16 +172,17 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
           {/* Admin nav (icon-only) */}
           {isAdmin && (
-            <Box sx={{ display: 'flex', gap: 0.3, ml: 1, pl: 1, borderLeft: '1px solid rgba(255,255,255,0.25)' }}>
+            <Box sx={{ display: 'flex', gap: 0.3, ml: 1, pl: 1, borderLeft: '1px solid rgba(226,232,240,0.8)' }}>
               {ADMIN_NAV_ITEMS.map((item) => (
                 <Tooltip key={item.path} title={item.label}>
                   <IconButton
                     onClick={() => navigate(item.path)}
                     size="small"
                     sx={{
-                      color: isActive(item.path) ? '#ffcc80' : 'rgba(255,255,255,0.7)',
-                      bgcolor: isActive(item.path) ? 'rgba(255,204,128,0.15)' : 'transparent',
-                      '&:hover': { bgcolor: 'rgba(255,204,128,0.2)', color: '#ffcc80' },
+                      color: isActive(item.path) ? '#2563eb' : '#94a3b8',
+                      bgcolor: isActive(item.path) ? '#eef2ff' : 'transparent',
+                      transition: 'all 0.15s',
+                      '&:hover': { bgcolor: '#f1f5f9', color: '#475569' },
                     }}
                   >
                     {item.icon}
@@ -173,22 +194,40 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
 
           <Box sx={{ flexGrow: 1 }} />
 
-          {/* Right side: theme, notifications, profile, logout */}
-          <Tooltip title="Уведомления">
-            <IconButton color="inherit" size="small" onClick={() => navigate('/declarations')}>
-              <NotificationsIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title={me?.full_name || 'Профиль'}>
-            <IconButton color="inherit" size="small" onClick={() => navigate('/profile')}>
-              <Avatar sx={{ width: 28, height: 28, bgcolor: 'rgba(255,255,255,0.25)', fontSize: 11, fontWeight: 700 }}>{initials}</Avatar>
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Выйти">
-            <IconButton color="inherit" onClick={handleLogout} size="small">
-              <LogoutIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          {/* Right side: notifications, profile, logout */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            <Tooltip title="Уведомления">
+              <IconButton size="small" onClick={() => navigate('/declarations')} sx={{
+                color: '#94a3b8', transition: 'all 0.15s',
+                '&:hover': { bgcolor: '#f1f5f9', color: '#475569' },
+              }}>
+                <NotificationsIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={me?.full_name || 'Профиль'}>
+              <IconButton size="small" onClick={() => navigate('/profile')} sx={{
+                ml: 0.25,
+                '&:hover': { bgcolor: 'transparent' },
+              }}>
+                <Avatar sx={{
+                  width: 30, height: 30,
+                  bgcolor: '#e0e7ff', color: '#3b82f6',
+                  fontSize: 11, fontWeight: 700,
+                  border: '1.5px solid rgba(199,210,254,0.6)',
+                  transition: 'all 0.15s',
+                  '&:hover': { bgcolor: '#dbeafe', borderColor: '#93c5fd' },
+                }}>{initials}</Avatar>
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Выйти">
+              <IconButton onClick={handleLogout} size="small" sx={{
+                color: '#94a3b8', transition: 'all 0.15s',
+                '&:hover': { bgcolor: '#f1f5f9', color: '#475569' },
+              }}>
+                <LogoutIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Toolbar>
       </AppBar>
 

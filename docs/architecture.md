@@ -204,6 +204,7 @@ Docker Compose healthchecks используют `/ready`. `depends_on` с `cond
 | 1.7 | Phoenix в prod | В очереди | ai-service пытается подключиться к `phoenix` в prod, где его нет |
 | 1.8 | Observability (Loki/Prometheus/Grafana) | В очереди | Централизованные логи и метрики |
 | 1.9 | Backup/DR (PostgreSQL, MinIO, ChromaDB) | В очереди | Нет backup стратегии |
+| 1.10 | Единый конфиг LLM/OCR | В очереди | **Проблема:** 3 источника правды (`.env`, БД `core.system_settings`, `os.environ` в памяти) конфликтуют. БД перезаписывает `.env` при старте (`main.py:252`). `/configure` не пишет в БД — теряется при рестарте. ai-worker не получает `/configure` (отдельный процесс). Модель не привязана к провайдеру → `Model Not Exist` при переключении. ARQ polling bug (`info.success`) → двойная обработка. **Решение:** БД — единый источник; `/configure` пишет в БД; Redis pub/sub для уведомления ai-worker; валидация provider+model; fix ARQ polling |
 
 ### Этап 2: AI Core — разбиение agent_crew.py
 

@@ -106,7 +106,7 @@ const AdminUserEditPage = () => {
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           <Button startIcon={<BackIcon />} onClick={() => navigate('/admin/users')}>Назад</Button>
-          <Typography variant="h5" fontWeight={700}>
+          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
             {user.full_name || user.email}
           </Typography>
           <Chip label={user.role} size="small" color={user.role === 'admin' ? 'error' : 'primary'} />
@@ -116,8 +116,8 @@ const AdminUserEditPage = () => {
 
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2 }}>Редактирование</Typography>
+            <Paper variant="outlined" sx={{ p: 3, boxShadow: 'none' }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2, color: '#0f172a' }}>Редактирование</Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <TextField size="small" fullWidth label="ФИО" value={form.full_name}
@@ -158,19 +158,19 @@ const AdminUserEditPage = () => {
               </Button>
             </Paper>
 
-            <Paper sx={{ p: 3, mt: 2 }}>
-              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Информация</Typography>
-              <Typography variant="body2" color="text.secondary">ID: {user.id}</Typography>
-              <Typography variant="body2" color="text.secondary">Компания: {user.company_id || '—'}</Typography>
-              <Typography variant="body2" color="text.secondary">Telegram ID: {user.telegram_id || 'Не привязан'}</Typography>
-              <Typography variant="body2" color="text.secondary">Дата регистрации: {dayjs(user.created_at).format('DD.MM.YYYY HH:mm')}</Typography>
+            <Paper variant="outlined" sx={{ p: 3, mt: 2, boxShadow: 'none' }}>
+              <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>Информация</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>ID: {user.id}</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Компания: {user.company_id || '—'}</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Telegram ID: {user.telegram_id || 'Не привязан'}</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Дата регистрации: {dayjs(user.created_at).format('DD.MM.YYYY HH:mm')}</Typography>
             </Paper>
           </Grid>
 
           <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3 }}>
+            <Paper variant="outlined" sx={{ p: 3, boxShadow: 'none' }}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={600}>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#0f172a' }}>
                   Действия пользователя ({auditTotal})
                 </Typography>
                 <FormControl size="small" sx={{ minWidth: 150 }}>

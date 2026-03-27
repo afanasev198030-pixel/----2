@@ -4,32 +4,32 @@ export const lightTheme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#1976d2',
-      dark: '#0d47a1',
-      light: '#e3f2fd',
+      main: '#2563eb',
+      dark: '#1d4ed8',
+      light: '#eef2ff',
     },
     secondary: {
       main: '#00897b',
     },
     success: {
-      main: '#2e7d32',
+      main: '#059669',
     },
     warning: {
-      main: '#ed6c02',
+      main: '#d97706',
     },
     error: {
-      main: '#d32f2f',
+      main: '#dc2626',
     },
     info: {
-      main: '#0288d1',
+      main: '#2563eb',
     },
     background: {
-      default: '#f5f7fa',
+      default: '#f8fafc',
       paper: '#ffffff',
     },
     text: {
-      primary: '#212121',
-      secondary: '#757575',
+      primary: '#0f172a',
+      secondary: '#64748b',
     },
   },
   typography: {
@@ -47,12 +47,12 @@ export const lightTheme = createTheme({
         root: {
           textTransform: 'none',
           fontWeight: 600,
-          borderRadius: 8,
+          borderRadius: 10,
         },
         contained: {
-          boxShadow: '0 2px 4px rgba(25,118,210,0.25)',
+          boxShadow: 'none',
           '&:hover': {
-            boxShadow: '0 4px 8px rgba(25,118,210,0.35)',
+            boxShadow: 'none',
           },
         },
       },
@@ -60,13 +60,23 @@ export const lightTheme = createTheme({
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-          transition: 'transform 0.2s, box-shadow 0.2s',
+          borderRadius: 14,
+          border: '1px solid rgba(226,232,240,0.8)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          transition: 'box-shadow 0.2s',
           '&:hover': {
-            transform: 'translateY(-2px)',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
           },
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          borderRadius: 14,
+        },
+        outlined: {
+          border: '1px solid rgba(226,232,240,0.8)',
         },
       },
     },
@@ -78,9 +88,9 @@ export const lightTheme = createTheme({
             fontWeight: 600,
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
-            color: '#546e7a',
-            backgroundColor: '#f5f7fa',
-            borderBottom: '2px solid #e0e0e0',
+            color: '#64748b',
+            backgroundColor: '#f8fafc',
+            borderBottom: '1px solid rgba(226,232,240,0.8)',
             whiteSpace: 'nowrap',
           },
         },
@@ -90,7 +100,7 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           '&:hover': {
-            backgroundColor: '#f8f9fa !important',
+            backgroundColor: 'rgba(248,250,252,0.8) !important',
           },
           transition: 'background-color 0.15s ease',
         },
@@ -99,7 +109,7 @@ export const lightTheme = createTheme({
     MuiTableCell: {
       styleOverrides: {
         root: {
-          borderBottom: '1px solid #f0f0f0',
+          borderBottom: '1px solid rgba(241,245,249,1)',
           padding: '14px 16px',
         },
       },
@@ -108,14 +118,15 @@ export const lightTheme = createTheme({
       styleOverrides: {
         root: {
           fontWeight: 500,
-          fontSize: 12,
+          fontSize: 13,
+          borderRadius: 8,
         },
       },
     },
     MuiAppBar: {
       styleOverrides: {
         root: {
-          boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+          boxShadow: 'none',
         },
       },
     },

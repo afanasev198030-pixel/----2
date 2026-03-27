@@ -49,7 +49,7 @@ const AdminUsersPage = () => {
   return (
     <AppLayout breadcrumbs={[{ label: 'Администрирование' }, { label: 'Пользователи' }]}>
       <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>Пользователи</Typography>
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 3, color: '#0f172a' }}>Пользователи</Typography>
 
         <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
           <TextField
@@ -70,7 +70,7 @@ const AdminUsersPage = () => {
           </FormControl>
         </Box>
 
-        <Paper variant="outlined">
+        <Paper variant="outlined" sx={{ boxShadow: 'none' }}>
           <Table size="small">
             <TableHead>
               <TableRow>

@@ -41,9 +41,9 @@ import { Declaration } from '../types';
 import dayjs from 'dayjs';
 
 const tariffLabels: Record<string, { label: string; bg: string; color: string }> = {
-  basic: { label: 'Базовый', bg: '#f5f5f5', color: '#616161' },
-  standard: { label: 'Стандарт', bg: '#e3f2fd', color: '#1565c0' },
-  premium: { label: 'Премиум', bg: '#f3e5f5', color: '#7b1fa2' },
+  basic: { label: 'Базовый', bg: '#f8fafc', color: '#64748b' },
+  standard: { label: 'Стандарт', bg: '#eef2ff', color: '#1d4ed8' },
+  premium: { label: 'Премиум', bg: '#f5f3ff', color: '#6d28d9' },
 };
 
 const ClientDetailPage = () => {
@@ -95,7 +95,7 @@ const ClientDetailPage = () => {
               {clientLoading ? (
                 <Skeleton width={250} height={32} />
               ) : (
-                <Typography variant="h5" fontWeight={700}>
+                <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
                   {client?.client_company?.name || 'Клиент'}
                 </Typography>
               )}
@@ -105,7 +105,15 @@ const ClientDetailPage = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={handleCreateDeclaration}
-            sx={{ fontWeight: 600, borderRadius: 2, px: 3, textTransform: 'none' }}
+            sx={{
+              fontWeight: 600,
+              borderRadius: '10px',
+              px: 3,
+              textTransform: 'none',
+              bgcolor: '#2563eb',
+              boxShadow: 'none',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+            }}
           >
             Создать декларацию
           </Button>
@@ -114,9 +122,18 @@ const ClientDetailPage = () => {
         {/* Client Info + Metrics */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mb: 3 }}>
           {/* Client Info Card */}
-          <Paper sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <Paper
+            sx={{
+              borderRadius: '14px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              border: '1px solid rgba(226,232,240,0.8)',
+              overflow: 'hidden',
+            }}
+          >
             <Box sx={{ p: 2.5 }}>
-              <Typography variant="h6" fontWeight={600} gutterBottom>Информация о компании</Typography>
+              <Typography variant="h6" fontWeight={600} gutterBottom sx={{ color: '#0f172a' }}>
+                Информация о компании
+              </Typography>
             </Box>
             <Divider />
             <Box sx={{ p: 2.5 }}>
@@ -131,29 +148,39 @@ const ClientDetailPage = () => {
                   <Grid item xs={12}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                       <BusinessIcon fontSize="small" color="action" />
-                      <Typography variant="body2" color="text.secondary">Название</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        Название
+                      </Typography>
                     </Box>
-                    <Typography variant="body1" fontWeight={500} sx={{ ml: 4 }}>
+                    <Typography variant="body1" fontWeight={500} sx={{ ml: 4, color: '#0f172a' }}>
                       {client?.client_company?.name || '—'}
                     </Typography>
                   </Grid>
                   <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>ИНН</Typography>
-                    <Typography variant="body1" fontWeight={500} sx={{ fontFamily: 'monospace' }}>
+                    <Typography variant="body2" gutterBottom sx={{ color: '#64748b' }}>
+                      ИНН
+                    </Typography>
+                    <Typography variant="body1" fontWeight={500} sx={{ fontFamily: 'monospace', color: '#0f172a' }}>
                       {client?.client_company?.inn || '—'}
                     </Typography>
                   </Grid>
                   <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>КПП</Typography>
-                    <Typography variant="body1" fontWeight={500} sx={{ fontFamily: 'monospace' }}>
+                    <Typography variant="body2" gutterBottom sx={{ color: '#64748b' }}>
+                      КПП
+                    </Typography>
+                    <Typography variant="body1" fontWeight={500} sx={{ fontFamily: 'monospace', color: '#0f172a' }}>
                       {client?.client_company?.kpp || '—'}
                     </Typography>
                   </Grid>
                   {client?.client_company?.address && (
                     <Grid item xs={12}>
-                      <Typography variant="body2" color="text.secondary" gutterBottom>Адрес</Typography>
+                      <Typography variant="body2" gutterBottom sx={{ color: '#64748b' }}>
+                        Адрес
+                      </Typography>
                       <Tooltip title={client.client_company.address} placement="top" arrow>
-                        <Typography variant="body1" noWrap sx={{ maxWidth: 400 }}>{client.client_company.address}</Typography>
+                        <Typography variant="body1" noWrap sx={{ maxWidth: 400, color: '#0f172a' }}>
+                          {client.client_company.address}
+                        </Typography>
                       </Tooltip>
                     </Grid>
                   )}
@@ -161,7 +188,7 @@ const ClientDetailPage = () => {
                     <Grid item xs={6}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <EmailIcon fontSize="small" color="action" />
-                        <Typography variant="body2">{client.client_company.contact_email}</Typography>
+                        <Typography variant="body2" sx={{ color: '#0f172a' }}>{client.client_company.contact_email}</Typography>
                       </Box>
                     </Grid>
                   )}
@@ -169,7 +196,7 @@ const ClientDetailPage = () => {
                     <Grid item xs={6}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <PhoneIcon fontSize="small" color="action" />
-                        <Typography variant="body2">{client.client_company.contact_phone}</Typography>
+                        <Typography variant="body2" sx={{ color: '#0f172a' }}>{client.client_company.contact_phone}</Typography>
                       </Box>
                     </Grid>
                   )}
@@ -179,33 +206,41 @@ const ClientDetailPage = () => {
                   <Grid item xs={6}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                       <DescriptionIcon fontSize="small" color="action" />
-                      <Typography variant="body2" color="text.secondary">Контракт</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        Контракт
+                      </Typography>
                     </Box>
-                    <Typography variant="body1" fontWeight={500} sx={{ ml: 4 }}>
+                    <Typography variant="body1" fontWeight={500} sx={{ ml: 4, color: '#0f172a' }}>
                       {client?.contract_number || '—'}
                     </Typography>
                   </Grid>
                   <Grid item xs={6}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                       <CalendarIcon fontSize="small" color="action" />
-                      <Typography variant="body2" color="text.secondary">Дата контракта</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b' }}>
+                        Дата контракта
+                      </Typography>
                     </Box>
-                    <Typography variant="body1" fontWeight={500} sx={{ ml: 4 }}>
+                    <Typography variant="body1" fontWeight={500} sx={{ ml: 4, color: '#0f172a' }}>
                       {client?.contract_date || '—'}
                     </Typography>
                   </Grid>
                   <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Тариф</Typography>
+                    <Typography variant="body2" gutterBottom sx={{ color: '#64748b' }}>
+                      Тариф
+                    </Typography>
                     <Chip label={tariff.label} size="small" sx={{ bgcolor: tariff.bg, color: tariff.color, fontWeight: 500 }} />
                   </Grid>
                   <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>Статус</Typography>
+                    <Typography variant="body2" gutterBottom sx={{ color: '#64748b' }}>
+                      Статус
+                    </Typography>
                     <Chip
                       label={client?.is_active ? 'Активен' : 'Неактивен'}
                       size="small"
                       sx={{
-                        bgcolor: client?.is_active ? '#e8f5e9' : '#ffebee',
-                        color: client?.is_active ? '#1b5e20' : '#c62828',
+                        bgcolor: client?.is_active ? '#ecfdf5' : '#fef2f2',
+                        color: client?.is_active ? '#166534' : '#b91c1c',
                         fontWeight: 500,
                       }}
                     />
@@ -217,51 +252,123 @@ const ClientDetailPage = () => {
 
           {/* Metrics */}
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, alignContent: 'start' }}>
-            <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
+            <Card
+              sx={{
+                borderRadius: '14px',
+                border: '1px solid rgba(226,232,240,0.8)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                bgcolor: '#f8fafc',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                },
+              }}
+            >
               <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-                <Typography variant="h4" color="info.main" fontWeight={700}>
+                <Typography variant="h4" fontWeight={700} sx={{ color: '#2563eb' }}>
                   {declLoading ? <Skeleton width={30} /> : metrics.total}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mt={0.5}>Всего деклараций</Typography>
+                <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>
+                  Всего деклараций
+                </Typography>
               </CardContent>
             </Card>
-            <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
+            <Card
+              sx={{
+                borderRadius: '14px',
+                border: '1px solid rgba(226,232,240,0.8)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                bgcolor: '#f8fafc',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                },
+              }}
+            >
               <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-                <Typography variant="h4" color="warning.main" fontWeight={700}>
+                <Typography variant="h4" fontWeight={700} sx={{ color: '#92400e' }}>
                   {declLoading ? <Skeleton width={30} /> : metrics.inProgress}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mt={0.5}>В работе</Typography>
+                <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>
+                  В работе
+                </Typography>
               </CardContent>
             </Card>
-            <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
+            <Card
+              sx={{
+                borderRadius: '14px',
+                border: '1px solid rgba(226,232,240,0.8)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                bgcolor: '#f8fafc',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                },
+              }}
+            >
               <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-                <Typography variant="h4" color="success.main" fontWeight={700}>
+                <Typography variant="h4" fontWeight={700} sx={{ color: '#047857' }}>
                   {declLoading ? <Skeleton width={30} /> : metrics.released}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mt={0.5}>Готовы к отправке</Typography>
+                <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>
+                  Готовы к отправке
+                </Typography>
               </CardContent>
             </Card>
-            <Card sx={{ transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 } }}>
+            <Card
+              sx={{
+                borderRadius: '14px',
+                border: '1px solid rgba(226,232,240,0.8)',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                bgcolor: '#f8fafc',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                },
+              }}
+            >
               <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-                <Typography variant="h4" color="error.main" fontWeight={700}>
+                <Typography variant="h4" fontWeight={700} sx={{ color: '#b91c1c' }}>
                   {declLoading ? <Skeleton width={30} /> : metrics.rejected}
                 </Typography>
-                <Typography variant="body2" color="text.secondary" mt={0.5}>Отправлены</Typography>
+                <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>
+                  Отправлены
+                </Typography>
               </CardContent>
             </Card>
           </Box>
         </Box>
 
         {/* Declarations Table */}
-        <Paper sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <Paper
+          sx={{
+            borderRadius: '14px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            border: '1px solid rgba(226,232,240,0.8)',
+            overflow: 'hidden',
+          }}
+        >
           <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6" fontWeight={600}>Декларации клиента</Typography>
+            <Typography variant="h6" fontWeight={600} sx={{ color: '#0f172a' }}>
+              Декларации клиента
+            </Typography>
             <Button
               variant="outlined"
               startIcon={<AddIcon />}
               onClick={handleCreateDeclaration}
               size="small"
-              sx={{ textTransform: 'none', borderRadius: 2 }}
+              sx={{
+                textTransform: 'none',
+                borderRadius: '10px',
+                borderColor: 'rgba(226,232,240,0.9)',
+                color: '#2563eb',
+                boxShadow: 'none',
+                '&:hover': { borderColor: '#cbd5e1', bgcolor: 'rgba(248,250,252,0.8)', boxShadow: 'none' },
+              }}
             >
               Создать декларацию
             </Button>
@@ -271,12 +378,30 @@ const ClientDetailPage = () => {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Номер ДТ</TableCell>
-                  <TableCell>Дата</TableCell>
-                  <TableCell>Направление</TableCell>
-                  <TableCell>Статус</TableCell>
-                  <TableCell align="right">Стоимость</TableCell>
-                  <TableCell align="center">Действия</TableCell>
+                  <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                    Номер ДТ
+                  </TableCell>
+                  <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                    Дата
+                  </TableCell>
+                  <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                    Направление
+                  </TableCell>
+                  <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                    Статус
+                  </TableCell>
+                  <TableCell
+                    align="right"
+                    sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}
+                  >
+                    Стоимость
+                  </TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}
+                  >
+                    Действия
+                  </TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -294,17 +419,24 @@ const ClientDetailPage = () => {
                 ) : declarations.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                      <WorkIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-                      <Typography variant="h6" color="text.secondary" gutterBottom>
+                      <WorkIcon sx={{ fontSize: 64, color: '#94a3b8', mb: 2 }} />
+                      <Typography variant="h6" gutterBottom sx={{ color: '#0f172a' }}>
                         Нет деклараций
                       </Typography>
-                      <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
+                      <Typography variant="body2" sx={{ mb: 3, color: '#64748b' }}>
                         Создайте первую декларацию для этого клиента
                       </Typography>
                       <Button
                         variant="contained"
                         startIcon={<AddIcon />}
                         onClick={handleCreateDeclaration}
+                        sx={{
+                          borderRadius: '10px',
+                          textTransform: 'none',
+                          bgcolor: '#2563eb',
+                          boxShadow: 'none',
+                          '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+                        }}
                       >
                         Создать декларацию
                       </Button>
@@ -319,13 +451,17 @@ const ClientDetailPage = () => {
                       onClick={() => navigate(`/declarations/${decl.id}/edit`)}
                     >
                       <TableCell>
-                        <Typography variant="body2" fontWeight={600} color="primary.main">
+                        <Typography variant="body2" fontWeight={600} sx={{ color: '#2563eb' }}>
                           {decl.number_internal || 'Не присвоен'}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">{dayjs(decl.created_at).format('DD.MM.YYYY')}</Typography>
-                        <Typography variant="caption" color="text.secondary">{dayjs(decl.created_at).format('HH:mm')}</Typography>
+                        <Typography variant="body2" sx={{ color: '#0f172a' }}>
+                          {dayjs(decl.created_at).format('DD.MM.YYYY')}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b' }}>
+                          {dayjs(decl.created_at).format('HH:mm')}
+                        </Typography>
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -333,12 +469,12 @@ const ClientDetailPage = () => {
                           label={decl.type_code?.startsWith('IM') ? 'Импорт' : 'Экспорт'}
                           size="small"
                           sx={{
-                            bgcolor: decl.type_code?.startsWith('IM') ? '#e3f2fd' : '#fff3e0',
-                            color: decl.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
+                            bgcolor: decl.type_code?.startsWith('IM') ? '#eef2ff' : '#fff7ed',
+                            color: decl.type_code?.startsWith('IM') ? '#1d4ed8' : '#92400e',
                             fontWeight: 500,
                             fontSize: 11,
                             '& .MuiChip-icon': {
-                              color: decl.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
+                              color: decl.type_code?.startsWith('IM') ? '#1d4ed8' : '#92400e',
                             },
                           }}
                         />
@@ -347,7 +483,7 @@ const ClientDetailPage = () => {
                         <StatusChip status={decl.status} />
                       </TableCell>
                       <TableCell align="right">
-                        <Typography variant="body2" fontWeight={500}>
+                        <Typography variant="body2" fontWeight={500} sx={{ color: '#0f172a' }}>
                           {decl.total_invoice_value
                             ? `${decl.currency_code || '₽'} ${Number(decl.total_invoice_value).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`
                             : '—'}
@@ -358,7 +494,10 @@ const ClientDetailPage = () => {
                           <IconButton
                             size="small"
                             onClick={(e) => { e.stopPropagation(); navigate(`/declarations/${decl.id}/edit`); }}
-                            sx={{ borderRadius: 1.5, '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}
+                            sx={{
+                              borderRadius: '10px',
+                              '&:hover': { bgcolor: 'rgba(238,242,255,0.95)', color: '#2563eb' },
+                            }}
                           >
                             <OpenIcon fontSize="small" />
                           </IconButton>

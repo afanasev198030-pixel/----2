@@ -245,7 +245,7 @@ const SettingsPage = () => {
     <AppLayout breadcrumbs={[{ label: 'Настройки' }]}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
         <SettingsIcon color="primary" />
-        <Typography variant="h5" fontWeight={600}>Настройки системы</Typography>
+        <Typography variant="h5" fontWeight={600} sx={{ color: '#0f172a' }}>Настройки системы</Typography>
       </Box>
 
       {message && (
@@ -253,27 +253,44 @@ const SettingsPage = () => {
       )}
 
       {/* Services Dashboard */}
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <Paper sx={{ p: 2, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Typography variant="h6" fontWeight={600}>Статус сервисов</Typography>
+          <Typography variant="h6" fontWeight={600} sx={{ color: '#0f172a' }}>Статус сервисов</Typography>
           <Chip
             label={`${settings?.services?.filter(s => s.status === 'ok').length || 0}/${settings?.services?.length || 0} работают`}
-            color={settings?.services?.every(s => s.status === 'ok') ? 'success' : 'warning'} size="small"
+            size="small"
+            sx={
+              settings?.services?.every(s => s.status === 'ok')
+                ? {
+                    backgroundColor: 'rgba(236,253,245,0.8)',
+                    color: '#065f46',
+                    border: '1px solid rgba(167,243,208,0.6)',
+                    fontWeight: 500,
+                  }
+                : {
+                    backgroundColor: 'rgba(255,251,235,0.8)',
+                    color: '#92400e',
+                    border: '1px solid rgba(253,230,138,0.6)',
+                    fontWeight: 500,
+                  }
+            }
           />
         </Box>
         <Grid container spacing={1.5}>
           {(settings?.services || []).map((svc) => (
             <Grid item xs={6} md={3} key={svc.name}>
               <Card variant="outlined" sx={{
-                borderColor: svc.status === 'ok' ? 'success.light' : 'error.light',
-                bgcolor: svc.status === 'ok' ? '#f9fdf9' : '#fef9f9',
+                border: '1px solid rgba(226,232,240,0.8)',
+                boxShadow: 'none',
+                borderColor: svc.status === 'ok' ? 'rgba(167,243,208,0.7)' : 'rgba(254,202,202,0.8)',
+                bgcolor: svc.status === 'ok' ? 'rgba(236,253,245,0.5)' : 'rgba(254,242,242,0.6)',
               }}>
                 <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
-                    {svc.status === 'ok' ? <CheckIcon sx={{ fontSize: 16, color: 'success.main' }} /> : <ErrorIcon sx={{ fontSize: 16, color: 'error.main' }} />}
-                    <Typography variant="body2" fontWeight={700}>{svc.name}</Typography>
+                    {svc.status === 'ok' ? <CheckIcon sx={{ fontSize: 16, color: '#059669' }} /> : <ErrorIcon sx={{ fontSize: 16, color: '#dc2626' }} />}
+                    <Typography variant="body2" fontWeight={700} sx={{ color: '#0f172a' }}>{svc.name}</Typography>
                   </Box>
-                  <Typography variant="caption" color="text.secondary">:{svc.port} — {svc.detail}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>:{svc.port} — {svc.detail}</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -283,14 +300,14 @@ const SettingsPage = () => {
 
       {/* DB Stats */}
       {settings?.db_stats && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>База данных</Typography>
+        <Paper sx={{ p: 2, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>База данных</Typography>
           <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            {settings.db_stats.hs_codes != null && <Chip label={`ТН ВЭД: ${settings.db_stats.hs_codes.toLocaleString()}`} size="small" variant="outlined" />}
-            {settings.db_stats.classifiers != null && <Chip label={`Справочники: ${settings.db_stats.classifiers}`} size="small" variant="outlined" />}
-            {settings.db_stats.declarations != null && <Chip label={`Декларации: ${settings.db_stats.declarations}`} size="small" variant="outlined" />}
-            {settings.db_stats.users != null && <Chip label={`Пользователи: ${settings.db_stats.users}`} size="small" variant="outlined" />}
-            {settings.db_stats.counterparties != null && <Chip label={`Контрагенты: ${settings.db_stats.counterparties}`} size="small" variant="outlined" />}
+            {settings.db_stats.hs_codes != null && <Chip label={`ТН ВЭД: ${settings.db_stats.hs_codes.toLocaleString()}`} size="small" variant="outlined" sx={{ borderColor: 'rgba(226,232,240,0.8)', color: '#475569', bgcolor: '#f8fafc' }} />}
+            {settings.db_stats.classifiers != null && <Chip label={`Справочники: ${settings.db_stats.classifiers}`} size="small" variant="outlined" sx={{ borderColor: 'rgba(226,232,240,0.8)', color: '#475569', bgcolor: '#f8fafc' }} />}
+            {settings.db_stats.declarations != null && <Chip label={`Декларации: ${settings.db_stats.declarations}`} size="small" variant="outlined" sx={{ borderColor: 'rgba(226,232,240,0.8)', color: '#475569', bgcolor: '#f8fafc' }} />}
+            {settings.db_stats.users != null && <Chip label={`Пользователи: ${settings.db_stats.users}`} size="small" variant="outlined" sx={{ borderColor: 'rgba(226,232,240,0.8)', color: '#475569', bgcolor: '#f8fafc' }} />}
+            {settings.db_stats.counterparties != null && <Chip label={`Контрагенты: ${settings.db_stats.counterparties}`} size="small" variant="outlined" sx={{ borderColor: 'rgba(226,232,240,0.8)', color: '#475569', bgcolor: '#f8fafc' }} />}
           </Box>
         </Paper>
       )}
@@ -298,44 +315,88 @@ const SettingsPage = () => {
       {/* AI Status Cards */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={6} md={3}>
-          <Card variant="outlined">
+          <Card variant="outlined" sx={{ border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
             <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <AiIcon sx={{ fontSize: 36, color: settings?.openai_api_key_set ? 'success.main' : 'grey.400' }} />
-              <Typography variant="subtitle2" sx={{ mt: 0.5 }}>LLM</Typography>
+              <AiIcon sx={{ fontSize: 36, color: settings?.openai_api_key_set ? '#059669' : '#94a3b8' }} />
+              <Typography variant="subtitle2" sx={{ mt: 0.5, color: '#0f172a' }}>LLM</Typography>
               <Chip size="small" icon={settings?.openai_api_key_set ? <CheckIcon /> : <ErrorIcon />}
                 label={settings?.openai_api_key_set ? 'Подключён' : 'Не настроен'}
-                color={settings?.openai_api_key_set ? 'success' : 'error'} sx={{ mt: 0.5 }} />
+                sx={{
+                  mt: 0.5,
+                  ...(settings?.openai_api_key_set
+                    ? {
+                        backgroundColor: 'rgba(236,253,245,0.8)',
+                        color: '#065f46',
+                        border: '1px solid rgba(167,243,208,0.6)',
+                        fontWeight: 500,
+                        '& .MuiChip-icon': { color: '#059669' },
+                      }
+                    : {
+                        backgroundColor: 'rgba(254,242,242,0.8)',
+                        color: '#991b1b',
+                        border: '1px solid rgba(254,202,202,0.6)',
+                        fontWeight: 500,
+                        '& .MuiChip-icon': { color: '#dc2626' },
+                      }),
+                }} />
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={6} md={3}>
-          <Card variant="outlined">
+          <Card variant="outlined" sx={{ border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
             <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <StorageIcon sx={{ fontSize: 36, color: aiStats?.chromadb_connected ? 'success.main' : 'grey.400' }} />
-              <Typography variant="subtitle2" sx={{ mt: 0.5 }}>ChromaDB</Typography>
+              <StorageIcon sx={{ fontSize: 36, color: aiStats?.chromadb_connected ? '#059669' : '#94a3b8' }} />
+              <Typography variant="subtitle2" sx={{ mt: 0.5, color: '#0f172a' }}>ChromaDB</Typography>
               <Chip size="small"
                 label={aiStats?.chromadb_connected ? `${collections.hs_codes || 0} кодов` : 'disconnected'}
-                color={aiStats?.chromadb_connected ? 'success' : 'warning'} sx={{ mt: 0.5 }} />
+                sx={{
+                  mt: 0.5,
+                  ...(aiStats?.chromadb_connected
+                    ? {
+                        backgroundColor: 'rgba(236,253,245,0.8)',
+                        color: '#065f46',
+                        border: '1px solid rgba(167,243,208,0.6)',
+                        fontWeight: 500,
+                      }
+                    : {
+                        backgroundColor: 'rgba(255,251,235,0.8)',
+                        color: '#92400e',
+                        border: '1px solid rgba(253,230,138,0.6)',
+                        fontWeight: 500,
+                      }),
+                }} />
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={6} md={3}>
-          <Card variant="outlined">
+          <Card variant="outlined" sx={{ border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
             <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <TrainIcon sx={{ fontSize: 36, color: (aiStats?.feedback_count || 0) > 0 ? 'info.main' : 'grey.400' }} />
-              <Typography variant="subtitle2" sx={{ mt: 0.5 }}>Обучение</Typography>
+              <TrainIcon sx={{ fontSize: 36, color: (aiStats?.feedback_count || 0) > 0 ? '#2563eb' : '#94a3b8' }} />
+              <Typography variant="subtitle2" sx={{ mt: 0.5, color: '#0f172a' }}>Обучение</Typography>
               <Chip size="small"
                 label={`${aiStats?.feedback_count || 0} feedback / ${collections.precedents || 0} прец.`}
-                color="info" sx={{ mt: 0.5 }} />
+                sx={{
+                  mt: 0.5,
+                  backgroundColor: '#eef2ff',
+                  color: '#3730a3',
+                  border: '1px solid rgba(199,210,254,0.6)',
+                  fontWeight: 500,
+                }} />
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={6} md={3}>
-          <Card variant="outlined">
+          <Card variant="outlined" sx={{ border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
             <CardContent sx={{ textAlign: 'center', py: 2 }}>
-              <AiIcon sx={{ fontSize: 36, color: 'primary.main' }} />
-              <Typography variant="subtitle2" sx={{ mt: 0.5 }}>Модель</Typography>
-              <Chip size="small" label={settings?.openai_model || 'gpt-4o'} color="primary" sx={{ mt: 0.5 }} />
+              <AiIcon sx={{ fontSize: 36, color: '#2563eb' }} />
+              <Typography variant="subtitle2" sx={{ mt: 0.5, color: '#0f172a' }}>Модель</Typography>
+              <Chip size="small" label={settings?.openai_model || 'gpt-4o'} sx={{
+                mt: 0.5,
+                backgroundColor: '#eef2ff',
+                color: '#3730a3',
+                border: '1px solid rgba(199,210,254,0.6)',
+                fontWeight: 500,
+              }} />
             </CardContent>
           </Card>
         </Grid>
@@ -343,21 +404,21 @@ const SettingsPage = () => {
 
       {settings?.ai_message && (
         <Alert severity={settings.ai_status === 'active' ? 'success' : settings.ai_status === 'no_key' ? 'warning' : 'info'} sx={{ mb: 3 }}>
-          <Typography variant="body2" fontWeight={600}>{settings.ai_message}</Typography>
+          <Typography variant="body2" fontWeight={600} sx={{ color: '#0f172a' }}>{settings.ai_message}</Typography>
         </Alert>
       )}
 
       {/* Parse Issues */}
       {parseIssues && (parseIssues.summary?.total > 0 || parseIssues.items?.length > 0) && (
-        <Paper sx={{ p: 2, mb: 3 }}>
+        <Paper sx={{ p: 2, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Typography variant="h6" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <ErrorIcon fontSize="small" color="error" /> Проблемы парсинга
+            <Typography variant="h6" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#0f172a' }}>
+              <ErrorIcon fontSize="small" sx={{ color: '#dc2626' }} /> Проблемы парсинга
             </Typography>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              {parseIssues.summary?.totals?.error > 0 && <Chip label={`${parseIssues.summary.totals.error} errors`} color="error" size="small" />}
-              {parseIssues.summary?.totals?.warning > 0 && <Chip label={`${parseIssues.summary.totals.warning} warnings`} color="warning" size="small" />}
-              {parseIssues.summary?.totals?.info > 0 && <Chip label={`${parseIssues.summary.totals.info} info`} color="info" size="small" />}
+              {parseIssues.summary?.totals?.error > 0 && <Chip label={`${parseIssues.summary.totals.error} errors`} size="small" sx={{ backgroundColor: 'rgba(254,242,242,0.8)', color: '#991b1b', border: '1px solid rgba(254,202,202,0.6)', fontWeight: 500 }} />}
+              {parseIssues.summary?.totals?.warning > 0 && <Chip label={`${parseIssues.summary.totals.warning} warnings`} size="small" sx={{ backgroundColor: 'rgba(255,251,235,0.8)', color: '#92400e', border: '1px solid rgba(253,230,138,0.6)', fontWeight: 500 }} />}
+              {parseIssues.summary?.totals?.info > 0 && <Chip label={`${parseIssues.summary.totals.info} info`} size="small" sx={{ backgroundColor: '#eef2ff', color: '#3730a3', border: '1px solid rgba(199,210,254,0.6)', fontWeight: 500 }} />}
               <Button size="small" startIcon={issuesLoading ? <CircularProgress size={14} /> : <RefreshIcon />} onClick={loadParseIssues} disabled={issuesLoading}>
                 Обновить
               </Button>
@@ -393,10 +454,10 @@ const SettingsPage = () => {
       )}
 
       {/* AI Service Debug Panel */}
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <Paper sx={{ p: 2, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Typography variant="h6" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ConsoleIcon fontSize="small" /> AI Service Debug
+          <Typography variant="h6" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1, color: '#0f172a' }}>
+            <ConsoleIcon fontSize="small" sx={{ color: '#64748b' }} /> AI Service Debug
           </Typography>
           <Button size="small" startIcon={debugLoading ? <CircularProgress size={14} /> : <RefreshIcon />} onClick={loadAiDebug} disabled={debugLoading}>
             Обновить
@@ -408,14 +469,29 @@ const SettingsPage = () => {
             <Grid container spacing={1.5} sx={{ mb: 2 }}>
               {/* DSPy */}
               <Grid item xs={6} md={3}>
-                <Card variant="outlined" sx={{ borderColor: aiDebug.dspy?.available ? 'success.light' : 'error.light' }}>
+                <Card variant="outlined" sx={{
+                  border: '1px solid rgba(226,232,240,0.8)',
+                  boxShadow: 'none',
+                  borderColor: aiDebug.dspy?.available ? 'rgba(167,243,208,0.7)' : 'rgba(254,202,202,0.8)',
+                  bgcolor: aiDebug.dspy?.available ? 'rgba(236,253,245,0.35)' : 'rgba(254,242,242,0.45)',
+                }}>
                   <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="body2" fontWeight={700}>DSPy</Typography>
-                    <Chip size="small" label={aiDebug.dspy?.available ? 'Installed' : 'Not installed'} color={aiDebug.dspy?.available ? 'success' : 'error'} sx={{ mr: 0.5, mt: 0.5 }} />
+                    <Typography variant="body2" fontWeight={700} sx={{ color: '#0f172a' }}>DSPy</Typography>
+                    <Chip size="small" label={aiDebug.dspy?.available ? 'Installed' : 'Not installed'} sx={{
+                      mr: 0.5, mt: 0.5,
+                      ...(aiDebug.dspy?.available
+                        ? { backgroundColor: 'rgba(236,253,245,0.8)', color: '#065f46', border: '1px solid rgba(167,243,208,0.6)', fontWeight: 500 }
+                        : { backgroundColor: 'rgba(254,242,242,0.8)', color: '#991b1b', border: '1px solid rgba(254,202,202,0.6)', fontWeight: 500 }),
+                    }} />
                     {aiDebug.dspy?.available && (
-                      <Chip size="small" label={aiDebug.dspy?.configured ? 'Configured' : 'Not configured'} color={aiDebug.dspy?.configured ? 'success' : 'warning'} sx={{ mt: 0.5 }} />
+                      <Chip size="small" label={aiDebug.dspy?.configured ? 'Configured' : 'Not configured'} sx={{
+                        mt: 0.5,
+                        ...(aiDebug.dspy?.configured
+                          ? { backgroundColor: 'rgba(236,253,245,0.8)', color: '#065f46', border: '1px solid rgba(167,243,208,0.6)', fontWeight: 500 }
+                          : { backgroundColor: 'rgba(255,251,235,0.8)', color: '#92400e', border: '1px solid rgba(253,230,138,0.6)', fontWeight: 500 }),
+                      }} />
                     )}
-                    <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                    <Typography variant="caption" display="block" sx={{ mt: 0.5, color: '#64748b' }}>
                       Demos: {aiDebug.dspy?.demos_count || 0} few-shot
                     </Typography>
                   </CardContent>
@@ -424,43 +500,63 @@ const SettingsPage = () => {
 
               {/* RAG */}
               <Grid item xs={6} md={3}>
-                <Card variant="outlined" sx={{ borderColor: (aiDebug.rag?.hs_codes || 0) > 0 ? 'success.light' : 'warning.light' }}>
+                <Card variant="outlined" sx={{
+                  border: '1px solid rgba(226,232,240,0.8)',
+                  boxShadow: 'none',
+                  borderColor: (aiDebug.rag?.hs_codes || 0) > 0 ? 'rgba(167,243,208,0.7)' : 'rgba(253,230,138,0.7)',
+                  bgcolor: (aiDebug.rag?.hs_codes || 0) > 0 ? 'rgba(236,253,245,0.35)' : 'rgba(255,251,235,0.5)',
+                }}>
                   <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="body2" fontWeight={700}>RAG ChromaDB</Typography>
-                    <Typography variant="caption" display="block">ТН ВЭД: {(aiDebug.rag?.hs_codes || 0).toLocaleString()}</Typography>
-                    <Typography variant="caption" display="block">Правила СУР: {aiDebug.rag?.risk_rules || 0}</Typography>
-                    <Typography variant="caption" display="block">Прецеденты: {aiDebug.rag?.precedents || 0}</Typography>
-                    <Typography variant="caption" display="block" color="text.secondary">Embed: {aiDebug.embed_provider || 'onnx'}</Typography>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: '#0f172a' }}>RAG ChromaDB</Typography>
+                    <Typography variant="caption" display="block" sx={{ color: '#0f172a' }}>ТН ВЭД: {(aiDebug.rag?.hs_codes || 0).toLocaleString()}</Typography>
+                    <Typography variant="caption" display="block" sx={{ color: '#0f172a' }}>Правила СУР: {aiDebug.rag?.risk_rules || 0}</Typography>
+                    <Typography variant="caption" display="block" sx={{ color: '#0f172a' }}>Прецеденты: {aiDebug.rag?.precedents || 0}</Typography>
+                    <Typography variant="caption" display="block" sx={{ color: '#64748b' }}>Embed: {aiDebug.embed_provider || 'onnx'}</Typography>
                   </CardContent>
                 </Card>
               </Grid>
 
               {/* LLM */}
               <Grid item xs={6} md={3}>
-                <Card variant="outlined" sx={{ borderColor: aiDebug.llm_configured ? 'success.light' : 'error.light' }}>
+                <Card variant="outlined" sx={{
+                  border: '1px solid rgba(226,232,240,0.8)',
+                  boxShadow: 'none',
+                  borderColor: aiDebug.llm_configured ? 'rgba(167,243,208,0.7)' : 'rgba(254,202,202,0.8)',
+                  bgcolor: aiDebug.llm_configured ? 'rgba(236,253,245,0.35)' : 'rgba(254,242,242,0.45)',
+                }}>
                   <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="body2" fontWeight={700}>LLM</Typography>
-                    <Chip size="small" label={aiDebug.llm_configured ? 'Connected' : 'No key'} color={aiDebug.llm_configured ? 'success' : 'error'} sx={{ mt: 0.5 }} />
-                    <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>{aiDebug.llm_provider || '?'} / {aiDebug.llm_model || '?'}</Typography>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: '#0f172a' }}>LLM</Typography>
+                    <Chip size="small" label={aiDebug.llm_configured ? 'Connected' : 'No key'} sx={{
+                      mt: 0.5,
+                      ...(aiDebug.llm_configured
+                        ? { backgroundColor: 'rgba(236,253,245,0.8)', color: '#065f46', border: '1px solid rgba(167,243,208,0.6)', fontWeight: 500 }
+                        : { backgroundColor: 'rgba(254,242,242,0.8)', color: '#991b1b', border: '1px solid rgba(254,202,202,0.6)', fontWeight: 500 }),
+                    }} />
+                    <Typography variant="caption" display="block" sx={{ mt: 0.5, color: '#0f172a' }}>{aiDebug.llm_provider || '?'} / {aiDebug.llm_model || '?'}</Typography>
                   </CardContent>
                 </Card>
               </Grid>
 
               {/* Last Parse */}
               <Grid item xs={6} md={3}>
-                <Card variant="outlined" sx={{ borderColor: aiDebug.last_parse?.status === 'complete' ? 'success.light' : 'grey.300' }}>
+                <Card variant="outlined" sx={{
+                  border: '1px solid rgba(226,232,240,0.8)',
+                  boxShadow: 'none',
+                  borderColor: aiDebug.last_parse?.status === 'complete' ? 'rgba(167,243,208,0.7)' : 'rgba(226,232,240,0.9)',
+                  bgcolor: aiDebug.last_parse?.status === 'complete' ? 'rgba(236,253,245,0.35)' : '#f8fafc',
+                }}>
                   <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
-                    <Typography variant="body2" fontWeight={700}>Последний парсинг</Typography>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: '#0f172a' }}>Последний парсинг</Typography>
                     {aiDebug.last_parse?.request_id ? (
                       <>
-                        <Typography variant="caption" display="block">ID: {aiDebug.last_parse.request_id}</Typography>
-                        <Typography variant="caption" display="block">Позиций: {aiDebug.last_parse.items_count}, conf: {(aiDebug.last_parse.confidence * 100).toFixed(0)}%</Typography>
-                        <Typography variant="caption" display="block" color="text.secondary">
+                        <Typography variant="caption" display="block" sx={{ color: '#0f172a' }}>ID: {aiDebug.last_parse.request_id}</Typography>
+                        <Typography variant="caption" display="block" sx={{ color: '#0f172a' }}>Позиций: {aiDebug.last_parse.items_count}, conf: {(aiDebug.last_parse.confidence * 100).toFixed(0)}%</Typography>
+                        <Typography variant="caption" display="block" sx={{ color: '#64748b' }}>
                           {aiDebug.last_parse.timestamp ? new Date(aiDebug.last_parse.timestamp * 1000).toLocaleTimeString('ru-RU') : ''}
                         </Typography>
                       </>
                     ) : (
-                      <Typography variant="caption" color="text.secondary">Нет данных</Typography>
+                      <Typography variant="caption" sx={{ color: '#64748b' }}>Нет данных</Typography>
                     )}
                   </CardContent>
                 </Card>
@@ -470,9 +566,9 @@ const SettingsPage = () => {
             {/* Last parse items preview */}
             {aiDebug.last_parse?.items_preview?.length > 0 && (
               <Box sx={{ mb: 2 }}>
-                <Typography variant="caption" fontWeight={700}>Позиции последнего парсинга:</Typography>
+                <Typography variant="caption" fontWeight={700} sx={{ color: '#0f172a' }}>Позиции последнего парсинга:</Typography>
                 {aiDebug.last_parse.items_preview.map((it: any, i: number) => (
-                  <Typography key={i} variant="caption" display="block" sx={{ fontFamily: 'monospace', ml: 1 }}>
+                  <Typography key={i} variant="caption" display="block" sx={{ fontFamily: 'monospace', ml: 1, color: '#64748b' }}>
                     {i + 1}. [{it.hs || '???'}] {it.desc || '—'}
                   </Typography>
                 ))}
@@ -483,7 +579,7 @@ const SettingsPage = () => {
             {/* HS Classification Log */}
             {aiDebug.hs_classify_log?.length > 0 && (
               <>
-                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Лог классификации ТН ВЭД (промпты)</Typography>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>Лог классификации ТН ВЭД (промпты)</Typography>
                 <Box sx={{
                   bgcolor: '#1a1a2e', color: '#e0e0e0', borderRadius: 1, p: 1.5,
                   fontFamily: 'monospace', fontSize: 11, lineHeight: 1.6,
@@ -554,7 +650,7 @@ const SettingsPage = () => {
 
             {aiDebug.training_log?.length > 0 && (
               <>
-                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Лог ai-service (последние 30)</Typography>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>Лог ai-service (последние 30)</Typography>
                 <Box sx={{
                   bgcolor: '#1e1e1e', color: '#d4d4d4', borderRadius: 1, p: 1.5,
                   fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5,
@@ -577,34 +673,34 @@ const SettingsPage = () => {
             )}
           </>
         ) : (
-          <Typography variant="body2" color="text.secondary">AI-service недоступен</Typography>
+          <Typography variant="body2" sx={{ color: '#64748b' }}>AI-service недоступен</Typography>
         )}
       </Paper>
 
       {/* === AI CONSOLE === */}
-      <Paper sx={{ p: 3, mb: 3 }}>
+      <Paper sx={{ p: 3, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
           <ConsoleIcon color="primary" />
-          <Typography variant="h6" fontWeight={600}>AI Консоль</Typography>
+          <Typography variant="h6" fontWeight={600} sx={{ color: '#0f172a' }}>AI Консоль</Typography>
           <Box sx={{ flex: 1 }} />
           <Button size="small" startIcon={<RefreshIcon />} onClick={loadTrainingStats}>Обновить</Button>
         </Box>
 
-        <Divider sx={{ mb: 2 }} />
+        <Divider sx={{ mb: 2, borderColor: 'rgba(241,245,249,1)' }} />
 
         {/* Knowledge Base */}
-        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>База знаний ТН ВЭД</Typography>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>База знаний ТН ВЭД</Typography>
         <Grid container spacing={2} sx={{ mb: 2 }}>
           <Grid item xs={6} md={3}>
-            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="h5" fontWeight={700} color="primary.main">{(dbStats?.hs_codes_pg || 0).toLocaleString()}</Typography>
-              <Typography variant="caption" color="text.secondary">в PostgreSQL</Typography>
+            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid rgba(241,245,249,1)' }}>
+              <Typography variant="h5" fontWeight={700} sx={{ color: '#2563eb' }}>{(dbStats?.hs_codes_pg || 0).toLocaleString()}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>в PostgreSQL</Typography>
             </Box>
           </Grid>
           <Grid item xs={6} md={3}>
-            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="h5" fontWeight={700} color="success.main">{(collections.hs_codes || 0).toLocaleString()}</Typography>
-              <Typography variant="caption" color="text.secondary">в ChromaDB (RAG)</Typography>
+            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid rgba(241,245,249,1)' }}>
+              <Typography variant="h5" fontWeight={700} sx={{ color: '#059669' }}>{(collections.hs_codes || 0).toLocaleString()}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>в ChromaDB (RAG)</Typography>
             </Box>
           </Grid>
           <Grid item xs={6} md={3}>
@@ -622,39 +718,39 @@ const SettingsPage = () => {
         </Grid>
         {(loadingTnved || indexingRag) && <LinearProgress sx={{ mb: 2 }} />}
 
-        <Divider sx={{ my: 2 }} />
+        <Divider sx={{ my: 2, borderColor: 'rgba(241,245,249,1)' }} />
 
         {/* Training */}
-        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Обучение модели</Typography>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>Обучение модели</Typography>
         <Grid container spacing={2} sx={{ mb: 2 }}>
           <Grid item xs={4} md={2}>
-            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="h6" fontWeight={700}>{aiStats?.feedback_count || 0}</Typography>
-              <Typography variant="caption" color="text.secondary">feedback</Typography>
+            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid rgba(241,245,249,1)' }}>
+              <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a' }}>{aiStats?.feedback_count || 0}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>feedback</Typography>
             </Box>
           </Grid>
           <Grid item xs={4} md={2}>
-            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="h6" fontWeight={700}>{collections.precedents || 0}</Typography>
-              <Typography variant="caption" color="text.secondary">прецедентов</Typography>
+            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid rgba(241,245,249,1)' }}>
+              <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a' }}>{collections.precedents || 0}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>прецедентов</Typography>
             </Box>
           </Grid>
           <Grid item xs={4} md={2}>
-            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="h6" fontWeight={700}>{collections.risk_rules || 0}</Typography>
-              <Typography variant="caption" color="text.secondary">правил СУР</Typography>
+            <Box sx={{ textAlign: 'center', p: 1, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid rgba(241,245,249,1)' }}>
+              <Typography variant="h6" fontWeight={700} sx={{ color: '#0f172a' }}>{collections.risk_rules || 0}</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>правил СУР</Typography>
             </Box>
           </Grid>
           <Grid item xs={6} md={3}>
-            <Box sx={{ p: 1, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="caption" color="text.secondary">Оптимизация</Typography>
-              <Typography variant="body2" fontWeight={600}>
+            <Box sx={{ p: 1, bgcolor: '#f8fafc', borderRadius: 1, border: '1px solid rgba(241,245,249,1)' }}>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>Оптимизация</Typography>
+              <Typography variant="body2" fontWeight={600} sx={{ color: '#0f172a' }}>
                 {aiStats?.optimized_models?.hs_classifier
                   ? 'HS классификатор обучен'
                   : 'Не проводилась'}
               </Typography>
               {aiStats?.last_optimize_time && (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
                   {new Date(aiStats.last_optimize_time * 1000).toLocaleString('ru-RU')}
                 </Typography>
               )}
@@ -693,10 +789,10 @@ const SettingsPage = () => {
           </Grid>
         </Grid>
 
-        <Divider sx={{ my: 2 }} />
+        <Divider sx={{ my: 2, borderColor: 'rgba(241,245,249,1)' }} />
 
         {/* Log Console */}
-        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>Лог обучения</Typography>
+        <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>Лог обучения</Typography>
         <Box sx={{
           bgcolor: '#1e1e1e', color: '#d4d4d4', borderRadius: 1, p: 1.5,
           fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6,
@@ -720,11 +816,11 @@ const SettingsPage = () => {
       </Paper>
 
       {/* LLM Provider */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+      <Paper sx={{ p: 3, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+        <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#0f172a' }}>
           <AiIcon color="primary" fontSize="small" /> LLM Провайдер
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography variant="body2" sx={{ mb: 2, color: '#64748b' }}>
           DeepSeek рекомендуется — дешевле и быстрее OpenAI. Ключ можно получить на{' '}
           <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">platform.deepseek.com</a>.
         </Typography>
@@ -792,8 +888,8 @@ const SettingsPage = () => {
       </Paper>
 
       {/* Model Selection */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Модель LLM</Typography>
+      <Paper sx={{ p: 3, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+        <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Модель LLM</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 200 }} SelectProps={{ native: true }}>
             <optgroup label="Cloud.ru">
@@ -816,8 +912,8 @@ const SettingsPage = () => {
       </Paper>
 
       {/* Administration */}
-      <Paper sx={{ p: 3, mt: 3 }}>
-        <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Администрирование</Typography>
+      <Paper sx={{ p: 3, mt: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+        <Typography variant="h6" fontWeight={700} sx={{ mb: 2, color: '#0f172a' }}>Администрирование</Typography>
         <List disablePadding>
           {[
             { label: 'AI-стратегии', desc: 'Бизнес-правила для AI-заполнения деклараций', icon: <AiIcon />, path: '/admin/strategies' },
@@ -827,11 +923,15 @@ const SettingsPage = () => {
             { label: 'База знаний', desc: 'Статьи по классификации товаров', icon: <BookIcon />, path: '/admin/knowledge' },
             { label: 'Чек-листы', desc: 'Шаблоны проверок деклараций', icon: <ChecklistIcon />, path: '/admin/checklists' },
           ].map(item => (
-            <ListItem key={item.path} disablePadding divider>
+            <ListItem key={item.path} disablePadding divider sx={{ borderColor: 'rgba(241,245,249,1)' }}>
               <ListItemButton onClick={() => navigate(item.path)}>
                 <ListItemIcon>{item.icon}</ListItemIcon>
-                <ListItemText primary={item.label} secondary={item.desc} />
-                <ChevronRight color="action" />
+                <ListItemText
+                  primary={item.label}
+                  secondary={item.desc}
+                  sx={{ '& .MuiListItemText-primary': { color: '#0f172a' }, '& .MuiListItemText-secondary': { color: '#64748b' } }}
+                />
+                <ChevronRight sx={{ color: '#94a3b8' }} />
               </ListItemButton>
             </ListItem>
           ))}

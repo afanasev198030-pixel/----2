@@ -110,7 +110,7 @@ const BrokerDashboard = () => {
     return Object.entries(months).map(([month, count]) => ({ month, count })).slice(-6);
   }, [declarationsData?.items]);
 
-  const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#d32f2f', '#9c27b0', '#00838f'];
+  const COLORS = ['#2563eb', '#059669', '#d97706', '#8b5cf6', '#ec4899'];
   const isEmpty = !declLoading && !clientsLoading && metrics.clients === 0 && recentDeclarations.length === 0;
 
   return (
@@ -133,18 +133,18 @@ const BrokerDashboard = () => {
       )}
 
       {/* Welcome */}
-        <Typography variant="h5" fontWeight={700} gutterBottom>
+        <Typography variant="h5" fontWeight={700} gutterBottom sx={{ color: '#0f172a' }}>
           Добро пожаловать{meData?.full_name ? `, ${meData.full_name.split(' ')[0]}` : ''}
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        <Typography variant="body2" sx={{ mb: 3, color: '#64748b' }}>
           Обзор активности по клиентам и декларациям
         </Typography>
 
         {/* Onboarding empty state */}
         {isEmpty && (
-          <Card sx={{ mb: 4, p: 3, textAlign: 'center', background: 'linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%)', border: '1px dashed #1976d2' }}>
-            <Typography variant="h6" fontWeight={700} gutterBottom>Начните работу</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 480, mx: 'auto' }}>
+          <Card sx={{ mb: 4, p: 3, textAlign: 'center', bgcolor: '#f8fafc', border: '1px dashed rgba(226,232,240,0.8)' }}>
+            <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: '#0f172a' }}>Начните работу</Typography>
+            <Typography variant="body2" sx={{ mb: 3, maxWidth: 480, mx: 'auto', color: '#64748b' }}>
               Загрузите первый документ и создайте декларацию — система поможет с заполнением и кодами ТН ВЭД.
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'center' }}>
@@ -171,13 +171,13 @@ const BrokerDashboard = () => {
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
-                  <Typography variant="h4" color="info.main" fontWeight={700}>
+                  <Typography variant="h4" fontWeight={700} sx={{ color: '#2563eb' }}>
                     {clientsLoading ? <Skeleton width={40} /> : metrics.clients}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Клиентов</Typography>
+                  <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>Клиентов</Typography>
                 </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <PeopleIcon color="info" />
+                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #eef2ff 0%, #dbeafe 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <PeopleIcon sx={{ color: '#2563eb' }} />
                 </Box>
               </Box>
             </CardContent>
@@ -194,13 +194,13 @@ const BrokerDashboard = () => {
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
-                  <Typography variant="h4" color="warning.main" fontWeight={700}>
+                  <Typography variant="h4" fontWeight={700} sx={{ color: '#d97706' }}>
                     {declLoading ? <Skeleton width={40} /> : metrics.inProgress}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>В работе</Typography>
+                  <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>В работе</Typography>
                 </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <WorkIcon color="warning" />
+                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <WorkIcon sx={{ color: '#d97706' }} />
                 </Box>
               </Box>
             </CardContent>
@@ -217,13 +217,13 @@ const BrokerDashboard = () => {
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
-                  <Typography variant="h4" color="success.main" fontWeight={700}>
+                  <Typography variant="h4" fontWeight={700} sx={{ color: '#059669' }}>
                     {declLoading ? <Skeleton width={40} /> : metrics.released}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Готовы к отправке</Typography>
+                  <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>Готовы к отправке</Typography>
                 </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckIcon color="success" />
+                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #ecfdf5 0%, #a7f3d0 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckIcon sx={{ color: '#059669' }} />
                 </Box>
               </Box>
             </CardContent>
@@ -240,13 +240,13 @@ const BrokerDashboard = () => {
             <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
               <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                 <Box>
-                  <Typography variant="h4" color="info.main" fontWeight={700}>
+                  <Typography variant="h4" fontWeight={700} sx={{ color: '#dc2626' }}>
                     {declLoading ? <Skeleton width={40} /> : metrics.rejected}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Отправлены</Typography>
+                  <Typography variant="body2" mt={0.5} sx={{ color: '#64748b' }}>Отправлены</Typography>
                 </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ErrorIcon color="error" />
+                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #fef2f2 0%, #fecaca 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ErrorIcon sx={{ color: '#dc2626' }} />
                 </Box>
               </Box>
             </CardContent>
@@ -256,9 +256,9 @@ const BrokerDashboard = () => {
         {/* Two-column layout: Recent Declarations + Clients */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '3fr 2fr' }, gap: 3 }}>
           {/* Recent Declarations */}
-          <Paper sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <Paper sx={{ borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
             <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6" fontWeight={600}>Последние декларации</Typography>
+              <Typography variant="h6" fontWeight={600} sx={{ fontSize: 15, color: '#0f172a' }}>Последние декларации</Typography>
               <Button
                 size="small"
                 endIcon={<ArrowForwardIcon />}
@@ -294,8 +294,8 @@ const BrokerDashboard = () => {
                   ) : recentDeclarations.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} align="center" sx={{ py: 6 }}>
-                        <WorkIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                        <Typography variant="body2" color="text.secondary">
+                        <WorkIcon sx={{ fontSize: 48, color: '#94a3b8', mb: 1 }} />
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
                           Нет деклараций
                         </Typography>
                       </TableCell>
@@ -309,7 +309,7 @@ const BrokerDashboard = () => {
                         onClick={() => navigate(`/declarations/${decl.id}/edit`)}
                       >
                         <TableCell>
-                          <Typography variant="body2" fontWeight={500} color="primary.main">
+                          <Typography variant="body2" fontWeight={500} sx={{ color: '#2563eb' }}>
                             {decl.number_internal || 'Не присвоен'}
                           </Typography>
                         </TableCell>
@@ -319,12 +319,12 @@ const BrokerDashboard = () => {
                             label={decl.type_code?.startsWith('IM') ? 'ИМ' : 'ЭК'}
                             size="small"
                             sx={{
-                              bgcolor: decl.type_code?.startsWith('IM') ? '#e3f2fd' : '#fff3e0',
-                              color: decl.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
+                              bgcolor: decl.type_code?.startsWith('IM') ? '#eef2ff' : '#fef3c7',
+                              color: decl.type_code?.startsWith('IM') ? '#2563eb' : '#92400e',
                               fontWeight: 500,
                               fontSize: 11,
                               '& .MuiChip-icon': {
-                                color: decl.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
+                                color: decl.type_code?.startsWith('IM') ? '#2563eb' : '#92400e',
                               },
                             }}
                           />
@@ -340,7 +340,7 @@ const BrokerDashboard = () => {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography variant="body2" sx={{ color: '#64748b' }}>
                             {dayjs(decl.created_at).format('DD.MM.YYYY')}
                           </Typography>
                         </TableCell>
@@ -353,9 +353,9 @@ const BrokerDashboard = () => {
           </Paper>
 
           {/* Clients */}
-          <Paper sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <Paper sx={{ borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
             <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6" fontWeight={600}>Клиенты</Typography>
+              <Typography variant="h6" fontWeight={600} sx={{ fontSize: 15, color: '#0f172a' }}>Клиенты</Typography>
               <Button
                 size="small"
                 endIcon={<ArrowForwardIcon />}
@@ -389,8 +389,8 @@ const BrokerDashboard = () => {
                   ) : !clientsData || clientsData.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={4} align="center" sx={{ py: 6 }}>
-                        <PeopleIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
-                        <Typography variant="body2" color="text.secondary">
+                        <PeopleIcon sx={{ fontSize: 48, color: '#94a3b8', mb: 1 }} />
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
                           Нет клиентов
                         </Typography>
                         <Button
@@ -416,7 +416,7 @@ const BrokerDashboard = () => {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="body2" color="text.secondary">
+                          <Typography variant="body2" sx={{ color: '#64748b' }}>
                             {c.client_company?.inn || '—'}
                           </Typography>
                         </TableCell>
@@ -429,11 +429,11 @@ const BrokerDashboard = () => {
                             size="small"
                             sx={{
                               bgcolor:
-                                c.tariff_plan === 'premium' ? '#f3e5f5' :
-                                c.tariff_plan === 'standard' ? '#e3f2fd' : '#f5f5f5',
+                                c.tariff_plan === 'premium' ? '#f5f3ff' :
+                                c.tariff_plan === 'standard' ? '#eef2ff' : '#f8fafc',
                               color:
-                                c.tariff_plan === 'premium' ? '#7b1fa2' :
-                                c.tariff_plan === 'standard' ? '#1565c0' : '#616161',
+                                c.tariff_plan === 'premium' ? '#6d28d9' :
+                                c.tariff_plan === 'standard' ? '#2563eb' : '#64748b',
                               fontWeight: 500,
                               fontSize: 11,
                             }}
@@ -444,8 +444,8 @@ const BrokerDashboard = () => {
                             label={c.is_active ? 'Активен' : 'Неактивен'}
                             size="small"
                             sx={{
-                              bgcolor: c.is_active ? '#e8f5e9' : '#ffebee',
-                              color: c.is_active ? '#1b5e20' : '#c62828',
+                              bgcolor: c.is_active ? '#ecfdf5' : '#fef2f2',
+                              color: c.is_active ? '#059669' : '#dc2626',
                               fontWeight: 500,
                               fontSize: 11,
                             }}
@@ -462,8 +462,8 @@ const BrokerDashboard = () => {
 
         {/* Analytics */}
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mt: 3 }}>
-          <Paper sx={{ p: 2.5, borderRadius: 2 }}>
-            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Статусы деклараций</Typography>
+          <Paper sx={{ p: 2.5, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2, fontSize: 15, color: '#0f172a' }}>Статусы деклараций</Typography>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie data={statusChartData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
@@ -474,15 +474,15 @@ const BrokerDashboard = () => {
               </PieChart>
             </ResponsiveContainer>
           </Paper>
-          <Paper sx={{ p: 2.5, borderRadius: 2 }}>
-            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Декларации по месяцам</Typography>
+          <Paper sx={{ p: 2.5, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <Typography variant="h6" fontWeight={600} sx={{ mb: 2, fontSize: 15, color: '#0f172a' }}>Декларации по месяцам</Typography>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={monthlyData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis allowDecimals={false} />
                 <ReTooltip />
-                <Bar dataKey="count" fill="#1976d2" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </Paper>

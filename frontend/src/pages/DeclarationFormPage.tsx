@@ -635,28 +635,28 @@ const DeclarationFormPage = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
           <Button size="small" startIcon={<FolderOpenIcon sx={{ fontSize: '14px !important' }} />}
             onClick={() => setDocViewerOpen(true)}
-            sx={{ fontSize: 11, fontWeight: 500, borderRadius: '8px', px: 1.25, py: 0.75, border: '1px solid rgba(226,232,240,1)', color: '#64748b', textTransform: 'none' }}>
+            sx={{ fontSize: 13, fontWeight: 500, borderRadius: '8px', px: 1.25, py: 0.75, border: '1px solid rgba(226,232,240,1)', color: '#64748b', textTransform: 'none' }}>
             Документы
-            <Box component="span" sx={{ ml: 0.5, px: 0.75, py: 0.25, borderRadius: '10px', bgcolor: 'rgba(241,245,249,1)', fontSize: 9, fontWeight: 600 }}>
+            <Box component="span" sx={{ ml: 0.5, px: 0.75, py: 0.25, borderRadius: '10px', bgcolor: 'rgba(241,245,249,1)', fontSize: 10, fontWeight: 600 }}>
               {docs.length}
             </Box>
           </Button>
           <Divider orientation="vertical" sx={{ height: 20 }} />
-          <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>Полная декларация</Typography>
-          <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>{decl.number_internal || decl.id.slice(0, 13)}</Typography>
+          <Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>Полная декларация</Typography>
+          <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>{decl.number_internal || decl.id.slice(0, 13)}</Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <StatusChip status={decl.status} />
-          {autoSaveStatus === 'saving' && <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>Сохранение...</Typography>}
-          {autoSaveStatus === 'saved' && <Typography sx={{ fontSize: 11, color: '#10b981' }}>Сохранено</Typography>}
+          {autoSaveStatus === 'saving' && <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>Сохранение...</Typography>}
+          {autoSaveStatus === 'saved' && <Typography sx={{ fontSize: 12, color: '#10b981' }}>Сохранено</Typography>}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
           <Button size="small" startIcon={<PdfIcon sx={{ fontSize: '14px !important' }} />} onClick={handleExportPdf}
-            sx={{ fontSize: 11, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
+            sx={{ fontSize: 13, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
             PDF
           </Button>
           <Button size="small" startIcon={<XmlIcon sx={{ fontSize: '14px !important' }} />} onClick={handleExportXml}
-            sx={{ fontSize: 11, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
+            sx={{ fontSize: 13, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
             XML
           </Button>
         </Box>
@@ -694,10 +694,10 @@ const DeclarationFormPage = () => {
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)',
             }}>
-              <Typography sx={{ fontSize: 14, fontWeight: 600, color: '#334155', letterSpacing: '0.04em' }}>
+              <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#334155', letterSpacing: '0.04em' }}>
                 ДЕКЛАРАЦИЯ НА ТОВАРЫ
               </Typography>
-              <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#94a3b8' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#94a3b8' }}>
                 {decl.number_internal || decl.id.slice(0, 13)}
               </Typography>
             </Box>
@@ -821,7 +821,7 @@ const DeclarationFormPage = () => {
 
             {/* Status bar */}
             <Box sx={{ px: 2, py: 1, bgcolor: 'rgba(236,253,245,0.5)', borderTop: '2px solid rgba(226,232,240,0.9)', textAlign: 'center' }}>
-              <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#334155' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
                 {decl.number_internal || 'ЧЕРНОВИК'} — Статус: {decl.status}
                 {decl.customs_office_code && <> | Таможенный орган: {decl.customs_office_code}</>}
               </Typography>
@@ -835,10 +835,10 @@ const DeclarationFormPage = () => {
             return (
               <Box key={sheetIdx} sx={{ mt: 3, bgcolor: 'white', borderRadius: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
                 <Box sx={{ borderBottom: '2px solid rgba(226,232,240,0.9)', px: 3, py: 1.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)' }}>
-                  <Typography sx={{ fontSize: 14, fontWeight: 600, color: '#334155', letterSpacing: '0.04em' }}>
+                  <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#334155', letterSpacing: '0.04em' }}>
                     ДОБАВОЧНЫЙ ЛИСТ К ДЕКЛАРАЦИИ НА ТОВАРЫ
                   </Typography>
-                  <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#94a3b8' }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#94a3b8' }}>
                     Лист {sheetNumber}/{totalForms}
                   </Typography>
                 </Box>
@@ -919,12 +919,12 @@ const DeclarationFormPage = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
           <Button size="small" startIcon={<ShieldIcon sx={{ fontSize: '14px !important' }} />}
             onClick={() => setSnackMsg('ЭЦП: будет в следующей версии')}
-            sx={{ fontSize: 11, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
+            sx={{ fontSize: 13, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
             ЭЦП
           </Button>
           <Button size="small" variant="contained" startIcon={<SendIcon sx={{ fontSize: '14px !important' }} />}
             onClick={() => setSnackMsg('ФТС: будет в следующей версии')}
-            sx={{ fontSize: 11, fontWeight: 500, bgcolor: '#059669', '&:hover': { bgcolor: '#047857' }, borderRadius: '8px', textTransform: 'none', boxShadow: 'none' }}>
+            sx={{ fontSize: 13, fontWeight: 500, bgcolor: '#059669', '&:hover': { bgcolor: '#047857' }, borderRadius: '8px', textTransform: 'none', boxShadow: 'none' }}>
             Подписать и отправить
           </Button>
         </Box>
@@ -1006,8 +1006,8 @@ function EditableItemBlock({ item, itemIndex, paymentItem, evidenceMap, docs, ce
 function EditablePaymentTable({ payments }: { payments: PaymentResult | null }) {
   const totals = payments?.totals;
   const firstPi = payments?.items?.[0];
-  const thSx = { border: '1px solid rgba(226,232,240,0.6)', p: '3px 6px', fontSize: 9, color: '#64748b', fontWeight: 600 };
-  const tdSx = { border: '1px solid rgba(226,232,240,0.6)', p: '3px 6px', fontSize: 10, color: '#1e293b' };
+  const thSx = { border: '1px solid rgba(226,232,240,0.6)', p: '3px 6px', fontSize: 10, color: '#64748b', fontWeight: 600 };
+  const tdSx = { border: '1px solid rgba(226,232,240,0.6)', p: '3px 6px', fontSize: 11, color: '#1e293b' };
   const tdR = { ...tdSx, textAlign: 'right' as const };
   const tdC = { ...tdSx, textAlign: 'center' as const };
 
@@ -1092,15 +1092,15 @@ function FormCell({ cell, value, state, isSelected, isEditing, sourceStr, sxOver
       )}
 
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, px: 1.25, pt: 0.75 }}>
-        {cell.num && <Typography sx={{ fontSize: 9, color: 'rgba(148,163,184,0.8)', fontWeight: 600, flexShrink: 0 }}>{cell.num}</Typography>}
-        <Typography sx={{ fontSize: 8, color: 'rgba(148,163,184,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+        {cell.num && <Typography sx={{ fontSize: 10, color: 'rgba(148,163,184,0.8)', fontWeight: 600, flexShrink: 0 }}>{cell.num}</Typography>}
+        <Typography sx={{ fontSize: 10, color: 'rgba(148,163,184,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
           {cell.label}
         </Typography>
         {state !== 'default' && !isEditing && (
           <Box sx={{ ml: 'auto', flexShrink: 0 }}>{DOT_ICONS[state]}</Box>
         )}
         {isEditing && (
-          <Box sx={{ ml: 'auto', fontSize: 8, fontWeight: 600, color: '#3b82f6', px: 0.75, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(239,246,255,1)', border: '1px solid rgba(191,219,254,0.6)' }}>
+          <Box sx={{ ml: 'auto', fontSize: 10, fontWeight: 600, color: '#3b82f6', px: 0.75, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(239,246,255,1)', border: '1px solid rgba(191,219,254,0.6)' }}>
             Редактирование
           </Box>
         )}
@@ -1112,27 +1112,27 @@ function FormCell({ cell, value, state, isSelected, isEditing, sourceStr, sxOver
             onClick={e => e.stopPropagation()}
             style={{
               width: '100%', resize: 'none', border: 'none', outline: 'none',
-              background: 'rgba(255,255,255,0.8)', fontSize: 11, color: '#0f172a', fontWeight: 500,
+              background: 'rgba(255,255,255,0.8)', fontSize: 13, color: '#0f172a', fontWeight: 500,
               fontFamily: 'inherit', borderRadius: 6, padding: '4px 6px', margin: '-4px -6px',
               minHeight: isTall ? 56 : 22,
             }}
             rows={isTall ? 3 : 1}
           />
         ) : state === 'empty' && !value ? (
-          <Typography sx={{ fontSize: 10, color: '#ef4444', fontStyle: 'italic' }}>Не заполнено</Typography>
+          <Typography sx={{ fontSize: 12, color: '#ef4444', fontStyle: 'italic' }}>Не заполнено</Typography>
         ) : isMultiline ? (
-          <Box component="pre" sx={{ fontSize: 10, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.4, m: 0, fontFamily: 'inherit', fontWeight: 500 }}>
+          <Box component="pre" sx={{ fontSize: 12, color: '#1e293b', whiteSpace: 'pre-wrap', lineHeight: 1.4, m: 0, fontFamily: 'inherit', fontWeight: 500 }}>
             {value}
           </Box>
         ) : (
-          <Typography sx={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <Typography sx={{ fontSize: 13, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {value}
           </Typography>
         )}
       </Box>
 
       {!cell.computed && sourceStr && !isEditing && (
-        <Typography sx={{ fontSize: 8, color: '#94a3b8', px: 1.25, pb: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>
+        <Typography sx={{ fontSize: 9, color: '#94a3b8', px: 1.25, pb: 0.75, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1 }}>
           {sourceStr}
         </Typography>
       )}
@@ -1229,11 +1229,11 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
       {/* Header */}
       <Box sx={{ bgcolor: 'white', px: 2.5, py: 1.5, borderBottom: '1px solid rgba(226,232,240,0.6)', flexShrink: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
-          <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 500, letterSpacing: '0.05em' }}>ПОЛЕ ДЕКЛАРАЦИИ</Typography>
+          <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 500, letterSpacing: '0.05em' }}>ПОЛЕ ДЕКЛАРАЦИИ</Typography>
           <IconButton size="small" onClick={onClose} sx={{ p: 0.5, color: '#94a3b8' }}><CloseIcon sx={{ fontSize: 16 }} /></IconButton>
         </Box>
-        <Typography sx={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>Графа {cell.num}. {cell.label}</Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.75, fontSize: 10, color: '#94a3b8' }}>
+        <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>Графа {cell.num}. {cell.label}</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.75, fontSize: 11, color: '#94a3b8' }}>
           <Typography sx={{ fontSize: 'inherit', color: 'inherit', cursor: 'pointer', '&:hover': { color: '#475569' } }}>Декларация</Typography>
           <ChevronRightIcon sx={{ fontSize: 10 }} />
           <Typography sx={{ fontSize: 'inherit', color: 'inherit', cursor: 'pointer', '&:hover': { color: '#475569' } }}>{cell.section}</Typography>
@@ -1252,7 +1252,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                 <IconButton size="small" onClick={handleExitSourceMode} sx={{ p: 0.5, color: '#64748b' }}>
                   <ChevronLeftIcon sx={{ fontSize: 18 }} />
                 </IconButton>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>Выберите документ-источник</Typography>
+                <Typography sx={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>Выберите документ-источник</Typography>
               </Box>
               {docs.length === 0 && (
                 <Typography sx={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', py: 4 }}>Нет загруженных документов</Typography>
@@ -1269,7 +1269,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                       <FileIcon sx={{ fontSize: 20, color: '#64748b' }} />
                     </Box>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {doc.original_filename}
                       </Typography>
                       <Typography sx={{ fontSize: 10, color: '#94a3b8', mt: 0.25 }}>
@@ -1349,9 +1349,9 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                     )}
                   </Box>
                   {state === 'empty' ? (
-                    <Typography sx={{ fontSize: 20, color: '#cbd5e1', fontStyle: 'italic', fontWeight: 500 }}>Не заполнено</Typography>
+                    <Typography sx={{ fontSize: 22, color: '#cbd5e1', fontStyle: 'italic', fontWeight: 500 }}>Не заполнено</Typography>
                   ) : (
-                    <Typography sx={{ fontSize: 20, fontWeight: 600, color: '#0f172a', letterSpacing: '-0.02em' }}>{value}</Typography>
+                    <Typography sx={{ fontSize: 22, fontWeight: 600, color: '#0f172a', letterSpacing: '-0.02em' }}>{value}</Typography>
                   )}
                 </Box>
                 {confidence != null && (
@@ -1387,8 +1387,8 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                     <PdfIcon sx={{ fontSize: 20, color: '#3b82f6' }} />
                   </Box>
                   <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#1e293b' }}>{sourceFile || sourceLabel}</Typography>
-                    <Typography sx={{ fontSize: 10, color: '#94a3b8', mt: 0.25 }}>{sourceLabel}</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: '#1e293b' }}>{sourceFile || sourceLabel}</Typography>
+                    <Typography sx={{ fontSize: 11, color: '#94a3b8', mt: 0.25 }}>{sourceLabel}</Typography>
                     <Box sx={{
                       display: 'inline-flex', alignItems: 'center', gap: 0.5, mt: 0.75,
                       fontSize: 9, px: 0.75, py: 0.25, borderRadius: '10px',
@@ -1465,7 +1465,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                   border: '1px solid rgba(226,232,240,0.7)',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.04)', p: 1.5,
                 }}>
-                  <Typography sx={{ fontSize: 11, color: '#64748b', mb: 0.5 }}>
+                  <Typography sx={{ fontSize: 12, color: '#64748b', mb: 0.5 }}>
                     Товар: {item.description || '—'}
                   </Typography>
                   <HSCodeSuggestions
@@ -1574,7 +1574,7 @@ function StripMetric({ icon, label, value, muted, warn }: { icon: React.ReactNod
 
 function BottomInd({ icon, text, color, bg }: { icon: React.ReactNode; text: string; color: string; bg: string }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 11, color, px: 1.25, py: 0.5, borderRadius: '8px', bgcolor: bg }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, fontSize: 12, color, px: 1.25, py: 0.5, borderRadius: '8px', bgcolor: bg }}>
       {icon}<Typography sx={{ fontSize: 'inherit', color: 'inherit' }}>{text}</Typography>
     </Box>
   );

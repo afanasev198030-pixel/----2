@@ -90,15 +90,15 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 function getConfidenceColor(confidence: number): string {
-  if (confidence >= 0.85) return '#2e7d32';
-  if (confidence >= 0.6) return '#ed6c02';
-  return '#d32f2f';
+  if (confidence >= 0.85) return '#059669';
+  if (confidence >= 0.6) return '#d97706';
+  return '#dc2626';
 }
 
 function getConfidenceBgColor(confidence: number): string {
-  if (confidence >= 0.85) return '#e8f5e9';
-  if (confidence >= 0.6) return '#fff3e0';
-  return '#ffebee';
+  if (confidence >= 0.85) return 'rgba(236,253,245,0.8)';
+  if (confidence >= 0.6) return 'rgba(255,251,235,0.8)';
+  return 'rgba(254,242,242,0.8)';
 }
 
 interface ConfidenceBadgeProps {
