@@ -2,18 +2,111 @@
 
 ---
 
-## Provider Profiles, Landing Page, Items Guard
+## Полный редизайн UI, модель статусов, DeclarationFormPage, Provider Profiles
 
-**Дата:** 2026-03-28
+**Дата:** 2026-03-25 — 2026-03-28
 **Ветка:** `feature/provider-profiles-landing`
 
 ### Обзор
 
-Централизация конфигурации LLM-провайдеров (единый реестр PROVIDER_PROFILES), совместимость JSON mode с Cloud.ru, полный редизайн лэндинга (светлая профессиональная тема со скриншотами продукта), защита от расхождения количества товарных позиций между LLM и инвойсом.
+Масштабный рефакторинг фронтенда: новая MUI-тема в стиле premium enterprise, модель статусов декларации (state machine), 2 новые страницы (DeclarationFormPage — форма редактирования по образцу печатной ДТ, DeclarationStatusPage — статусная страница с pre-send и AI-анализом), редизайн всех существующих страниц (Kanban, dashboard, view, DTS, 8 админских, профиль, настройки, клиенты), централизация конфигурации LLM-провайдеров (PROVIDER_PROFILES), совместимость JSON mode с Cloud.ru, редизайн лэндинга, защита от расхождения количества товарных позиций.
 
 ---
 
-### 1. Provider Profiles — единый реестр LLM-провайдеров
+### 1. Модель статусов декларации (Declaration State Machine)
+
+**Проблема**: декларация имела одно текстовое поле `status` без чёткого жизненного цикла. Переходы между статусами (draft → submitted → released) не контролировались — можно было перескочить из draft в released, минуя проверки.
+
+**Что такое state machine**: это модель, в которой объект (декларация) может находиться только в определённых состояниях, и переходить между ними только по определённым правилам. Например: draft → submitted → released, но не draft → released напрямую.
+
+**Решение**:
+- **Миграция 029**: добавлены поля `state`, `substatus`, `assigned_to`, `priority`, `sla_deadline`, `last_state_change_at` в таблицу `declarations`
+- **`declaration_state_service.py`** (199 строк): сервис переходов состояний с валидацией допустимых переходов, логированием, обновлением временных меток
+- **Рефакторинг `workflow.py`**: все операции (submit, approve, release, reject, revise) переведены на state machine через `declaration_state_service`
+- **StatusChip**: обновлён для отображения новых состояний с семантическими цветами (slate/emerald/amber/indigo)
+
+### 2. DeclarationFormPage — форма по образцу печатной ДТ
+
+**Проблема**: существующая `DeclarationEditPage` — это обычная веб-форма с полями в столбик. Брокеру неудобно: он привык к расположению граф как в бумажной/печатной ДТ (таможенной декларации), и при переносе данных с экрана на бумагу постоянно путается.
+
+**Что такое ДТ**: Декларация на Товары — стандартизированный документ для таможенного оформления. Имеет фиксированную сетку граф (графа 1 — тип, графа 2 — отправитель, графа 14 — декларант и т.д.), расположенных по определённой схеме.
+
+**Решение**: новая страница `DeclarationFormPage` (1603 строки):
+- **Сетка граф** как в печатной ДТ — каждая ячейка имеет номер графы, название и привязку к полю
+- **Статусы ячеек** (CellState): `ai` (заполнено AI), `confirmed` (подтверждено), `review` (требует проверки), `conflict` (конфликт источников), `manual` (заполнено вручную), `empty` (не заполнено) — с цветовой индикацией (фиолетовый/зелёный/жёлтый/оранжевый/синий/красный)
+- **SourceDrawer**: боковая панель с информацией об источнике данных для каждого поля — из какого документа, с какой уверенностью, исходное значение
+- **HS Code Suggestions**: подсказки кодов ТН ВЭД из истории компании прямо в боковой панели при редактировании графы 33
+- **Разрешение контрагентов**: UUID покупателя/продавца автоматически конвертируются в читаемые имена
+- **Просмотр документов**: DocumentViewer интегрирован в страницу
+
+### 3. DeclarationStatusPage — статусная страница декларации
+
+**Проблема**: для понимания «что с декларацией» нужно было открывать форму редактирования, проверять чеклист, смотреть документы в отдельной панели. Единого обзора состояния не было.
+
+**Решение**: новая страница `DeclarationStatusPage` (690 строк):
+- **Обзор готовности**: pre-send проверки, AI-проблемы (blocking/warning), полнота документов
+- **Панель документов**: список прикреплённых документов с типами, просмотр через DocumentViewer
+- **Позиции товаров**: список с кодами ТН ВЭД, AI-классификацией и подсказками из истории
+- **Журнал действий**: лог изменений декларации
+- **Навигация**: кнопки перехода к форме редактирования, просмотру для печати
+
+### 4. Редизайн фронтенда — premium enterprise тема
+
+**Проблема**: интерфейс выглядел как прототип — разные стили на разных страницах, мелкий шрифт, неконсистентные цвета, отсутствие единой дизайн-системы.
+
+**Решение**: полная переработка визуальной темы (23+ файла):
+
+**Тема (theme.ts)**:
+- Палитра: slate (#0f172a, #64748b, #e2e8f0), emerald (success), amber (warning), indigo (accent)
+- MUI overrides: Card (borderRadius 14, subtle border), Table (uppercase headers, stripe rows), Button (no shadow, rounded), Chip (refined), Paper (soft shadows)
+- Шрифт Inter с оптимизированными размерами и weight
+
+**Переработанные страницы**:
+
+| Страница | Изменения |
+|----------|-----------|
+| `DeclarationsListPage` | Kanban-доска с цветовыми колонками, DeclarationKanbanCard с badges |
+| `DeclarationViewPage` | Sticky header, documents sidebar, summary strip, bottom action bar |
+| `DtsViewPage` | Тот же shell-паттерн — header, status, bottom bar |
+| `BrokerDashboard` | KPI-карточки, welcome section, обновлённые графики |
+| `AppLayout` | Белый header с логотипом Customs AI, slate-навигация |
+| `ClientsListPage` + `ClientDetailPage` | Таблицы, кнопки, тарифные чипы, KPI-карточки |
+| `ProfilePage` + `SettingsPage` | Paper/Card стили, статусы сервисов |
+| 8 admin pages | Унифицированные Paper/Card/Chip/Typography |
+
+**Новые/обновлённые компоненты**:
+- `DeclarationKanbanCard` — карточка для Kanban с badges обработки/подписания
+- `StatusChip` — расширен на все новые состояния state machine
+- `ConfidenceBadge`, `RiskPanel`, `HistoryPanel` — унифицированные цвета
+- `HSCodeSuggestions` — подсказки ТН ВЭД из истории компании
+
+### 5. Миграция транспортных полей + AI-промпты
+
+**Проблема**: поля транспорта в БД назывались абстрактно (`transport_at_border`, `transport_on_border_id`), не соответствовали графам ДТ. AI-промпт компиляции не разделял источники по графам — путал продавца (гр.11) с отправителем (гр.2).
+
+**Решение**:
+- **Миграция 030**: переименование полей в семантические имена:
+  - `transport_at_border` → `departure_vehicle_info` (гр.18)
+  - `transport_nationality_code` → `departure_vehicle_country` (гр.18)
+  - `transport_on_border_id` → `border_vehicle_info` (гр.21)
+  - Новые поля: `border_vehicle_country` (гр.21), `transport_doc_number` (AWB/CMR)
+- **AI-промпт**: добавлены строгие приоритеты источников по графам:
+  - Гр.2 (отправитель): ТОЛЬКО из транспортных источников (AWB/CMR → shipper_name). Использование invoice.seller/contract.seller ЗАПРЕЩЕНО
+  - Гр.14 (покупатель): контракт > инвойс, ОБЯЗАТЕЛЬНО на русском
+  - Гр.22 (валюта): ТОЛЬКО из контракта
+
+### 6. Мокапы дизайн-системы
+
+В папке `_mockups/` создан Vite-проект с Tailwind CSS — референсные макеты для всех ключевых страниц:
+- Kanban-доска (BrokerHeader, DeclarationCard, KanbanBoard)
+- Dashboard декларации (HeroStatus, IssuesPanel, DeclarationSummary, DocumentsSummary)
+- Форма редактирования (PrintedForm, FieldRow, SectionNav, SourceDrawer, DocsSidebar)
+- DTS-страница
+- Полная UI-библиотека компонентов (shadcn/ui)
+
+Мокапы используются как визуальный эталон при реализации MUI-компонентов в основном проекте.
+
+### 7. Provider Profiles — единый реестр LLM-провайдеров
 
 **Проблема**: информация о провайдерах (base_url, модель по умолчанию, поддержка JSON mode) была размазана по 10+ файлам в виде повторяющихся словарей `model_defaults`, `url_defaults`, `base_url_map`, `model_map`. Добавление нового провайдера требовало правок в 5–7 файлах, и каждый мог забыть обновить один из словарей.
 
@@ -37,7 +130,7 @@
 - `main.py` — `configure_ai` endpoint берёт дефолты из профиля
 - `settings.py` (core-api) — `provider_defaults` — единый словарь вместо двух отдельных маппингов; исправлена дефолтная модель OpenAI с `gpt-4o-mini` на `gpt-4o`
 
-### 2. JSON mode — совместимость с Cloud.ru
+### 8. JSON mode — совместимость с Cloud.ru
 
 **Проблема**: все LLM-вызовы в парсерах использовали `response_format={"type": "json_object"}`. Cloud.ru (gpt-oss-120b) не поддерживает этот параметр и возвращал ошибку. Система падала или деградировала при переключении на Cloud.ru.
 
@@ -47,7 +140,7 @@
 
 Затронутые парсеры: `llm_parser.py`, `agent_crew.py`, `contract_parser.py`, `invoice_parser.py`, `spec_parser.py`, `techop_parser.py`, `transport_parser.py`, `dspy_modules.py`, `gtd_reference_extractor.py`.
 
-### 3. Items Guard — защита количества позиций
+### 9. Items Guard — защита количества позиций
 
 **Проблема**: LLM при компиляции декларации мог создать позиции из спецификации вместо инвойса. Если в инвойсе 1 товар, а в спецификации 5 — LLM возвращал 5 позиций, задваивая данные.
 
@@ -59,7 +152,7 @@
 
 3. **Пост-валидация**: после ответа LLM проверяется `len(items) == len(invoice.items)`. При расхождении — принудительная замена на позиции из инвойса с логированием предупреждения.
 
-### 4. Редизайн лэндинга
+### 10. Редизайн лэндинга
 
 **Проблема**: лэндинг использовал тёмную «кибер»-тему с неоновыми свечениями (GlowOrb, shimmer, pulse-анимации). Визуально не соответствовал профессиональному B2B-продукту для таможенных брокеров.
 
@@ -75,32 +168,78 @@
 
 Добавлены 3 скриншота продукта (`/screenshots/dashboard.png`, `declarations.png`, `form.png`) в компоненте BrowserFrame — пользователь видит реальный интерфейс до регистрации. Новые MUI-иконки: `DescriptionOutlined`, `Search`, `CalculateOutlined`, `ShieldOutlined`, `ViewKanbanOutlined`, `FolderOpenOutlined`, `Business`, `Public`, `LocalShipping`, `ArrowForward`.
 
-### Затронутые файлы (14 файлов изменено, 3 новых)
+### Затронутые файлы
+
+**Frontend — новые страницы и компоненты (7 файлов):**
+
+| Файл | Строк | Назначение |
+|---|---|---|
+| `frontend/src/pages/DeclarationFormPage.tsx` | 1603 | Форма редактирования по образцу печатной ДТ |
+| `frontend/src/pages/DeclarationStatusPage.tsx` | 690 | Статусная страница с pre-send и AI-анализом |
+| `frontend/src/pages/DeclarationDashboardPage.tsx` | 671 | Dashboard декларации (hero status, issues, docs) |
+| `frontend/src/components/DeclarationKanbanCard.tsx` | 258 | Карточка Kanban с badges обработки |
+| `frontend/src/components/MetricCard.tsx` | 98 | KPI-карточка для дашбордов |
+| `frontend/src/components/PageHeader.tsx` | 75 | Унифицированный заголовок страницы |
+| `frontend/public/screenshots/*.png` | — | 3 скриншота продукта для лэндинга |
+
+**Frontend — переработанные файлы (23 файла):**
 
 | Файл | Изменения |
 |---|---|
-| `services/ai-service/app/services/llm_client.py` | +70: PROVIDER_PROFILES, get_provider_profile(), supports_json_mode(), json_format_kwargs() |
-| `services/ai-service/app/config.py` | Рефакторинг effective_base_url/effective_model → profile-driven |
-| `services/ai-service/app/main.py` | configure_ai → get_provider_profile() |
-| `services/ai-service/app/services/agent_crew.py` | +40: items guard, spec items strip, json_format_kwargs |
-| `services/ai-service/app/services/llm_parser.py` | json_format_kwargs в _llm_call_with_json_fallback и correction |
-| `services/ai-service/app/services/contract_parser.py` | json_format_kwargs ×2 |
-| `services/ai-service/app/services/invoice_parser.py` | json_format_kwargs ×3 |
-| `services/ai-service/app/services/spec_parser.py` | json_format_kwargs |
-| `services/ai-service/app/services/techop_parser.py` | json_format_kwargs |
-| `services/ai-service/app/services/transport_parser.py` | json_format_kwargs |
-| `services/ai-service/app/services/dspy_modules.py` | json_format_kwargs |
-| `services/ai-service/app/services/gtd_reference_extractor.py` | json_format_kwargs |
-| `services/core-api/app/routers/settings.py` | provider_defaults единый словарь, fix gpt-4o |
-| `frontend/src/pages/LandingPage.tsx` | +436/−495: полный редизайн тёмная→светлая тема |
+| `frontend/src/theme.ts` | Полная переработка MUI темы: slate palette, premium overrides |
+| `frontend/src/pages/DeclarationsListPage.tsx` | Kanban-доска, таблица, фильтры — новый визуал |
+| `frontend/src/pages/DeclarationViewPage.tsx` | Sticky header, docs sidebar, summary strip |
+| `frontend/src/pages/DtsViewPage.tsx` | Shell-паттерн: header, status, bottom bar |
+| `frontend/src/pages/BrokerDashboard.tsx` | KPI-карточки, welcome, графики |
+| `frontend/src/pages/LandingPage.tsx` | +436/−495: dark → light тема, скриншоты |
+| `frontend/src/pages/DeclarationEditPage.tsx` | Минорные обновления для совместимости |
+| `frontend/src/pages/ClientsListPage.tsx` | Таблицы, кнопки, тарифные чипы |
+| `frontend/src/pages/ClientDetailPage.tsx` | KPI-карточки, таблицы |
+| `frontend/src/pages/ProfilePage.tsx` | Paper/Card стили |
+| `frontend/src/pages/SettingsPage.tsx` | Статусы сервисов, Paper/Card |
+| `frontend/src/pages/Admin*.tsx` (8 файлов) | Унификация Paper/Card/Chip |
+| `frontend/src/components/AppLayout.tsx` | Белый header с Customs AI |
+| `frontend/src/components/KanbanView.tsx` | Цветовые колонки, новые карточки |
+| `frontend/src/components/StatusChip.tsx` | Расширен для state machine |
+| `frontend/src/components/ConfidenceBadge.tsx` | Унифицированные цвета |
+| `frontend/src/components/HSCodeSuggestions.tsx` | Подсказки ТН ВЭД |
+| `frontend/src/types/index.ts` | Новые типы для state machine |
 
-### Новые файлы
+**Backend — ai-service (12 файлов):**
+
+| Файл | Изменения |
+|---|---|
+| `llm_client.py` | +70: PROVIDER_PROFILES, json_format_kwargs() |
+| `agent_crew.py` | +313: промпты источников по графам, items guard, json_format_kwargs |
+| `config.py`, `main.py` | Profile-driven конфигурация |
+| 7 парсеров | response_format → **json_format_kwargs() |
+| `rules_engine.py` | Расширение правил заполнения |
+
+**Backend — core-api (10 файлов):**
+
+| Файл | Изменения |
+|---|---|
+| `declaration_state_service.py` | 199 строк — state machine для декларации |
+| `workflow.py` | Переведён на state machine |
+| `apply_parsed.py` | Обновлён под новые поля транспорта |
+| `declarations.py`, `declaration_items.py` | Обновлены роутеры |
+| `settings.py` | provider_defaults единый словарь |
+| `models/declaration.py` | Новые поля state machine + транспорт |
+| `schemas/declaration.py`, `schemas/declaration_item.py` | Обновлены схемы |
+
+**Миграции:**
 
 | Файл | Назначение |
 |---|---|
-| `frontend/public/screenshots/dashboard.png` | Скриншот дашборда для лэндинга |
-| `frontend/public/screenshots/declarations.png` | Скриншот списка деклараций для лэндинга |
-| `frontend/public/screenshots/form.png` | Скриншот формы редактирования для лэндинга |
+| `029_declaration_status_model_v2.py` | State machine: state, substatus, assigned_to, priority, sla_deadline |
+| `030_rename_transport_fields.py` | Семантические имена транспортных полей |
+
+**Прочее:**
+
+| Файл | Назначение |
+|---|---|
+| `_mockups/` (~120 файлов) | Vite + Tailwind референсные макеты |
+| `docker-compose.yml` | +3: onnx_cache volume для ChromaDB |
 
 ---
 
