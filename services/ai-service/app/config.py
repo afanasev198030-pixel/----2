@@ -79,19 +79,21 @@ class Settings(BaseSettings):
 
     @property
     def effective_base_url(self) -> str:
-        """Return the base URL for the configured provider."""
+        """Return the base URL for the configured provider (profile-driven)."""
         if self.LLM_BASE_URL:
             return self.LLM_BASE_URL
-        if self.LLM_PROVIDER == "openai":
-            return "https://api.openai.com/v1"
-        if self.LLM_PROVIDER == "cloud_ru":
-            return "https://foundation-models.api.cloud.ru/v1"
-        return "https://api.deepseek.com"
+        from app.services.llm_client import get_provider_profile
+        return get_provider_profile(self.LLM_PROVIDER)["base_url"]
 
     @property
     def effective_model(self) -> str:
-        """Return the best available model name."""
-        return self.LLM_MODEL or self.OPENAI_MODEL or "deepseek-chat"
+        """Return the best available model name (profile-driven)."""
+        if self.LLM_MODEL:
+            return self.LLM_MODEL
+        if self.OPENAI_MODEL:
+            return self.OPENAI_MODEL
+        from app.services.llm_client import get_provider_profile
+        return get_provider_profile(self.LLM_PROVIDER)["default_model"]
 
     model_config = {
         "env_file": ".env",

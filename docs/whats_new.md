@@ -2,6 +2,108 @@
 
 ---
 
+## Provider Profiles, Landing Page, Items Guard
+
+**Дата:** 2026-03-28
+**Ветка:** `feature/provider-profiles-landing`
+
+### Обзор
+
+Централизация конфигурации LLM-провайдеров (единый реестр PROVIDER_PROFILES), совместимость JSON mode с Cloud.ru, полный редизайн лэндинга (светлая профессиональная тема со скриншотами продукта), защита от расхождения количества товарных позиций между LLM и инвойсом.
+
+---
+
+### 1. Provider Profiles — единый реестр LLM-провайдеров
+
+**Проблема**: информация о провайдерах (base_url, модель по умолчанию, поддержка JSON mode) была размазана по 10+ файлам в виде повторяющихся словарей `model_defaults`, `url_defaults`, `base_url_map`, `model_map`. Добавление нового провайдера требовало правок в 5–7 файлах, и каждый мог забыть обновить один из словарей.
+
+**Что такое Provider Profile**: это словарь с характеристиками LLM-провайдера — адрес API (`base_url`), модель по умолчанию (`default_model`), модель для рассуждений (`reasoning_model`) и флаг поддержки JSON-ответов (`supports_json_mode`). Все провайдеры (DeepSeek, OpenAI, Cloud.ru) описаны в одном месте.
+
+**Решение**: в `llm_client.py` добавлен словарь `PROVIDER_PROFILES` — единственный источник правды:
+
+| Провайдер | base_url | default_model | supports_json_mode |
+|-----------|----------|---------------|-------------------|
+| deepseek | api.deepseek.com | deepseek-chat | да |
+| openai | api.openai.com/v1 | gpt-4o | да |
+| cloud_ru | foundation-models.api.cloud.ru/v1 | openai/gpt-oss-120b | нет |
+
+Добавлены helper-функции:
+- `get_provider_profile(provider)` — возвращает профиль по имени провайдера
+- `supports_json_mode()` — проверяет, поддерживает ли текущий провайдер `response_format=json_object`
+- `json_format_kwargs()` — возвращает `{"response_format": {"type": "json_object"}}` для совместимых провайдеров, пустой словарь для остальных
+
+Все потребители обновлены:
+- `config.py` — `effective_base_url` и `effective_model` используют `get_provider_profile()` вместо хардкода
+- `main.py` — `configure_ai` endpoint берёт дефолты из профиля
+- `settings.py` (core-api) — `provider_defaults` — единый словарь вместо двух отдельных маппингов; исправлена дефолтная модель OpenAI с `gpt-4o-mini` на `gpt-4o`
+
+### 2. JSON mode — совместимость с Cloud.ru
+
+**Проблема**: все LLM-вызовы в парсерах использовали `response_format={"type": "json_object"}`. Cloud.ru (gpt-oss-120b) не поддерживает этот параметр и возвращал ошибку. Система падала или деградировала при переключении на Cloud.ru.
+
+**Что такое JSON mode**: это параметр API OpenAI, который заставляет модель гарантированно возвращать валидный JSON (а не текст с пояснениями). Не все провайдеры его поддерживают.
+
+**Решение**: во всех 10 парсерах/модулях `response_format={"type": "json_object"}` заменён на `**json_format_kwargs()`. Для DeepSeek и OpenAI — работает как раньше. Для Cloud.ru — JSON запрашивается только через промпт (без параметра `response_format`), модель отвечает JSON благодаря инструкции в системном сообщении.
+
+Затронутые парсеры: `llm_parser.py`, `agent_crew.py`, `contract_parser.py`, `invoice_parser.py`, `spec_parser.py`, `techop_parser.py`, `transport_parser.py`, `dspy_modules.py`, `gtd_reference_extractor.py`.
+
+### 3. Items Guard — защита количества позиций
+
+**Проблема**: LLM при компиляции декларации мог создать позиции из спецификации вместо инвойса. Если в инвойсе 1 товар, а в спецификации 5 — LLM возвращал 5 позиций, задваивая данные.
+
+**Решение** (три уровня защиты):
+
+1. **Промпт**: усилены инструкции — спецификация ЯВНО отмечена как НЕ источник товарных позиций, только для items_count/incoterms/delivery_place. Добавлено правило: количество позиций СТРОГО совпадает с инвойсом.
+
+2. **Контекст**: из данных спецификации, передаваемых в LLM, убраны отдельные `items` — остаются только `items_count` и итоговые суммы. LLM физически не видит товарные позиции спецификации.
+
+3. **Пост-валидация**: после ответа LLM проверяется `len(items) == len(invoice.items)`. При расхождении — принудительная замена на позиции из инвойса с логированием предупреждения.
+
+### 4. Редизайн лэндинга
+
+**Проблема**: лэндинг использовал тёмную «кибер»-тему с неоновыми свечениями (GlowOrb, shimmer, pulse-анимации). Визуально не соответствовал профессиональному B2B-продукту для таможенных брокеров.
+
+**Решение**: полная переработка визуальной темы:
+
+| До | После |
+|----|-------|
+| Тёмный фон `#0B1120` | Светлый `#f8fafc` |
+| Неоновый cyan `#00D4FF` | Деловой синий `#2563eb` |
+| GlowOrb, pulse, shimmer | Чистые карточки, минимальный float |
+| Абстрактные описания | Скриншоты реального продукта |
+| ClickAwayListener, GlassCard | LandingCard с border и тенью |
+
+Добавлены 3 скриншота продукта (`/screenshots/dashboard.png`, `declarations.png`, `form.png`) в компоненте BrowserFrame — пользователь видит реальный интерфейс до регистрации. Новые MUI-иконки: `DescriptionOutlined`, `Search`, `CalculateOutlined`, `ShieldOutlined`, `ViewKanbanOutlined`, `FolderOpenOutlined`, `Business`, `Public`, `LocalShipping`, `ArrowForward`.
+
+### Затронутые файлы (14 файлов изменено, 3 новых)
+
+| Файл | Изменения |
+|---|---|
+| `services/ai-service/app/services/llm_client.py` | +70: PROVIDER_PROFILES, get_provider_profile(), supports_json_mode(), json_format_kwargs() |
+| `services/ai-service/app/config.py` | Рефакторинг effective_base_url/effective_model → profile-driven |
+| `services/ai-service/app/main.py` | configure_ai → get_provider_profile() |
+| `services/ai-service/app/services/agent_crew.py` | +40: items guard, spec items strip, json_format_kwargs |
+| `services/ai-service/app/services/llm_parser.py` | json_format_kwargs в _llm_call_with_json_fallback и correction |
+| `services/ai-service/app/services/contract_parser.py` | json_format_kwargs ×2 |
+| `services/ai-service/app/services/invoice_parser.py` | json_format_kwargs ×3 |
+| `services/ai-service/app/services/spec_parser.py` | json_format_kwargs |
+| `services/ai-service/app/services/techop_parser.py` | json_format_kwargs |
+| `services/ai-service/app/services/transport_parser.py` | json_format_kwargs |
+| `services/ai-service/app/services/dspy_modules.py` | json_format_kwargs |
+| `services/ai-service/app/services/gtd_reference_extractor.py` | json_format_kwargs |
+| `services/core-api/app/routers/settings.py` | provider_defaults единый словарь, fix gpt-4o |
+| `frontend/src/pages/LandingPage.tsx` | +436/−495: полный редизайн тёмная→светлая тема |
+
+### Новые файлы
+
+| Файл | Назначение |
+|---|---|
+| `frontend/public/screenshots/dashboard.png` | Скриншот дашборда для лэндинга |
+| `frontend/public/screenshots/declarations.png` | Скриншот списка деклараций для лэндинга |
+| `frontend/public/screenshots/form.png` | Скриншот формы редактирования для лэндинга |
+
+---
+
 ## Этап 1.5: Секреты в prod-compose
 
 **Дата:** 2026-03-22

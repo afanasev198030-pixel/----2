@@ -30,7 +30,7 @@ def parse(file_bytes: bytes, filename: str) -> dict:
         if not settings.has_llm:
             return result
 
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         client = get_llm_client(operation="techop_llm_parse")
 
         resp = client.chat.completions.create(
@@ -54,7 +54,7 @@ products: массив товаров, каждый:
             ],
             temperature=0,
             max_tokens=3000,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
 
         text = strip_code_fences(resp.choices[0].message.content)

@@ -11,7 +11,7 @@ import re
 import structlog
 
 from app.services.llm_json import strip_code_fences
-from app.services.llm_client import get_llm_client, get_model
+from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
 from app.services.ocr_service import extract_text
 
 logger = structlog.get_logger()
@@ -104,7 +104,7 @@ def extract_gtd_reference(file_bytes: bytes, filename: str) -> dict:
         ],
         temperature=0,
         max_tokens=4000,
-        response_format={"type": "json_object"},
+        **json_format_kwargs(),
     )
 
     raw = strip_code_fences(response.choices[0].message.content)

@@ -304,7 +304,7 @@ def _llm_enrich_contract(raw_text: str, result: ContractParsed) -> ContractParse
             return result
 
         import json as _json
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         client = get_llm_client(operation="contract_llm_enrich")
 
         resp = client.chat.completions.create(
@@ -339,7 +339,7 @@ JSON:"""},
             ],
             temperature=0,
             max_tokens=2000,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
         text = strip_code_fences(resp.choices[0].message.content)
         data = _json.loads(text)
@@ -459,7 +459,7 @@ def parse_debug(raw_text: str, filename: str) -> dict:
             debug["llm"] = {"skipped": True, "skipped_reason": "no_llm_configured"}
         else:
             import json as _json
-            from app.services.llm_client import get_llm_client, get_model
+            from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
 
             system_msg = "Извлеки реквизиты сторон из контракта/договора. Ответь ТОЛЬКО валидным JSON."
             sliced_text = _smart_slice_contract(raw_text, max_chars=16000)
@@ -494,7 +494,7 @@ JSON:"""
                 ],
                 temperature=0,
                 max_tokens=2000,
-                response_format={"type": "json_object"},
+                **json_format_kwargs(),
             )
             debug["llm"]["duration_ms"] = int((_time.monotonic() - t0) * 1000)
             raw_response = resp.choices[0].message.content or ""

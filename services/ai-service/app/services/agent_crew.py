@@ -724,7 +724,7 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
         if not get_settings().has_llm:
             return result
         import json as _json
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         client = get_llm_client(operation="transport_match_llm")
         resp = client.chat.completions.create(
             model=get_model(),
@@ -782,7 +782,7 @@ JSON:"""},
             ],
             temperature=0,
             max_tokens=400,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
         data = _json.loads(resp.choices[0].message.content.strip())
         result["vehicle_id"] = data.get("vehicle_id")
@@ -1045,7 +1045,7 @@ JSON: {{"matches": [...]}}"""},
                 return parsed_docs
 
             import json as _json
-            from app.services.llm_client import get_llm_client, get_model
+            from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
 
             def _first_filename(doc_type: str) -> str | None:
                 for doc in docs:
@@ -1124,7 +1124,7 @@ JSON:"""},
                 ],
                 temperature=0,
                 max_tokens=3000,
-                response_format={"type": "json_object"},
+                **json_format_kwargs(),
             )
 
             text = strip_code_fences(resp.choices[0].message.content)
@@ -2814,7 +2814,7 @@ JSON:"""},
         """
         import json as _json
         from app.config import get_settings as _get_settings
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         from app.services.rules_engine import get_filling_rules_text
 
         settings = _get_settings()
@@ -2832,6 +2832,11 @@ JSON:"""},
                 cleaned = {k: v for k, v in data.items()
                            if v is not None and k not in ("raw_text", "_cache_type", "_filename")
                            and not (isinstance(k, str) and k.startswith("_"))}
+                if doc_key == "specification" and cleaned:
+                    cleaned.pop("items", None)
+                    logger.info("spec_items_stripped_for_llm",
+                                msg="Removed individual spec items from LLM context — "
+                                    "only items_count/totals sent")
                 if cleaned:
                     docs_ctx[doc_key] = cleaned
             elif isinstance(data, list):
@@ -2882,11 +2887,15 @@ JSON:"""},
             "- Графа 11 (trading_partner_country): страна ПРОДАВЦА по контракту (contract.seller.country_code).\n\n"
             "ИСТОЧНИКИ ТОВАРНЫХ ПОЗИЦИЙ (items[]):\n"
             "- items[] формируются ТОЛЬКО из invoice (товарный инвойс). "
-            "Packing list — это источник весов (gross_weight, net_weight) и упаковки, "
-            "но НЕ источник товарных позиций. НЕ создавай позиции из packing list!\n"
+            "НЕ создавай позиции из specification, packing list или любого другого документа!\n"
+            "- Specification (спецификация) — источник ТОЛЬКО для items_count (для сверки), "
+            "incoterms и delivery_place. Спецификация НЕ источник товарных позиций!\n"
+            "- Packing list — источник весов (gross_weight, net_weight) и упаковки, "
+            "но НЕ источник товарных позиций.\n"
             "- Если один и тот же товар присутствует и в invoice, и в packing list — "
             "это ОДНА позиция, а не две. Бери описание/цену из invoice, веса из packing list.\n"
-            "- Количество позиций в items[] должно совпадать с количеством товаров в инвойсе.\n\n"
+            "- Количество позиций в items[] должно СТРОГО совпадать с количеством товаров в инвойсе. "
+            "Если в инвойсе 1 товар — в items[] должна быть 1 позиция, даже если в спецификации их больше.\n\n"
             "ОБРАБОТКА КОНФЛИКТОВ:\n"
             "- Если одно и то же поле содержит разные значения в разных документах, "
             "используй приоритеты источников для конкретной графы (см. выше). "
@@ -2985,7 +2994,7 @@ JSON:"""
                 ],
                 temperature=0,
                 max_tokens=6000,
-                response_format={"type": "json_object"},
+                **json_format_kwargs(),
             )
             raw = strip_code_fences(resp.choices[0].message.content)
             finish_reason = resp.choices[0].finish_reason
@@ -3000,7 +3009,7 @@ JSON:"""
                     ],
                     temperature=0,
                     max_tokens=10000,
-                    response_format={"type": "json_object"},
+                    **json_format_kwargs(),
                 )
                 raw = strip_code_fences(resp.choices[0].message.content)
 
@@ -3078,6 +3087,17 @@ JSON:"""
         inv_data = self._to_dict(parsed_docs.get("invoice"))
         packing_data = self._to_dict(parsed_docs.get("packing"))
         pl_items = (packing_data.get("items") or []) if packing_data else []
+
+        inv_items = inv_data.get("items", []) if inv_data else []
+        if inv_items and len(items) != len(inv_items):
+            logger.warning(
+                "items_count_mismatch_llm_vs_invoice",
+                llm_count=len(items),
+                invoice_count=len(inv_items),
+                msg="LLM вернул другое количество позиций, чем в инвойсе — "
+                    "принудительно используем позиции из инвойса",
+            )
+            items = list(inv_items)
 
         _SKIP_ITEM = re.compile(
             r'\b(freight|shipping|insurance|handling|delivery\s*fee|transport.*fee|'

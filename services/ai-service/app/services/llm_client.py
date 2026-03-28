@@ -1,7 +1,10 @@
 """
 Unified LLM client factory.
-Supports DeepSeek, OpenAI, Cloud.ru and custom OpenAI-compatible providers.
+Supports DeepSeek, OpenAI, Cloud.ru and any OpenAI-compatible provider.
 All use the same openai Python SDK — just different base_url.
+
+Provider capabilities are declared in PROVIDER_PROFILES — adding a new
+provider is a single dict entry, no code changes in parsers needed.
 """
 import openai
 import structlog
@@ -10,6 +13,50 @@ from app.services.usage_tracker import TrackedOpenAIClient
 
 logger = structlog.get_logger()
 
+# ---------------------------------------------------------------------------
+# Provider profiles — single source of truth for provider capabilities.
+# To add a new provider: add an entry here. All parsers adapt automatically.
+# ---------------------------------------------------------------------------
+PROVIDER_PROFILES: dict[str, dict] = {
+    "deepseek": {
+        "base_url": "https://api.deepseek.com",
+        "default_model": "deepseek-chat",
+        "reasoning_model": "deepseek-reasoner",
+        "supports_json_mode": True,
+    },
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "default_model": "gpt-4o",
+        "reasoning_model": "gpt-4o",
+        "supports_json_mode": True,
+    },
+    "cloud_ru": {
+        "base_url": "https://foundation-models.api.cloud.ru/v1",
+        "default_model": "openai/gpt-oss-120b",
+        "reasoning_model": "openai/gpt-oss-120b",
+        "supports_json_mode": False,
+    },
+}
+
+_DEFAULT_PROFILE: dict = {
+    "base_url": "https://api.openai.com/v1",
+    "default_model": "gpt-4o",
+    "reasoning_model": "gpt-4o",
+    "supports_json_mode": True,
+}
+
+
+def get_provider_profile(provider: str | None = None) -> dict:
+    """Return capabilities profile for the given (or current) provider."""
+    if provider is None:
+        from app.config import get_settings
+        provider = get_settings().LLM_PROVIDER
+    return PROVIDER_PROFILES.get(provider.lower(), _DEFAULT_PROFILE)
+
+
+# ---------------------------------------------------------------------------
+# Client factory
+# ---------------------------------------------------------------------------
 
 def get_llm_client(
     api_key: str = None,
@@ -54,7 +101,26 @@ def get_model() -> str:
 
 
 def get_reasoning_model() -> str:
-    """Return the reasoning model (DeepSeek R1) or fallback to chat model."""
+    """Return the reasoning model or fallback to chat model."""
     from app.config import get_settings
     s = get_settings()
     return s.LLM_REASONING_MODEL or s.effective_model
+
+
+# ---------------------------------------------------------------------------
+# Capability helpers — all parsers use these instead of hardcoding
+# ---------------------------------------------------------------------------
+
+def supports_json_mode() -> bool:
+    """Check if current LLM provider supports response_format=json_object."""
+    return get_provider_profile()["supports_json_mode"]
+
+
+def json_format_kwargs() -> dict:
+    """Return response_format kwarg for providers that support it, empty dict otherwise.
+
+    Usage: client.chat.completions.create(..., **json_format_kwargs())
+    """
+    if supports_json_mode():
+        return {"response_format": {"type": "json_object"}}
+    return {}

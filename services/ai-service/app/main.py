@@ -168,20 +168,19 @@ async def configure_ai(data: dict):
     from app.config import get_settings
     import os
 
+    from app.services.llm_client import get_provider_profile
+
     api_key = data.get("api_key") or data.get("openai_api_key", "")
     model = data.get("model") or data.get("openai_model", "")
     base_url = data.get("base_url", "")
     provider = (data.get("provider") or os.environ.get("LLM_PROVIDER", "deepseek")).lower()
     project_id = data.get("project_id", "")
 
-    if provider == "deepseek" and (not model or model.startswith("gpt-")):
-        model = "deepseek-chat"
-    if not model:
-        model_defaults = {"deepseek": "deepseek-chat", "cloud_ru": "openai/gpt-oss-120b"}
-        model = model_defaults.get(provider, "gpt-4o")
+    profile = get_provider_profile(provider)
+    if not model or (provider != os.environ.get("LLM_PROVIDER", "") and model != profile["default_model"]):
+        model = model or profile["default_model"]
     if not base_url:
-        url_defaults = {"deepseek": "https://api.deepseek.com", "cloud_ru": "https://foundation-models.api.cloud.ru/v1"}
-        base_url = url_defaults.get(provider, "https://api.openai.com/v1")
+        base_url = profile["base_url"]
 
     if api_key:
         os.environ["LLM_API_KEY"] = api_key
