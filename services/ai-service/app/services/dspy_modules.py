@@ -570,7 +570,7 @@ class HSCodeClassifier:
             from app.config import get_settings
             settings = get_settings()
             if settings.has_llm:
-                from app.services.llm_client import get_llm_client, get_model
+                from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
                 llm = get_llm_client(operation="hs_classify_llm")
                 context_block = f"\n\nКонтекст декларации (другие позиции):\n{context}" if context else ""
                 kind_hint = {
@@ -605,7 +605,7 @@ class HSCodeClassifier:
                     ],
                     temperature=0,
                     max_tokens=300,
-                    response_format={"type": "json_object"},
+                    **json_format_kwargs(),
                 )
                 text = strip_code_fences(resp.choices[0].message.content)
                 data = json.loads(text)

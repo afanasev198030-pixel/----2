@@ -67,7 +67,7 @@ def parse(file_bytes: bytes, filename: str) -> dict:
             logger.info("transport_parsed_regex_only", filename=filename, awb=result.get("awb_number"))
             return result
 
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         client = get_llm_client(operation="transport_doc_llm_parse")
 
         resp = client.chat.completions.create(
@@ -100,7 +100,7 @@ JSON:"""},
             ],
             temperature=0,
             max_tokens=800,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
 
         text = strip_code_fences(resp.choices[0].message.content)

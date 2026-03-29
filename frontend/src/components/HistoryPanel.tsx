@@ -12,26 +12,19 @@ interface HistoryPanelProps {
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: 'Черновик',
-  checking_lvl1: 'Проверка ур. 1',
-  checking_lvl2: 'Проверка ур. 2',
-  final_check: 'Финальная проверка',
-  signed: 'Подписана',
+  new: 'Новая',
+  requires_attention: 'Требует внимания',
+  ready_to_send: 'Готово к отправке',
   sent: 'Отправлена',
-  registered: 'Зарегистрирована',
-  docs_requested: 'Нужны документы',
-  inspection: 'Досмотр',
-  released: 'Выпущена',
-  rejected: 'Отклонена',
 };
 
 const ACTION_CONFIG: Record<string, { label: string; color: string; icon: ReactNode }> = {
-  create: { label: 'Создана', color: '#4caf50', icon: <Add sx={{ fontSize: 14 }} /> },
-  update: { label: 'Обновлена', color: '#2196f3', icon: <Edit sx={{ fontSize: 14 }} /> },
-  apply_parsed: { label: 'AI заполнение', color: '#9c27b0', icon: <AutoAwesome sx={{ fontSize: 14 }} /> },
-  status_change: { label: 'Смена статуса', color: '#ff9800', icon: <CheckCircle sx={{ fontSize: 14 }} /> },
-  duplicate: { label: 'Дублирована', color: '#607d8b', icon: <Add sx={{ fontSize: 14 }} /> },
-  pre_send_gate_override: { label: 'Override pre-send', color: '#d32f2f', icon: <WarningAmber sx={{ fontSize: 14 }} /> },
+  create: { label: 'Создана', color: '#059669', icon: <Add sx={{ fontSize: 14 }} /> },
+  update: { label: 'Обновлена', color: '#2563eb', icon: <Edit sx={{ fontSize: 14 }} /> },
+  apply_parsed: { label: 'AI заполнение', color: '#8b5cf6', icon: <AutoAwesome sx={{ fontSize: 14 }} /> },
+  status_change: { label: 'Смена статуса', color: '#d97706', icon: <CheckCircle sx={{ fontSize: 14 }} /> },
+  duplicate: { label: 'Дублирована', color: '#64748b', icon: <Add sx={{ fontSize: 14 }} /> },
+  pre_send_gate_override: { label: 'Override pre-send', color: '#dc2626', icon: <WarningAmber sx={{ fontSize: 14 }} /> },
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -135,7 +128,7 @@ const HistoryPanel = ({ declarationId }: HistoryPanelProps) => {
       {visibleLogs.map((log, idx) => {
         const config = ACTION_CONFIG[log.action] || { label: log.action, color: '#999', icon: <Edit sx={{ fontSize: 14 }} /> };
         return (
-          <Box key={log.id || idx} sx={{ display: 'flex', gap: 1.5, mb: 1.5, pb: 1.5, borderBottom: idx < visibleLogs.length - 1 ? '1px solid #eee' : 'none' }}>
+          <Box key={log.id || idx} sx={{ display: 'flex', gap: 1.5, mb: 1.5, pb: 1.5, borderBottom: idx < visibleLogs.length - 1 ? '1px solid rgba(241,245,249,1)' : 'none' }}>
             <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: config.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', flexShrink: 0 }}>
               {config.icon}
             </Box>

@@ -4,9 +4,12 @@ services:
       context: ./services/bot-service
     container_name: customs-bot-service
     restart: unless-stopped
+    profiles:
+      - bot
     env_file:
       - .env
     environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - REDIS_URL=redis://redis:6379/1
       - CORE_API_URL=http://core-api:8001
       - FILE_SERVICE_URL=http://file-service:8002
@@ -189,6 +192,7 @@ services:
     volumes:
       - ./services/ai-service/app:/app/app
       - ./docs:/app/docs:ro
+      - onnx_cache:/root/.cache/chroma/onnx_models
     depends_on:
       core-api:
         condition: service_healthy
@@ -308,6 +312,7 @@ services:
     volumes:
       - ./services/ai-service/app:/app/app
       - ./docs:/app/docs:ro
+      - onnx_cache:/root/.cache/chroma/onnx_models
     depends_on:
       redis:
         condition: service_healthy
@@ -480,3 +485,4 @@ volumes:
   miniodata:
   chromadata:
   phoenixdata:
+  onnx_cache:

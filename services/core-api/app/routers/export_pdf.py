@@ -160,13 +160,13 @@ def _build_dt1(decl, items, sender, receiver, declarant, financial) -> str:
     </tr>
     <!-- 18 / 19 / 20 -->
     <tr>
-      <td colspan="2"><span class="lbl">18 </span>Идент. и страна регистрации трансп. средства<br><b>{_f(decl.transport_at_border)}</b></td>
+      <td colspan="2"><span class="lbl">18 </span>Идент. и страна регистрации трансп. средства<br><b>{_f(decl.departure_vehicle_info)}</b></td>
       <td><span class="lbl">19 </span>Конт.<br><b>{_f(decl.container_info) or '0'}</b></td>
       <td><span class="lbl">20 </span>Условия поставки<br><b>{_f(decl.incoterms_code)} {_f(decl.delivery_place)}</b></td>
     </tr>
     <!-- 21 / 22 / 23 / 24 -->
     <tr>
-      <td colspan="2"><span class="lbl">21 </span>Идент. активного транспортного средства на границе<br><b>{_f(decl.transport_on_border_id)}</b></td>
+      <td colspan="2"><span class="lbl">21 </span>Идент. активного транспортного средства на границе<br><b>{_f(decl.border_vehicle_info)}</b></td>
       <td><span class="lbl">22 </span>Валюта и общая сумма по счету<br><b>{_f(decl.currency_code)} {_num(decl.total_invoice_value)}</b><br><span class="lbl">23 </span>Курс валюты<br><b>{_num(decl.exchange_rate, 4)}</b></td>
       <td><span class="lbl">24 </span>Характер сделки<br><b>{_f(decl.deal_nature_code)}{('/' + decl.deal_specifics_code) if decl.deal_specifics_code else ''}</b></td>
     </tr>

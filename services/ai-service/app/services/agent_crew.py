@@ -724,7 +724,7 @@ def _parse_transport_doc_llm(text: str, filename: str) -> dict:
         if not get_settings().has_llm:
             return result
         import json as _json
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         client = get_llm_client(operation="transport_match_llm")
         resp = client.chat.completions.create(
             model=get_model(),
@@ -782,7 +782,7 @@ JSON:"""},
             ],
             temperature=0,
             max_tokens=400,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
         data = _json.loads(resp.choices[0].message.content.strip())
         result["vehicle_id"] = data.get("vehicle_id")
@@ -1045,7 +1045,7 @@ JSON: {{"matches": [...]}}"""},
                 return parsed_docs
 
             import json as _json
-            from app.services.llm_client import get_llm_client, get_model
+            from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
 
             def _first_filename(doc_type: str) -> str | None:
                 for doc in docs:
@@ -1124,7 +1124,7 @@ JSON:"""},
                 ],
                 temperature=0,
                 max_tokens=3000,
-                response_format={"type": "json_object"},
+                **json_format_kwargs(),
             )
 
             text = strip_code_fences(resp.choices[0].message.content)
@@ -1371,12 +1371,12 @@ JSON:"""},
         result = self._post_process_compilation(llm_result, parsed_docs)
 
         # Field normalization for ApplyParsedRequest compatibility
-        if result.get("transport_country") and not result.get("transport_country_code"):
-            result["transport_country_code"] = result["transport_country"]
         if result.get("trading_partner_country") is None:
             seller_data = result.get("seller")
             if seller_data and isinstance(seller_data, dict) and seller_data.get("country_code"):
                 result["trading_partner_country"] = seller_data["country_code"]
+        if result.get("financial_responsible") and not result.get("responsible_person"):
+            result["responsible_person"] = result["financial_responsible"]
 
         # ── Step 5: validate_declaration() ──
         self._progress("validating", "Валидация декларации...", 70)
@@ -1733,23 +1733,19 @@ JSON:"""},
             return code
         # Графа 16 (header-level origin) вычисляется после сбора items (ниже)
 
-        # Источник items: ИНВОЙС НА ТОВАРЫ (приоритет) > Packing List.
-        # Спецификация НЕ является источником позиций для декларации —
-        # она содержит весь заказ, а на таможню едет только то, что в инвойсе/PL.
-        # Спецификация используется только для перекрёстной сверки.
+        # Источник items: ТОЛЬКО инвойс на товары.
+        # Packing List — источник весов/упаковки, но НЕ источник позиций (гр. 42).
+        # Спецификация — только для перекрёстной сверки.
         inv_items = inv.get("items", [])
         packing_items = packing.get("items", []) if packing else []
 
         if inv_items:
             raw_items = inv_items
             items_source = "invoice"
-        elif packing_items:
-            raw_items = packing_items
-            items_source = "packing_list"
         else:
             raw_items = []
             items_source = "none"
-            logger.warning("no_items_found", msg="Нет позиций в инвойсе и PL — загрузите инвойс на товары")
+            logger.warning("no_items_found", msg="Нет позиций в инвойсе — загрузите инвойс на товары")
 
         logger.info("items_source", source=items_source, count=len(raw_items))
 
@@ -2818,7 +2814,7 @@ JSON:"""},
         """
         import json as _json
         from app.config import get_settings as _get_settings
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         from app.services.rules_engine import get_filling_rules_text
 
         settings = _get_settings()
@@ -2836,6 +2832,11 @@ JSON:"""},
                 cleaned = {k: v for k, v in data.items()
                            if v is not None and k not in ("raw_text", "_cache_type", "_filename")
                            and not (isinstance(k, str) and k.startswith("_"))}
+                if doc_key == "specification" and cleaned:
+                    cleaned.pop("items", None)
+                    logger.info("spec_items_stripped_for_llm",
+                                msg="Removed individual spec items from LLM context — "
+                                    "only items_count/totals sent")
                 if cleaned:
                     docs_ctx[doc_key] = cleaned
             elif isinstance(data, list):
@@ -2874,9 +2875,31 @@ JSON:"""},
             "СТРОГО следуй правилам: приоритеты источников, форматы, специальные значения.\n"
             "Ответь ТОЛЬКО валидным JSON. Если данных нет — null. Не придумывай данные.\n"
             "НЕ делай арифметические расчёты (суммирование, распределение весов) — это сделает Python.\n\n"
+            "ПРИОРИТЕТЫ ИСТОЧНИКОВ ПО ГРАФАМ (СТРОГО СОБЛЮДАЙ):\n"
+            "- Графа 2 (seller / отправитель): ТОЛЬКО транспортные источники в порядке: "
+            "1) transport (AWB/CMR/B/L) → shipper_name, "
+            "2) application_statement → forwarding_agent или shipper, "
+            "3) transport_invoice → shipper_name. "
+            "Товарный инвойс (invoice.seller) и контракт (contract.seller) — это стороны СДЕЛКИ (гр.11), "
+            "а НЕ грузоотправитель. Использовать их для seller ЗАПРЕЩЕНО.\n"
+            "- Графа 14 (buyer / декларант): контракт > инвойс.\n"
+            "- Графа 22 (currency / валюта): ТОЛЬКО из контракта.\n"
+            "- Графа 11 (trading_partner_country): страна ПРОДАВЦА по контракту (contract.seller.country_code).\n\n"
+            "ИСТОЧНИКИ ТОВАРНЫХ ПОЗИЦИЙ (items[]):\n"
+            "- items[] формируются ТОЛЬКО из invoice (товарный инвойс). "
+            "НЕ создавай позиции из specification, packing list или любого другого документа!\n"
+            "- Specification (спецификация) — источник ТОЛЬКО для items_count (для сверки), "
+            "incoterms и delivery_place. Спецификация НЕ источник товарных позиций!\n"
+            "- Packing list — источник весов (gross_weight, net_weight) и упаковки, "
+            "но НЕ источник товарных позиций.\n"
+            "- Если один и тот же товар присутствует и в invoice, и в packing list — "
+            "это ОДНА позиция, а не две. Бери описание/цену из invoice, веса из packing list.\n"
+            "- Количество позиций в items[] должно СТРОГО совпадать с количеством товаров в инвойсе. "
+            "Если в инвойсе 1 товар — в items[] должна быть 1 позиция, даже если в спецификации их больше.\n\n"
             "ОБРАБОТКА КОНФЛИКТОВ:\n"
-            "- Если одно и то же поле содержит разные значения в разных документах, выбери значение "
-            "из источника с ВЫСШИМ приоритетом (контракт > инвойс > упаковочный лист > транспортная накладная).\n"
+            "- Если одно и то же поле содержит разные значения в разных документах, "
+            "используй приоритеты источников для конкретной графы (см. выше). "
+            "Для полей без специального приоритета: контракт > инвойс > упаковочный лист > транспортная накладная.\n"
             "- Добавь конфликт в issues[] с описанием: какие значения в каких документах.\n"
             "- Формат issue: {\"id\": \"conflict_<field>\", \"severity\": \"warning\", \"message\": \"описание\"}\n\n"
             "ГРАФА 20 (УСЛОВИЯ ПОСТАВКИ):\n"
@@ -2905,8 +2928,8 @@ JSON:"""},
 ФОРМАТ ОТВЕТА — JSON:
 {{
   "type_code": "ИМ40 или другой код (гр.1)",
-  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
-  "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},
+  "seller": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.2 ОТПРАВИТЕЛЬ: ТОЛЬКО из транспортных источников! 1) transport.shipper_name, 2) application_statement.forwarding_agent/shipper, 3) transport_invoice.shipper_name. НЕ из invoice.seller и НЕ из contract.seller!
+  "buyer": {{"name": "...", "country_code": "ISO2", "address": "...", "inn": "...", "kpp": "...", "ogrn": "..."}},  // гр.14 ПОКУПАТЕЛЬ/ДЕКЛАРАНТ: name и address ОБЯЗАТЕЛЬНО на русском языке!
   "declarant": {{"name": "ТОЛЬКО НА РУССКОМ", "address": "ТОЛЬКО НА РУССКОМ", "inn": "...", "kpp": "...", "ogrn": "..."}},
   "buyer_matches_declarant": true,
   "consignee": null,
@@ -2916,24 +2939,24 @@ JSON:"""},
   "country_dispatch": "ISO2 (гр.15)",
   "country_origin": "ISO2 или РАЗНЫЕ/НЕИЗВЕСТНО/ЕВРОСОЮЗ (гр.16)",
   "country_destination": "ISO2 (гр.17, дефолт RU)",
-  "transport_vehicle_departure": "рег.номер/рейс/судно (гр.18)",
-  "transport_vehicle_departure_country": "ISO2 или 00/99 (гр.18)",
+  "departure_vehicle_info": "рег.номер/рейс/судно (гр.18)",
+  "departure_vehicle_country": "ISO2 или 00/99 (гр.18)",
   "container": true/false,
   "incoterms": "3-буквенный код Инкотермс (гр.20): EXW/FCA/FOB/CIF и т.д.",
   "delivery_place": "город поставки из спецификации или контракта (гр.20)",
-  "transport_vehicle_border": "рейс/номер/судно (гр.21)",
-  "transport_vehicle_border_country": "ISO2 или 00/99 (гр.21)",
+  "border_vehicle_info": "рейс/номер/судно (гр.21)",
+  "border_vehicle_country": "ISO2 или 00/99 (гр.21)",
   "currency": "ISO4217 (гр.22) — ТОЛЬКО из контракта",
   "deal_nature_code": "3-значный код (гр.24, дефолт 010)",
   "deal_specifics_code": "2-значный код (гр.24, дефолт 01)",
   "transport_type": "10/20/30/40 (гр.25)",
-  "transport_type_internal": "10/20/30/40 (гр.26)",
+  "transport_type_inland": "10/20/30/40 (гр.26)",
   "special_features_code": "код особенности или null (гр.7)",
   "contract_number": "номер контракта",
   "contract_date": "дата контракта",
   "invoice_number": "номер инвойса",
   "invoice_date": "дата инвойса",
-  "awb_number": "номер AWB/CMR/B-L",
+  "transport_doc_number": "номер AWB/CMR/B-L",
   "destination_airport": "IATA код аэропорта назначения (для гр.29 lookup)",
   "total_packages": число (гр.6),
   "package_type": "тип упаковки",
@@ -2971,7 +2994,7 @@ JSON:"""
                 ],
                 temperature=0,
                 max_tokens=6000,
-                response_format={"type": "json_object"},
+                **json_format_kwargs(),
             )
             raw = strip_code_fences(resp.choices[0].message.content)
             finish_reason = resp.choices[0].finish_reason
@@ -2986,7 +3009,7 @@ JSON:"""
                     ],
                     temperature=0,
                     max_tokens=10000,
-                    response_format={"type": "json_object"},
+                    **json_format_kwargs(),
                 )
                 raw = strip_code_fences(resp.choices[0].message.content)
 
@@ -3012,7 +3035,7 @@ JSON:"""
         # ── IATA -> customs office lookup (гр. 29, 30) ──
         destination_airport = (result.get("destination_airport") or "").upper().strip()
         if not destination_airport:
-            awb = result.get("awb_number") or ""
+            awb = result.get("transport_doc_number") or ""
             for doc_key in ("transport", "transport_doc"):
                 td = self._to_dict(parsed_docs.get(doc_key))
                 if td:
@@ -3027,7 +3050,7 @@ JSON:"""
         if destination_airport and destination_airport in _DESTINATION_TO_POST:
             customs_office_code, customs_office_name, goods_location = _DESTINATION_TO_POST[destination_airport]
 
-        awb_number = result.get("awb_number") or ""
+        awb_number = result.get("transport_doc_number") or ""
         if not customs_office_code and awb_number:
             prefix = awb_number.split("-")[0] if "-" in awb_number else awb_number[:3]
             if prefix in _AWB_PREFIX_TO_POST:
@@ -3041,11 +3064,40 @@ JSON:"""
         result["customs_office_name"] = customs_office_name
         result["goods_location"] = goods_location
 
+        # ── Transport vehicle info (гр. 18, 21, 44) from parsed docs ──
+        td = self._to_dict(parsed_docs.get("transport")) or self._to_dict(parsed_docs.get("transport_doc"))
+        if td:
+            flight = td.get("flight_number") or td.get("flight_no") or ""
+            awb = td.get("awb_number") or td.get("transport_doc_number") or ""
+            vehicle_country = td.get("vehicle_country_code") or td.get("departure_country") or ""
+
+            if flight and not result.get("departure_vehicle_info"):
+                result["departure_vehicle_info"] = flight
+            if flight and not result.get("border_vehicle_info"):
+                result["border_vehicle_info"] = flight
+            if awb and not result.get("transport_doc_number"):
+                result["transport_doc_number"] = awb
+            if vehicle_country and not result.get("departure_vehicle_country"):
+                result["departure_vehicle_country"] = vehicle_country[:2].upper()
+            if vehicle_country and not result.get("border_vehicle_country"):
+                result["border_vehicle_country"] = vehicle_country[:2].upper()
+
         # ── Items processing ──
         items = result.get("items") or []
         inv_data = self._to_dict(parsed_docs.get("invoice"))
         packing_data = self._to_dict(parsed_docs.get("packing"))
         pl_items = (packing_data.get("items") or []) if packing_data else []
+
+        inv_items = inv_data.get("items", []) if inv_data else []
+        if inv_items and len(items) != len(inv_items):
+            logger.warning(
+                "items_count_mismatch_llm_vs_invoice",
+                llm_count=len(items),
+                invoice_count=len(inv_items),
+                msg="LLM вернул другое количество позиций, чем в инвойсе — "
+                    "принудительно используем позиции из инвойса",
+            )
+            items = list(inv_items)
 
         _SKIP_ITEM = re.compile(
             r'\b(freight|shipping|insurance|handling|delivery\s*fee|transport.*fee|'
@@ -3066,6 +3118,45 @@ JSON:"""
                 item["country_origin_code"] = co.strip().upper()[:2]
             filtered_items.append(item)
         items = filtered_items
+
+        # ── Deduplication: LLM may create duplicates from invoice + packing list ──
+        if len(items) > 1:
+            def _dedup_key(it: dict) -> str:
+                d = re.sub(r'[^a-zа-я0-9]', '', (it.get("description") or "").lower())
+                return d
+
+            seen_keys: dict[str, int] = {}
+            deduplicated: list[dict] = []
+            for item in items:
+                key = _dedup_key(item)
+                if not key:
+                    deduplicated.append(item)
+                    continue
+                prev_idx = seen_keys.get(key)
+                if prev_idx is not None:
+                    prev = deduplicated[prev_idx]
+                    prev_lt = _safe_float(prev.get("line_total")) or 0.0
+                    cur_lt = _safe_float(item.get("line_total")) or 0.0
+                    prev_up = _safe_float(prev.get("unit_price")) or 0.0
+                    cur_up = _safe_float(item.get("unit_price")) or 0.0
+                    if (prev_lt > 0 and cur_lt > 0 and abs(prev_lt - cur_lt) / max(prev_lt, cur_lt) < 0.05) or \
+                       (prev_up > 0 and cur_up > 0 and abs(prev_up - cur_up) / max(prev_up, cur_up) < 0.05) or \
+                       (prev_lt == 0 and cur_lt == 0):
+                        for f in ("gross_weight", "net_weight", "package_count", "package_type"):
+                            if item.get(f) and not prev.get(f):
+                                prev[f] = item[f]
+                        logger.warning("duplicate_item_removed",
+                                       description=(item.get("description") or "")[:60],
+                                       msg="Дубль позиции удалён (совпадение описания + цены)")
+                        continue
+                seen_keys[key] = len(deduplicated)
+                deduplicated.append(item)
+
+            if len(deduplicated) < len(items):
+                logger.info("items_deduplicated",
+                            before=len(items), after=len(deduplicated))
+                items = deduplicated
+
         result["items"] = items
 
         # ── Weight distribution (гр. 35/38) ──
@@ -3081,8 +3172,39 @@ JSON:"""
             result["total_net_weight"] = round(total_net, 3)
 
         total_invoice = sum(_safe_float(it.get("line_total")) or 0.0 for it in items)
-        if total_invoice > 0 and not result.get("total_amount"):
+        invoice_total_amount = _safe_float(result.get("total_amount")) or 0.0
+
+        if total_invoice > 0 and invoice_total_amount > 0:
+            diff = abs(total_invoice - invoice_total_amount)
+            threshold = max(invoice_total_amount, total_invoice) * 0.01
+            if diff > threshold:
+                logger.warning(
+                    "graph22_vs_graph42_mismatch",
+                    sum_items=round(total_invoice, 2),
+                    invoice_total=round(invoice_total_amount, 2),
+                    diff=round(diff, 2),
+                    msg=(
+                        f"Графа 22: сумма позиций (гр.42) = {round(total_invoice, 2)} "
+                        f"≠ итогу инвойса = {round(invoice_total_amount, 2)}, "
+                        f"расхождение {round(diff, 2)}"
+                    ),
+                )
+                result.setdefault("issues", []).append({
+                    "id": "graph22_vs_graph42_mismatch",
+                    "severity": "warning",
+                    "graph": 22,
+                    "field": "total_amount",
+                    "message": (
+                        f"Графа 22: рассчитанная сумма позиций (∑ гр.42) = {round(total_invoice, 2)} "
+                        f"не совпадает с итоговой суммой инвойса = {round(invoice_total_amount, 2)}. "
+                        f"Расхождение: {round(diff, 2)}. Проверьте позиции и итог инвойса."
+                    ),
+                })
             result["total_amount"] = round(total_invoice, 2)
+        elif total_invoice > 0:
+            result["total_amount"] = round(total_invoice, 2)
+            logger.info("graph22_from_items_sum", total=round(total_invoice, 2),
+                        msg="Графа 22: итог инвойса отсутствует, сумма рассчитана из позиций")
 
         # ── Exchange rate (гр. 23) ──
         currency = (result.get("currency") or "").upper()
@@ -3193,8 +3315,8 @@ JSON:"""
 
         _COUNTRY_FIELDS = (
             "country_dispatch", "country_destination", "country_origin",
-            "trading_partner_country", "transport_vehicle_departure_country",
-            "transport_vehicle_border_country",
+            "trading_partner_country", "departure_vehicle_country",
+            "border_vehicle_country",
         )
         for _cf in _COUNTRY_FIELDS:
             _cv = result.get(_cf)
@@ -3450,6 +3572,172 @@ JSON:"""
             if svh_doc.get("warehouse_name"):
                 result["warehouse_name"] = svh_doc["warehouse_name"]
 
+        # ── Evidence map enrichment ──
+        result = self._enrich_evidence_map(result, parsed_docs, inco_src)
+
+        return result
+
+    def _enrich_evidence_map(self, result: dict, parsed_docs: dict, inco_src: str) -> dict:
+        """Fill gaps in evidence_map so every field with a value has a source."""
+        ev = dict(result.get("evidence_map") or {})
+
+        _KEY_RENAMES = {
+            "transport_vehicle_border": "border_vehicle_info",
+            "transport_vehicle_departure": "departure_vehicle_info",
+            "transport_vehicle_border_country": "border_vehicle_country",
+            "transport_vehicle_departure_country": "departure_vehicle_country",
+            "transport_type_internal": "transport_type_inland",
+        }
+        for old_key, new_key in _KEY_RENAMES.items():
+            if old_key in ev and new_key not in ev:
+                ev[new_key] = ev.pop(old_key)
+            elif old_key in ev:
+                del ev[old_key]
+
+        def _add(field: str, source: str, confidence: float,
+                 graph: int | None = None, note: str = ""):
+            if result.get(field) is None or field in ev:
+                return
+            entry: dict = {
+                "value_preview": str(result[field])[:120],
+                "source": source,
+                "confidence": confidence,
+            }
+            if graph:
+                entry["graph"] = graph
+            if note:
+                entry["note"] = note
+            ev[field] = entry
+
+        transport_d = self._to_dict(parsed_docs.get("transport"))
+
+        _add("exchange_rate", "heuristic", 0.99, 23, "Курс ЦБ РФ")
+        _add("total_customs_value", "aggregated_items", 0.95, 12, "Рассчитано из позиций")
+        _add("total_gross_weight", "aggregated_items", 0.95, 35, "Сумма из позиций")
+        _add("total_net_weight", "aggregated_items", 0.95, 38, "Сумма из позиций")
+        _add("total_items_count", "heuristic", 1.0, 5, "Количество позиций")
+        _add("total_sheets", "heuristic", 1.0, 3)
+        _add("preference_code", "heuristic", 0.7, 36, "По умолчанию")
+        _add("country_origin", "aggregated_items", 0.9, 16, "Из позиций")
+
+        if result.get("incoterms") and "incoterms" not in ev:
+            ev["incoterms"] = {
+                "value_preview": str(result["incoterms"])[:120],
+                "source": inco_src if inco_src != "none" else "heuristic",
+                "confidence": 0.95 if inco_src != "none" else 0.5,
+                "graph": 20,
+            }
+        if result.get("delivery_place") and "delivery_place" not in ev:
+            dp_src = inco_src if inco_src != "none" else (
+                "transport_doc" if transport_d else "heuristic"
+            )
+            ev["delivery_place"] = {
+                "value_preview": str(result["delivery_place"])[:120],
+                "source": dp_src,
+                "confidence": 0.85,
+                "graph": 20,
+            }
+
+        _add("customs_office_code", "heuristic", 0.9, 29, "Определён по IATA-коду")
+        _add("goods_location", "heuristic", 0.9, 30, "Определён по IATA-коду")
+
+        _add("invoice_number", "invoice", 0.95, 44)
+        _add("invoice_date", "invoice", 0.95, 44)
+        _add("contract_number", "contract", 0.95, 44)
+        _add("contract_date", "contract", 0.95, 44)
+        _add("total_amount", "invoice", 0.9, 22)
+        _add("transport_doc_number", "transport_doc", 0.9, 44)
+        _add("freight_amount", "transport_invoice", 0.9)
+        _add("freight_currency", "transport_invoice", 0.9)
+        _add("deal_nature_code", "contract", 0.85, 24)
+        _add("deal_specifics_code", "contract", 0.8, 24)
+        _add("type_code", "heuristic", 0.99, 1)
+
+        _add("border_vehicle_info", "transport_doc", 0.9, 21)
+        _add("departure_vehicle_info", "transport_doc", 0.9, 18)
+        _add("border_vehicle_country", "transport_doc", 0.9, 21)
+        _add("departure_vehicle_country", "transport_doc", 0.9, 18)
+        _add("transport_type", "transport_doc", 0.9, 25)
+        _add("transport_type_inland", "transport_doc", 0.8, 26)
+
+        _add("country_dispatch", "transport_doc", 0.9, 15)
+        _add("country_destination", "transport_doc", 0.9, 17)
+        _add("trading_partner_country", "contract", 0.9, 11)
+
+        # ── Item-level evidence (гр. 31-46) ──
+        items = result.get("items") or []
+        if items:
+            inv_data = self._to_dict(parsed_docs.get("invoice"))
+            packing_data = self._to_dict(parsed_docs.get("packing"))
+            has_inv = bool(inv_data)
+            has_pl = bool(packing_data)
+
+            _ITEM_EV = {
+                "description": ("invoice", 0.85, 31),
+                "country_origin_code": ("conformity_declaration", 0.85, 34),
+                "gross_weight": ("packing_list" if has_pl else "invoice", 0.9, 35),
+                "net_weight": ("packing_list" if has_pl else "invoice", 0.85, 38),
+                "additional_unit_qty": ("invoice", 0.85, 41),
+                "unit_price": ("invoice", 0.9, 42),
+                "customs_value_rub": ("heuristic", 0.95, 45),
+                "statistical_value_usd": ("heuristic", 0.95, 46),
+                "hs_code": ("heuristic", 0.8, 33),
+                "procedure_code": ("heuristic", 0.9, 37),
+                "preference_code": ("heuristic", 0.7, 36),
+            }
+            first_item = items[0] if items else {}
+            for field, (src, conf, graph) in _ITEM_EV.items():
+                if first_item.get(field) is not None and field not in ev:
+                    note = ""
+                    if src == "heuristic" and field == "customs_value_rub":
+                        note = "Рассчитано: цена × курс + фрахт"
+                    elif src == "heuristic" and field == "statistical_value_usd":
+                        note = "Рассчитано: тамож. стоимость / курс USD"
+                    entry: dict = {
+                        "value_preview": str(first_item[field])[:120],
+                        "source": src,
+                        "confidence": conf,
+                        "graph": graph,
+                    }
+                    if note:
+                        entry["note"] = note
+                    ev[field] = entry
+
+        # ── Declarant / financial responsible (гр. 9, 14) ──
+        contract_d = self._to_dict(parsed_docs.get("contract"))
+        td_data = self._to_dict(parsed_docs.get("transport")) or self._to_dict(parsed_docs.get("transport_doc"))
+
+        if result.get("declarant") and "declarant" not in ev:
+            ev["declarant"] = {
+                "value_preview": str(result["declarant"])[:120],
+                "source": "contract" if contract_d else "transport_doc",
+                "confidence": 0.9,
+                "graph": 14,
+            }
+        if td_data and "declarant" not in ev:
+            consignee = td_data.get("consignee_name") or td_data.get("consignee_inn")
+            if consignee:
+                ev["declarant"] = {
+                    "value_preview": str(consignee)[:120],
+                    "source": "transport_doc",
+                    "confidence": 0.85,
+                    "graph": 14,
+                    "note": "Грузополучатель из AWB",
+                }
+
+        if "financial_responsible" not in ev and "responsible_person" not in ev:
+            src = "contract" if contract_d else "transport_doc"
+            ev["financial_responsible"] = {
+                "value_preview": result.get("financial_responsible", result.get("buyer", {})
+                    if isinstance(result.get("buyer"), dict) else ""),
+                "source": src,
+                "confidence": 0.85,
+                "graph": 9,
+            }
+
+        result["evidence_map"] = ev
+        logger.info("evidence_map_enriched", total_entries=len(ev),
+                     keys=sorted(ev.keys()))
         return result
 
     def _distribute_weights(self, items: list, packing: dict | None, invoice: dict | None) -> list:

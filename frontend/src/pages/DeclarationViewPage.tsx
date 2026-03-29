@@ -557,7 +557,7 @@ const DeclarationViewPage = () => {
           <G w="42%" label="18" h={30} br>
             Идентификация и страна регистрации трансп. средства при отправлении/прибытии
             <br />
-            <b>{f(decl.transport_at_border)}</b>
+            <b>{f(decl.departure_vehicle_info)}</b>
           </G>
           <G w="8%" label="19" br>
             Конт.
@@ -578,7 +578,7 @@ const DeclarationViewPage = () => {
           <G w="50%" label="21" h={30} br>
             Идентификация и страна регистрации активного транспортного средства на границе
             <br />
-            <b>{f(decl.transport_on_border_id)}</b>
+            <b>{f(decl.border_vehicle_info)}</b>
           </G>
           <G w="22%" label="22" br>
             Валюта и общая сумма по счету

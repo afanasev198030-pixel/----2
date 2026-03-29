@@ -8,12 +8,12 @@ export interface GetDocumentsParams {
 }
 
 export const getDocuments = async (params?: GetDocumentsParams): Promise<Document[]> => {
-  const response = await client.get<Document[]>('/documents/', { params });
+  const response = await client.get<Document[]>('/documents', { params });
   return response.data;
 };
 
 export const createDocument = async (data: Partial<Document>): Promise<Document> => {
-  const response = await client.post<Document>('/documents/', data);
+  const response = await client.post<Document>('/documents', data);
   return response.data;
 };
 

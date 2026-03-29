@@ -286,17 +286,14 @@ async def set_openai_key(
     llm_project_id = await _get_setting(db, "llm_project_id") or ""
     logger.info("llm_key_saved", user_id=str(current_user.id), provider=llm_provider)
 
-    base_url_map = {
-        "openai": "https://api.openai.com/v1",
-        "cloud_ru": "https://foundation-models.api.cloud.ru/v1",
+    provider_defaults = {
+        "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
+        "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o"},
+        "cloud_ru": {"base_url": "https://foundation-models.api.cloud.ru/v1", "model": "openai/gpt-oss-120b"},
     }
-    validate_base_url = llm_base_url or base_url_map.get(llm_provider, "https://api.deepseek.com")
-
-    model_map = {
-        "openai": "gpt-4o-mini",
-        "cloud_ru": "openai/gpt-oss-120b",
-    }
-    validate_model = llm_model or model_map.get(llm_provider, "deepseek-chat")
+    defaults = provider_defaults.get(llm_provider, provider_defaults["deepseek"])
+    validate_base_url = llm_base_url or defaults["base_url"]
+    validate_model = llm_model or defaults["model"]
 
     ai_check = {"status": "unknown", "message": ""}
     try:

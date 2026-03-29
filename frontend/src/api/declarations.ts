@@ -46,13 +46,23 @@ export const deleteDeclaration = async (id: string): Promise<void> => {
   await client.delete(`/declarations/${id}`);
 };
 
-export const changeStatus = async (
-  id: string,
-  newStatus: string
-): Promise<any> => {
-  const response = await client.post(`/declarations/${id}/status`, {
-    new_status: newStatus,
-  });
+export const openDeclaration = async (id: string): Promise<any> => {
+  const response = await client.post(`/declarations/${id}/open`);
+  return response.data;
+};
+
+export const recalculateDeclaration = async (id: string): Promise<any> => {
+  const response = await client.post(`/declarations/${id}/recalculate`);
+  return response.data;
+};
+
+export const signDeclaration = async (id: string): Promise<any> => {
+  const response = await client.post(`/declarations/${id}/sign`);
+  return response.data;
+};
+
+export const sendDeclaration = async (id: string): Promise<any> => {
+  const response = await client.post(`/declarations/${id}/send`);
   return response.data;
 };
 

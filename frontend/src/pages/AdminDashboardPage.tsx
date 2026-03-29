@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  Box, Typography, Grid, Card, CardContent, Chip, LinearProgress, Skeleton,
+  Box, Typography, Grid, Card, CardContent, Chip, Skeleton,
   Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
 } from '@mui/material';
 import {
@@ -44,8 +44,8 @@ const AdminDashboardPage = () => {
   return (
     <AppLayout breadcrumbs={[{ label: 'Админ', path: '/admin/users' }, { label: 'Dashboard' }]}>
       <Box sx={{ p: 3 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>
-          <DashboardIcon sx={{ mr: 1, verticalAlign: 'bottom' }} />
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 3, color: '#0f172a' }}>
+          <DashboardIcon sx={{ mr: 1, verticalAlign: 'bottom', color: '#2563eb' }} />
           Admin Dashboard
         </Typography>
 
@@ -57,7 +57,7 @@ const AdminDashboardPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
-                    <MemoryIcon sx={{ fontSize: 36, color: 'primary.main' }} />
+                    <MemoryIcon sx={{ fontSize: 36, color: '#2563eb' }} />
                     <Typography variant="subtitle2" sx={{ mt: 0.5 }}>LLM Провайдер</Typography>
                     <Chip label={ai?.llm_provider || settings?.llm_provider || 'N/A'} size="small" color="primary" />
                     <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -70,7 +70,7 @@ const AdminDashboardPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
-                    <StorageIcon sx={{ fontSize: 36, color: 'info.main' }} />
+                    <StorageIcon sx={{ fontSize: 36, color: '#2563eb' }} />
                     <Typography variant="subtitle2" sx={{ mt: 0.5 }}>ChromaDB</Typography>
                     <Typography variant="body2" fontWeight={600}>
                       {collections.hs_codes || 0} ТН ВЭД
@@ -85,7 +85,7 @@ const AdminDashboardPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
-                    <TrainIcon sx={{ fontSize: 36, color: 'warning.main' }} />
+                    <TrainIcon sx={{ fontSize: 36, color: '#d97706' }} />
                     <Typography variant="subtitle2" sx={{ mt: 0.5 }}>Обучение</Typography>
                     <Typography variant="body2" fontWeight={600}>
                       {ai?.feedback_count || 0} feedback
@@ -100,7 +100,7 @@ const AdminDashboardPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center' }}>
-                    <DeclIcon sx={{ fontSize: 36, color: 'success.main' }} />
+                    <DeclIcon sx={{ fontSize: 36, color: '#059669' }} />
                     <Typography variant="subtitle2" sx={{ mt: 0.5 }}>База знаний</Typography>
                     <Typography variant="body2" fontWeight={600}>
                       {(articles || []).length} статей
@@ -115,8 +115,8 @@ const AdminDashboardPage = () => {
 
             <Grid container spacing={2}>
               <Grid item xs={12} md={6}>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Сервисы</Typography>
+                <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
+                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>Сервисы</Typography>
                   <TableContainer>
                     <Table size="small">
                       <TableHead>
@@ -146,15 +146,15 @@ const AdminDashboardPage = () => {
               </Grid>
 
               <Grid item xs={12} md={6}>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1 }}>Последние события AI</Typography>
-                  <Box sx={{ fontFamily: 'monospace', fontSize: 11, maxHeight: 250, overflowY: 'auto', bgcolor: '#f5f5f5', p: 1, borderRadius: 1 }}>
+                <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
+                  <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>Последние события AI</Typography>
+                  <Box sx={{ fontFamily: 'monospace', fontSize: 11, maxHeight: 250, overflowY: 'auto', bgcolor: '#f8fafc', p: 1, borderRadius: 2, border: '1px solid rgba(226,232,240,0.9)', boxShadow: 'none' }}>
                     {(ai?.log || []).slice(-20).reverse().map((entry: any, i: number) => {
-                      const color = entry.level === 'error' ? '#f44' : entry.level === 'warning' ? '#fa0' : '#888';
+                      const color = entry.level === 'error' ? '#dc2626' : entry.level === 'warning' ? '#d97706' : '#64748b';
                       const ts = entry.ts ? new Date(entry.ts * 1000).toLocaleTimeString('ru-RU') : '';
                       return (
                         <div key={i} style={{ marginBottom: 2 }}>
-                          <span style={{ color: '#888' }}>{ts}</span>{' '}
+                          <span style={{ color: '#64748b' }}>{ts}</span>{' '}
                           <span style={{ color }}>{entry.event}</span>{' '}
                           <span>{entry.detail}</span>
                         </div>

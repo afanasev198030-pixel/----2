@@ -119,6 +119,7 @@ const ItemEditCard = ({ item, declarationId, currencyCode, onSaved, onDeleted }:
   const [fields, setFields] = useState<ItemFields>(() => initFields(item));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [driftDismissed, setDriftDismissed] = useState(false);
   const syncRef = useRef(item.updated_at);
   const [itemDocs, setItemDocs] = useState<ItemDocument[]>([]);
 
@@ -386,7 +387,7 @@ const ItemEditCard = ({ item, declarationId, currencyCode, onSaved, onDeleted }:
           Нажмите «Подобрать» или введите код вручную.
         </Alert>
       )}
-      {item.drift_status && (
+      {item.drift_status && !driftDismissed && (
         <Alert severity="warning" sx={{ mb: 1 }}>
           {item.drift_message || `Возможный drift: исторический код ${item.historical_hs_code || '—'} отличается от текущего ${item.hs_code || '—'}.`}
           <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
@@ -404,10 +405,7 @@ const ItemEditCard = ({ item, declarationId, currencyCode, onSaved, onDeleted }:
               size="small"
               variant="contained"
               color="warning"
-              onClick={() => {
-                // Just dismiss or handle locally if needed. 
-                // For now, it just serves as an acknowledgment.
-              }}
+              onClick={() => setDriftDismissed(true)}
             >
               Оставить {fields.hs_code || 'текущий код'}
             </Button>

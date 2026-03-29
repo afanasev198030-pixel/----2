@@ -22,6 +22,10 @@ from app.models import (
 )
 from app.models.hs_code_history import HsCodeHistory
 from app.models.parse_issue import ParseIssue
+from app.services.declaration_state_service import (
+    recalculate_declaration_state,
+    reset_signature_if_needed,
+)
 from app.schemas import (
     DeclarationCreate,
     DeclarationUpdate,
@@ -214,7 +218,7 @@ async def create_declaration(
     declaration = Declaration(
         type_code=data.type_code,
         company_id=data.company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
         created_by=current_user.id,
         number_internal=data.number_internal,
         sender_counterparty_id=data.sender_counterparty_id,
@@ -225,10 +229,10 @@ async def create_declaration(
         special_ref_code=data.special_ref_code,
         country_origin_name=data.country_origin_name,
         country_destination_code=data.country_destination_code,
-        transport_at_border=data.transport_at_border,
+        departure_vehicle_info=data.departure_vehicle_info,
         container_info=data.container_info,
         incoterms_code=data.incoterms_code,
-        transport_on_border=data.transport_on_border,
+        transport_on_border=getattr(data, 'transport_on_border', None),
         currency_code=data.currency_code,
         total_invoice_value=data.total_invoice_value,
         exchange_rate=data.exchange_rate,
@@ -248,6 +252,23 @@ async def create_declaration(
         customs_office_code=data.customs_office_code,
         warehouse_name=data.warehouse_name,
         place_and_date=data.place_and_date,
+        trading_country_code=data.trading_country_code,
+        declarant_inn_kpp=data.declarant_inn_kpp,
+        declarant_ogrn=data.declarant_ogrn,
+        declarant_phone=data.declarant_phone,
+        delivery_place=data.delivery_place,
+        border_vehicle_info=data.border_vehicle_info,
+        entry_customs_code=data.entry_customs_code,
+        goods_location=data.goods_location,
+        payment_deferral=data.payment_deferral,
+        warehouse_requisites=data.warehouse_requisites,
+        transit_offices=data.transit_offices,
+        destination_office_code=data.destination_office_code,
+        departure_vehicle_country=data.departure_vehicle_country,
+        border_vehicle_country=data.border_vehicle_country,
+        transport_doc_number=data.transport_doc_number,
+        country_first_destination_code=data.country_first_destination_code,
+        guarantee_info=data.guarantee_info,
     )
     
     db.add(declaration)
@@ -258,12 +279,12 @@ async def create_declaration(
         declaration_id=declaration.id,
         user_id=current_user.id,
         action="create",
-        new_value={"status": "draft", "type_code": data.type_code},
+        new_value={"status": "new", "type_code": data.type_code},
     )
     db.add(log_entry)
     status_history_entry = DeclarationStatusHistory(
         declaration_id=declaration.id,
-        status_code=DeclarationStatus.DRAFT.value,
+        status_code=DeclarationStatus.NEW.value,
         status_text="Декларация создана",
         source="system",
     )
@@ -352,7 +373,7 @@ async def update_declaration(
         )
     
     # Check status
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot update declaration with status: {declaration.status}",
@@ -441,6 +462,10 @@ async def update_declaration(
         await log_action(db, current_user.id, "update_declaration",
             resource_type="declaration", resource_id=str(id),
             details={"changed": list(changed_fields.keys())}, request=request)
+
+        reset_signature_if_needed(declaration, db, user_id=str(current_user.id))
+        await recalculate_declaration_state(declaration, db, user_id=str(current_user.id))
+
     await db.commit()
     
     # Re-fetch with relationships
@@ -486,7 +511,7 @@ async def delete_declaration(
         )
     
     # Check status
-    if declaration.status != DeclarationStatus.DRAFT:
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot delete declaration with status: {declaration.status}",
@@ -560,7 +585,7 @@ async def duplicate_declaration(
     new_declaration = Declaration(
         type_code=original.type_code,
         company_id=original.company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
         created_by=current_user.id,
         number_internal=original.number_internal,
         sender_counterparty_id=original.sender_counterparty_id,
@@ -571,10 +596,14 @@ async def duplicate_declaration(
         special_ref_code=original.special_ref_code,
         country_origin_name=original.country_origin_name,
         country_destination_code=original.country_destination_code,
-        transport_at_border=original.transport_at_border,
+        departure_vehicle_info=original.departure_vehicle_info,
         container_info=original.container_info,
         incoterms_code=original.incoterms_code,
         transport_on_border=original.transport_on_border,
+        border_vehicle_info=original.border_vehicle_info,
+        departure_vehicle_country=original.departure_vehicle_country,
+        border_vehicle_country=original.border_vehicle_country,
+        transport_doc_number=original.transport_doc_number,
         currency_code=original.currency_code,
         total_invoice_value=original.total_invoice_value,
         exchange_rate=original.exchange_rate,

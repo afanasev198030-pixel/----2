@@ -6,6 +6,8 @@ import ClientsListPage from './pages/ClientsListPage';
 import ClientDetailPage from './pages/ClientDetailPage';
 import DeclarationsListPage from './pages/DeclarationsListPage';
 import DeclarationEditPage from './pages/DeclarationEditPage';
+import DeclarationStatusPage from './pages/DeclarationStatusPage';
+import DeclarationFormPage from './pages/DeclarationFormPage';
 import SettingsPage from './pages/SettingsPage';
 import DeclarationViewPage from './pages/DeclarationViewPage';
 import DtsViewPage from './pages/DtsViewPage';
@@ -29,7 +31,9 @@ function App() {
         <Route path="/clients" element={<ClientsListPage />} />
         <Route path="/clients/:id" element={<ClientDetailPage />} />
         <Route path="/declarations" element={<DeclarationsListPage />} />
-        <Route path="/declarations/:id/edit" element={<DeclarationEditPage />} />
+        <Route path="/declarations/:id/edit" element={<DeclarationStatusPage />} />
+        <Route path="/declarations/:id/form" element={<DeclarationFormPage />} />
+        <Route path="/declarations/:id/form-legacy" element={<DeclarationEditPage />} />
         <Route path="/declarations/:id/view" element={<DeclarationViewPage />} />
         <Route path="/declarations/:id/dts-view" element={<DtsViewPage />} />
         <Route path="/settings" element={<SettingsPage />} />

@@ -40,9 +40,9 @@ import { getBrokerClients, createBrokerClient, BrokerClient, CreateBrokerClientD
 import AppLayout from '../components/AppLayout';
 
 const tariffLabels: Record<string, { label: string; bg: string; color: string }> = {
-  basic: { label: 'Базовый', bg: '#f5f5f5', color: '#616161' },
-  standard: { label: 'Стандарт', bg: '#e3f2fd', color: '#1565c0' },
-  premium: { label: 'Премиум', bg: '#f3e5f5', color: '#7b1fa2' },
+  basic: { label: 'Базовый', bg: '#f8fafc', color: '#64748b' },
+  standard: { label: 'Стандарт', bg: '#eef2ff', color: '#1d4ed8' },
+  premium: { label: 'Премиум', bg: '#f5f3ff', color: '#6d28d9' },
 };
 
 const ClientsListPage = () => {
@@ -144,7 +144,11 @@ const ClientsListPage = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               sx={{
                 width: { xs: '100%', sm: 400 },
-                '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' },
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '10px',
+                  bgcolor: 'white',
+                  boxShadow: 'none',
+                },
               }}
               InputProps={{
                 startAdornment: (
@@ -159,7 +163,7 @@ const ClientsListPage = () => {
             size="small"
             onClick={handleExportCSV}
             startIcon={<FileDownloadIcon />}
-            sx={{ textTransform: 'none', borderRadius: 2 }}
+            sx={{ textTransform: 'none', borderRadius: '10px', color: '#64748b' }}
           >
             Excel
           </Button>
@@ -167,24 +171,57 @@ const ClientsListPage = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => setDialogOpen(true)}
-            sx={{ fontWeight: 600, borderRadius: 2, px: 3, textTransform: 'none' }}
+            sx={{
+              fontWeight: 600,
+              borderRadius: '10px',
+              px: 3,
+              textTransform: 'none',
+              bgcolor: '#2563eb',
+              boxShadow: 'none',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+            }}
           >
             Добавить клиента
           </Button>
         </Box>
 
         {/* Table */}
-        <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+        <TableContainer
+          component={Paper}
+          sx={{
+            borderRadius: '14px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            border: '1px solid rgba(226,232,240,0.8)',
+            overflow: 'hidden',
+          }}
+        >
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Название</TableCell>
-                <TableCell>ИНН</TableCell>
-                <TableCell>КПП</TableCell>
-                <TableCell>Контракт</TableCell>
-                <TableCell>Тариф</TableCell>
-                <TableCell>Статус</TableCell>
-                <TableCell align="center">Действия</TableCell>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                  Название
+                </TableCell>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                  ИНН
+                </TableCell>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                  КПП
+                </TableCell>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                  Контракт
+                </TableCell>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                  Тариф
+                </TableCell>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                  Статус
+                </TableCell>
+                <TableCell
+                  align="center"
+                  sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}
+                >
+                  Действия
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -203,17 +240,28 @@ const ClientsListPage = () => {
               ) : filteredClients.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center" sx={{ py: 8 }}>
-                    <PeopleIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-                    <Typography variant="h6" color="text.secondary" gutterBottom>
+                    <PeopleIcon sx={{ fontSize: 64, color: '#94a3b8', mb: 2 }} />
+                    <Typography variant="h6" gutterBottom sx={{ color: '#0f172a' }}>
                       {searchQuery ? 'Клиенты не найдены' : 'Нет клиентов'}
                     </Typography>
-                    <Typography variant="body2" color="text.disabled" sx={{ mb: 3 }}>
+                    <Typography variant="body2" sx={{ mb: 3, color: '#64748b' }}>
                       {searchQuery
                         ? 'Попробуйте изменить параметры поиска'
                         : 'Добавьте первого клиента для начала работы'}
                     </Typography>
                     {!searchQuery && (
-                      <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)}>
+                      <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={() => setDialogOpen(true)}
+                        sx={{
+                          borderRadius: '10px',
+                          textTransform: 'none',
+                          bgcolor: '#2563eb',
+                          boxShadow: 'none',
+                          '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+                        }}
+                      >
                         Добавить клиента
                       </Button>
                     )}
@@ -231,27 +279,27 @@ const ClientsListPage = () => {
                     >
                       <TableCell>
                         <Tooltip title={client.client_company?.name || '—'} placement="top" arrow>
-                          <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 200 }}>
+                          <Typography variant="body2" fontWeight={600} noWrap sx={{ maxWidth: 200, color: '#0f172a' }}>
                             {client.client_company?.name || '—'}
                           </Typography>
                         </Tooltip>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', color: '#64748b' }}>
                           {client.client_company?.inn || '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="body2" sx={{ color: '#64748b' }}>
                           {client.client_company?.kpp || '—'}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">
+                        <Typography variant="body2" sx={{ color: '#0f172a' }}>
                           {client.contract_number || '—'}
                         </Typography>
                         {client.contract_date && (
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" sx={{ color: '#64748b' }}>
                             от {client.contract_date}
                           </Typography>
                         )}
@@ -268,8 +316,8 @@ const ClientsListPage = () => {
                           label={client.is_active ? 'Активен' : 'Неактивен'}
                           size="small"
                           sx={{
-                            bgcolor: client.is_active ? '#e8f5e9' : '#ffebee',
-                            color: client.is_active ? '#1b5e20' : '#c62828',
+                            bgcolor: client.is_active ? '#ecfdf5' : '#fef2f2',
+                            color: client.is_active ? '#166534' : '#b91c1c',
                             fontWeight: 500,
                             fontSize: 11,
                           }}
@@ -281,7 +329,10 @@ const ClientsListPage = () => {
                             <IconButton
                               size="small"
                               onClick={(e) => { e.stopPropagation(); navigate(`/clients/${client.id}`); }}
-                              sx={{ borderRadius: 1.5, '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}
+                              sx={{
+                                borderRadius: '10px',
+                                '&:hover': { bgcolor: 'rgba(238,242,255,0.95)', color: '#2563eb' },
+                              }}
                             >
                               <ViewIcon fontSize="small" />
                             </IconButton>
@@ -300,11 +351,18 @@ const ClientsListPage = () => {
       <Dialog
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); resetForm(); }}
-        PaperProps={{ sx: { borderRadius: 3, minWidth: 500 } }}
+        PaperProps={{
+          sx: {
+            borderRadius: '14px',
+            minWidth: 500,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            border: '1px solid rgba(226,232,240,0.8)',
+          },
+        }}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle sx={{ fontWeight: 600 }}>Добавить клиента</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 600, color: '#0f172a' }}>Добавить клиента</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
             <TextField
@@ -371,14 +429,21 @@ const ClientsListPage = () => {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => { setDialogOpen(false); resetForm(); }} sx={{ color: 'text.secondary' }}>
+          <Button onClick={() => { setDialogOpen(false); resetForm(); }} sx={{ color: '#64748b', textTransform: 'none' }}>
             Отмена
           </Button>
           <Button
             onClick={handleCreate}
             variant="contained"
             disabled={createMutation.isPending || !formData.client_company_name.trim() || !formData.client_company_inn.trim()}
-            sx={{ px: 4 }}
+            sx={{
+              px: 4,
+              borderRadius: '10px',
+              textTransform: 'none',
+              bgcolor: '#2563eb',
+              boxShadow: 'none',
+              '&:hover': { bgcolor: '#1d4ed8', boxShadow: 'none' },
+            }}
           >
             {createMutation.isPending ? 'Создание...' : 'Добавить'}
           </Button>
@@ -395,7 +460,7 @@ const ClientsListPage = () => {
         <Alert
           severity={snackbar.severity}
           onClose={() => setSnackbar({ ...snackbar, open: false })}
-          sx={{ borderRadius: 2 }}
+          sx={{ borderRadius: '14px' }}
         >
           {snackbar.message}
         </Alert>

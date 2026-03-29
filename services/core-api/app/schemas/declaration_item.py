@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class DeclarationItemCreate(BaseModel):
-    item_no: int
+    item_no: Optional[int] = None
     description: Optional[str] = None
     package_count: Optional[int] = None
     package_type: Optional[str] = None

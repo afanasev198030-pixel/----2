@@ -14,77 +14,53 @@ interface StatusChipProps {
   status: string;
 }
 
-const statusConfig: Record<string, { label: string; bg: string; color: string; icon?: React.ReactElement }> = {
-  draft: {
-    label: 'Черновик',
-    bg: '#f5f5f5',
-    color: '#616161',
+const statusConfig: Record<string, { label: string; bg: string; color: string; border: string; icon?: React.ReactElement }> = {
+  new: {
+    label: 'Новая',
+    bg: '#f1f5f9',
+    color: '#475569',
+    border: 'rgba(226,232,240,0.8)',
     icon: <EditIcon sx={{ fontSize: 14 }} />,
   },
-  checking_lvl1: {
-    label: 'Проверка ур.1',
-    bg: '#e3f2fd',
-    color: '#1565c0',
-    icon: <ClockIcon sx={{ fontSize: 14 }} />,
+  requires_attention: {
+    label: 'Требует внимания',
+    bg: 'rgba(255,251,235,0.8)',
+    color: '#92400e',
+    border: 'rgba(253,230,138,0.6)',
+    icon: <WarningIcon sx={{ fontSize: 14 }} />,
   },
-  checking_lvl2: {
-    label: 'Проверка ур.2',
-    bg: '#e3f2fd',
-    color: '#1565c0',
-    icon: <ClockIcon sx={{ fontSize: 14 }} />,
-  },
-  final_check: {
-    label: 'Фин. проверка',
-    bg: '#fff3e0',
-    color: '#e65100',
-    icon: <SearchIcon sx={{ fontSize: 14 }} />,
-  },
-  signed: {
-    label: 'Подписана',
-    bg: '#f3e5f5',
-    color: '#7b1fa2',
-    icon: <VerifiedIcon sx={{ fontSize: 14 }} />,
+  ready_to_send: {
+    label: 'Готово к отправке',
+    bg: 'rgba(236,253,245,0.8)',
+    color: '#065f46',
+    border: 'rgba(167,243,208,0.6)',
+    icon: <CheckIcon sx={{ fontSize: 14 }} />,
   },
   sent: {
     label: 'Отправлена',
-    bg: '#e1f5fe',
-    color: '#0277bd',
+    bg: '#eef2ff',
+    color: '#3730a3',
+    border: 'rgba(199,210,254,0.6)',
     icon: <SendIcon sx={{ fontSize: 14 }} />,
   },
-  registered: {
-    label: 'Зарегистрирована',
-    bg: '#e0f2f1',
-    color: '#00695c',
-    icon: <CheckIcon sx={{ fontSize: 14 }} />,
-  },
-  released: {
-    label: 'Выпущена',
-    bg: '#e8f5e9',
-    color: '#1b5e20',
-    icon: <CheckIcon sx={{ fontSize: 14 }} />,
-  },
-  rejected: {
-    label: 'Отклонена',
-    bg: '#ffebee',
-    color: '#c62828',
+  error: {
+    label: 'Ошибка',
+    bg: 'rgba(254,242,242,0.8)',
+    color: '#991b1b',
+    border: 'rgba(254,202,202,0.6)',
     icon: <ErrorIcon sx={{ fontSize: 14 }} />,
   },
-  docs_requested: {
-    label: 'Запрос документов',
-    bg: '#fff8e1',
-    color: '#f57f17',
-    icon: <WarningIcon sx={{ fontSize: 14 }} />,
-  },
-  inspection: {
-    label: 'Досмотр',
-    bg: '#fbe9e7',
-    color: '#bf360c',
-    icon: <SearchIcon sx={{ fontSize: 14 }} />,
+  auto_filled: {
+    label: 'Заполнена AI',
+    bg: '#f5f3ff',
+    color: '#5b21b6',
+    border: 'rgba(196,181,253,0.5)',
+    icon: <VerifiedIcon sx={{ fontSize: 14 }} />,
   },
 };
 
 const StatusChip = ({ status }: StatusChipProps) => {
-  const config = statusConfig[status] || { label: status, bg: '#f5f5f5', color: '#616161' };
+  const config = statusConfig[status] || { label: status, bg: '#f1f5f9', color: '#475569', border: 'rgba(226,232,240,0.8)' };
 
   return (
     <Chip
@@ -94,9 +70,10 @@ const StatusChip = ({ status }: StatusChipProps) => {
       sx={{
         backgroundColor: config.bg,
         color: config.color,
+        border: `1px solid ${config.border}`,
         fontWeight: 500,
-        fontSize: 12,
-        borderRadius: '16px',
+        fontSize: 13,
+        borderRadius: '8px',
         px: 0.5,
         '& .MuiChip-icon': {
           color: config.color,

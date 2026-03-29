@@ -13,12 +13,49 @@ const EVIDENCE_TO_FORM: Record<string, string> = {
   country_destination: 'country_destination_code',
   country_dispatch: 'country_dispatch_code',
   transport_type: 'transport_type_border',
-  transport_id: 'transport_on_border_id',
+  transport_id: 'border_vehicle_info',
+  border_vehicle_info: 'border_vehicle_info',
   trading_partner_country: 'trading_country_code',
   container: 'container_info',
   seller: 'sender_counterparty_id',
   buyer: 'receiver_counterparty_id',
   total_packages: 'total_packages_count',
+  departure_vehicle_info: 'departure_vehicle_info',
+  departure_vehicle_country: 'departure_vehicle_country',
+  border_vehicle_country: 'border_vehicle_country',
+  transport_doc_number: 'transport_doc_number',
+  transport_type_inland: 'transport_type_inland',
+  deal_nature_code: 'deal_nature_code',
+  deal_specifics_code: 'deal_specifics_code',
+  exchange_rate: 'exchange_rate',
+  delivery_place: 'delivery_place',
+  customs_office_code: 'customs_office_code',
+  goods_location: 'goods_location',
+  responsible_person: 'financial_counterparty_id',
+  financial_responsible: 'financial_counterparty_id',
+  declarant: 'declarant_inn_kpp',
+  total_gross_weight: 'total_gross_weight',
+  total_net_weight: 'total_net_weight',
+  total_items_count: 'total_items_count',
+  total_customs_value: 'total_customs_value',
+  preference_code: 'preference_code',
+  type_code: 'type_code',
+  invoice_number: 'invoice_number',
+  invoice_date: 'invoice_date',
+  contract_number: 'contract_number',
+  contract_date: 'contract_date',
+  freight_amount: 'freight_amount',
+  freight_currency: 'freight_currency',
+  description: 'description',
+  country_origin_code: 'country_origin_code',
+  gross_weight: 'gross_weight',
+  net_weight: 'net_weight',
+  additional_unit_qty: 'additional_unit_qty',
+  unit_price: 'unit_price',
+  customs_value_rub: 'customs_value_rub',
+  statistical_value_usd: 'statistical_value_usd',
+  hs_code: 'hs_code',
+  procedure_code: 'procedure_code',
 };
 
 const FORM_TO_EVIDENCE: Record<string, string> = Object.fromEntries(
@@ -29,25 +66,39 @@ const SOURCE_LABELS: Record<string, string> = {
   invoice: 'Инвойс',
   contract: 'Контракт',
   packing_list: 'Упак. лист',
+  packing: 'Упак. лист',
   transport_doc: 'Трансп. документ',
+  transport: 'Трансп. документ',
+  transport_invoice: 'Трансп. счёт',
   awb: 'AWB',
-  heuristic: 'Эвристика',
+  heuristic: 'Автоматически',
   default: 'По умолчанию',
   rules_llm: 'Правила ДТ (AI)',
   aggregated_items: 'Из позиций',
   history: 'История компании',
+  manual: 'Вручную',
+  conformity_declaration: 'Декл. соответствия',
+  sanitary: 'Санитарный серт.',
+  veterinary: 'Ветеринарный серт.',
+  phytosanitary: 'Фитосанитарный серт.',
+  certificate_origin: 'Серт. происхождения',
+  tech_description: 'Тех. описание',
+  specification: 'Спецификация',
+  application_statement: 'Заявление',
+  license: 'Лицензия',
+  permit: 'Разрешение',
 };
 
 function getConfidenceColor(confidence: number): string {
-  if (confidence >= 0.85) return '#2e7d32';
-  if (confidence >= 0.6) return '#ed6c02';
-  return '#d32f2f';
+  if (confidence >= 0.85) return '#059669';
+  if (confidence >= 0.6) return '#d97706';
+  return '#dc2626';
 }
 
 function getConfidenceBgColor(confidence: number): string {
-  if (confidence >= 0.85) return '#e8f5e9';
-  if (confidence >= 0.6) return '#fff3e0';
-  return '#ffebee';
+  if (confidence >= 0.85) return 'rgba(236,253,245,0.8)';
+  if (confidence >= 0.6) return 'rgba(255,251,235,0.8)';
+  return 'rgba(254,242,242,0.8)';
 }
 
 interface ConfidenceBadgeProps {

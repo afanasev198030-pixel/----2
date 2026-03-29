@@ -19,7 +19,7 @@ class DeclarationCreate(BaseModel):
     country_dispatch_code: Optional[str] = None
     country_origin_name: Optional[str] = None
     country_destination_code: Optional[str] = None
-    transport_at_border: Optional[str] = None
+    departure_vehicle_info: Optional[str] = None
     container_info: Optional[str] = None
     incoterms_code: Optional[str] = None
     transport_on_border: Optional[str] = None
@@ -47,13 +47,18 @@ class DeclarationCreate(BaseModel):
     declarant_ogrn: Optional[str] = None
     declarant_phone: Optional[str] = None
     delivery_place: Optional[str] = None
-    transport_on_border_id: Optional[str] = None
+    border_vehicle_info: Optional[str] = None
     entry_customs_code: Optional[str] = None
     goods_location: Optional[str] = None
     payment_deferral: Optional[str] = None
     warehouse_requisites: Optional[str] = None
     transit_offices: Optional[str] = None
     destination_office_code: Optional[str] = None
+    departure_vehicle_country: Optional[str] = None
+    border_vehicle_country: Optional[str] = None
+    transport_doc_number: Optional[str] = None
+    country_first_destination_code: Optional[str] = None
+    guarantee_info: Optional[str] = None
 
 
 class DeclarationUpdate(BaseModel):
@@ -67,7 +72,7 @@ class DeclarationUpdate(BaseModel):
     country_dispatch_code: Optional[str] = None
     country_origin_name: Optional[str] = None
     country_destination_code: Optional[str] = None
-    transport_at_border: Optional[str] = None
+    departure_vehicle_info: Optional[str] = None
     container_info: Optional[str] = None
     incoterms_code: Optional[str] = None
     transport_on_border: Optional[str] = None
@@ -95,7 +100,7 @@ class DeclarationUpdate(BaseModel):
     declarant_ogrn: Optional[str] = None
     declarant_phone: Optional[str] = None
     delivery_place: Optional[str] = None
-    transport_on_border_id: Optional[str] = None
+    border_vehicle_info: Optional[str] = None
     entry_customs_code: Optional[str] = None
     goods_location: Optional[str] = None
     payment_deferral: Optional[str] = None
@@ -115,7 +120,9 @@ class DeclarationUpdate(BaseModel):
     broker_contract_number: Optional[str] = None
     broker_contract_date: Optional[datetime] = None
     transport_reg_number: Optional[str] = None
-    transport_nationality_code: Optional[str] = None
+    departure_vehicle_country: Optional[str] = None
+    border_vehicle_country: Optional[str] = None
+    transport_doc_number: Optional[str] = None
     goods_location_code: Optional[str] = None
     goods_location_customs_code: Optional[str] = None
     goods_location_zone_id: Optional[str] = None
@@ -166,7 +173,7 @@ class DeclarationResponse(BaseModel):
     country_dispatch_code: Optional[str]
     country_origin_name: Optional[str] = None
     country_destination_code: Optional[str]
-    transport_at_border: Optional[str]
+    departure_vehicle_info: Optional[str]
     container_info: Optional[str]
     incoterms_code: Optional[str]
     transport_on_border: Optional[str]
@@ -199,13 +206,17 @@ class DeclarationResponse(BaseModel):
     declarant_ogrn: Optional[str] = None
     declarant_phone: Optional[str] = None
     delivery_place: Optional[str] = None
-    transport_on_border_id: Optional[str] = None
+    border_vehicle_info: Optional[str] = None
     entry_customs_code: Optional[str] = None
     goods_location: Optional[str] = None
     payment_deferral: Optional[str] = None
     warehouse_requisites: Optional[str] = None
     transit_offices: Optional[str] = None
     destination_office_code: Optional[str] = None
+    country_first_destination_code: Optional[str] = None
+    guarantee_info: Optional[str] = None
+    processing_status: Optional[str] = None
+    signature_status: str = "unsigned"
     evidence_map: Optional[dict[str, Any]] = None
     ai_confidence: Optional[Decimal] = None
     ai_issues: Optional[list[dict]] = None
@@ -224,7 +235,9 @@ class DeclarationResponse(BaseModel):
     contract_number: Optional[str] = None
     contract_date: Optional[date] = None
     transport_reg_number: Optional[str] = None
-    transport_nationality_code: Optional[str] = None
+    departure_vehicle_country: Optional[str] = None
+    border_vehicle_country: Optional[str] = None
+    transport_doc_number: Optional[str] = None
     goods_location_code: Optional[str] = None
     goods_location_customs_code: Optional[str] = None
     goods_location_zone_id: Optional[str] = None
@@ -266,6 +279,8 @@ class DeclarationListResponse(BaseModel):
     number_internal: Optional[str]
     type_code: Optional[str]
     status: str
+    processing_status: Optional[str] = None
+    signature_status: str = "unsigned"
     company_id: uuid.UUID
     total_invoice_value: Optional[Decimal]
     currency_code: Optional[str]

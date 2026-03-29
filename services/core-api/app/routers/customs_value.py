@@ -173,7 +173,7 @@ async def generate_dts(
         filler_date=date.today(),
         filler_position=decl.signatory_position,
         filler_document=decl.signatory_id_doc,
-        transport_carrier_name=decl.transport_at_border or decl.transport_on_border_id,
+        transport_carrier_name=decl.departure_vehicle_info or decl.border_vehicle_info,
         transport_destination=decl.delivery_place,
         usd_exchange_rate=usd_rate,
     )

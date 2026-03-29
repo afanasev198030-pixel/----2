@@ -487,7 +487,7 @@ def _build_consignment(parent: etree._Element, decl: dict) -> None:
         bt = _el(cons, None, "ESADout_CUBorderTransport")
         _txt(bt, NS_CAT, "TransportModeCode", tb)
         _txt(bt, NS_CAT, "TransportNationalityCode",
-             decl.get("transport_nationality_code") or "00")
+             decl.get("departure_vehicle_country") or "00")
         _txt(bt, None, "TransportMeansQuantity",
              decl.get("transport_means_quantity") or "1")
 
@@ -499,7 +499,7 @@ def _build_consignment(parent: etree._Element, decl: dict) -> None:
             _txt(rtm, NS_CAT, "TransportTypeName", decl.get("transport_type_name"))
             _txt(rtm, NS_CAT, "TransportIdentifier", reg_num)
             _txt(rtm, NS_CAT, "TransportMeansNationalityCode",
-                 decl.get("transport_nationality_code") or "00")
+                 decl.get("departure_vehicle_country") or "00")
 
 
 # ──────────────────────────────────────────────────────────────────────

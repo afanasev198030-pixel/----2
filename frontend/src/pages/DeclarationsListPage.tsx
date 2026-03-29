@@ -23,8 +23,6 @@ import {
   FormControl,
   InputLabel,
   Chip,
-  Card,
-  CardContent,
   TextField,
   InputAdornment,
   Tooltip,
@@ -41,9 +39,6 @@ import {
   Add as AddIcon,
   Search as SearchIcon,
   WorkOutline as WorkIcon,
-  SendOutlined as SendIcon,
-  ErrorOutline as ErrorIcon,
-  CheckCircleOutline as CheckIcon,
   OpenInNew as OpenIcon,
   ContentCopy as CopyIcon,
   Print as PrintIcon,
@@ -55,6 +50,10 @@ import {
   FileDownload as FileDownloadIcon,
   ViewList as TableViewIcon,
   ViewColumn as KanbanIcon,
+  Description as DescriptionIcon,
+  WarningAmber as WarningAmberIcon,
+  CheckCircle as CheckCircleIcon,
+  Send as SendFilledIcon,
 } from '@mui/icons-material';
 import { getDeclarations, getDeclaration, createDeclaration, deleteDeclaration } from '../api/declarations';
 import { getMe } from '../api/auth';
@@ -64,14 +63,16 @@ import StatusChip from '../components/StatusChip';
 import KanbanView from '../components/KanbanView';
 import { Declaration } from '../types';
 import dayjs from 'dayjs';
+import 'dayjs/locale/ru';
+dayjs.locale('ru');
 
 type SortField = 'number_internal' | 'created_at' | 'type_code' | 'status' | 'total_invoice_value';
 type SortOrder = 'asc' | 'desc';
 
 const STATUS_PARAM_MAP: Record<string, string[]> = {
-  in_progress: ['draft', 'checking_lvl1', 'checking_lvl2', 'final_check'],
-  released: ['released'],
-  rejected: ['rejected'],
+  in_progress: ['new', 'requires_attention'],
+  ready: ['ready_to_send'],
+  sent: ['sent'],
 };
 
 const DeclarationsListPage = () => {
@@ -114,7 +115,7 @@ const DeclarationsListPage = () => {
     onSuccess: (newDecl) => {
       queryClient.invalidateQueries({ queryKey: ['declarations'] });
       setCreateDialogOpen(false);
-      navigate(`/declarations/${newDecl.id}/edit`);
+      navigate(`/declarations/${newDecl.id}/form-legacy`);
     },
     onError: (err: any) => {
       console.error('Create declaration error:', err?.response?.data || err);
@@ -337,14 +338,14 @@ const DeclarationsListPage = () => {
     return filteredAndSortedItems.some((decl: Declaration) => decl.total_invoice_value != null);
   }, [filteredAndSortedItems]);
 
-  // Calculate metrics from filtered items
   const metrics = useMemo(() => {
     const allItems = data?.items || [];
     return {
       total: allItems.length,
-      checking: allItems.filter((d: Declaration) => ['checking_lvl1', 'checking_lvl2', 'final_check'].includes(d.status)).length,
-      released: allItems.filter((d: Declaration) => d.status === 'released').length,
-      attention: allItems.filter((d: Declaration) => ['rejected', 'docs_requested'].includes(d.status)).length,
+      newCount: allItems.filter((d: Declaration) => d.status === 'new').length,
+      checking: allItems.filter((d: Declaration) => d.status === 'requires_attention').length,
+      released: allItems.filter((d: Declaration) => d.status === 'ready_to_send').length,
+      sent: allItems.filter((d: Declaration) => d.status === 'sent').length,
     };
   }, [data?.items]);
 
@@ -356,49 +357,96 @@ const DeclarationsListPage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Декларации' }]}>
-      {/* Search and Create */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, gap: 2 }}>
+      {/* Page title */}
+      <Box sx={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', mb: 2.5 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, letterSpacing: '-0.02em' }}>Декларации</Typography>
+          <Typography sx={{ fontSize: 13, color: '#94a3b8', mt: 0.25 }}>
+            {dayjs().format('dddd, D MMMM YYYY')} · {metrics.total} деклараций в работе
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={(_, v) => v && setViewMode(v)}
+            size="small"
+            sx={{
+              '& .MuiToggleButton-root': {
+                border: '1px solid rgba(226,232,240,0.6)',
+                borderRadius: '10px !important',
+                px: 1.5,
+                py: 0.5,
+                '&.Mui-selected': { bgcolor: 'rgba(241,245,249,1)', color: '#0f172a' },
+              },
+            }}
+          >
+            <ToggleButton value="table"><TableViewIcon fontSize="small" /></ToggleButton>
+            <ToggleButton value="kanban"><KanbanIcon fontSize="small" /></ToggleButton>
+          </ToggleButtonGroup>
+          <Button
+            size="small"
+            onClick={handleExportCSV}
+            startIcon={<FileDownloadIcon sx={{ fontSize: '16px !important' }} />}
+            sx={{
+              textTransform: 'none',
+              borderRadius: '10px',
+              border: '1px solid rgba(226,232,240,0.6)',
+              color: '#475569',
+              px: 1.5,
+              '&:hover': { bgcolor: 'rgba(248,250,252,0.8)' },
+            }}
+          >
+            Excel
+          </Button>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<AddIcon sx={{ fontSize: '16px !important' }} />}
+            onClick={() => setCreateDialogOpen(true)}
+            sx={{
+              fontWeight: 500,
+              borderRadius: '10px',
+              px: 2,
+              py: 0.875,
+              textTransform: 'none',
+              fontSize: 14,
+              boxShadow: 'none',
+              '&:hover': { boxShadow: '0 2px 8px rgba(0,0,0,0.12)' },
+            }}
+          >
+            Создать декларацию
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Search + Filters */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         <TextField
           size="small"
-          placeholder="Поиск по номеру, ИНН, контрагенту..."
+          placeholder="Поиск по ID, номеру, ТН ВЭД..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           sx={{
-            width: { xs: '100%', sm: 400 },
-            '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' },
+            width: { xs: '100%', sm: 360 },
+            '& .MuiOutlinedInput-root': {
+              borderRadius: '10px',
+              bgcolor: 'rgba(248,250,252,0.8)',
+              border: '1px solid rgba(226,232,240,0.6)',
+              fontSize: 13,
+              '& fieldset': { border: 'none' },
+              '&:hover': { borderColor: 'rgba(203,213,225,0.8)' },
+              '&.Mui-focused': { borderColor: 'rgba(148,163,184,0.6)', bgcolor: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' },
+            },
           }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
-                <SearchIcon />
+                <SearchIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
               </InputAdornment>
             ),
           }}
         />
-        <ToggleButtonGroup value={viewMode} exclusive onChange={(_, v) => v && setViewMode(v)} size="small" sx={{ mr: 'auto', ml: 1 }}>
-          <ToggleButton value="table"><TableViewIcon fontSize="small" /></ToggleButton>
-          <ToggleButton value="kanban"><KanbanIcon fontSize="small" /></ToggleButton>
-        </ToggleButtonGroup>
-        <Button
-          size="small"
-          onClick={handleExportCSV}
-          startIcon={<FileDownloadIcon />}
-          sx={{ textTransform: 'none', borderRadius: 2 }}
-        >
-          Excel
-        </Button>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setCreateDialogOpen(true)}
-          sx={{ fontWeight: 600, borderRadius: 2, px: 3, textTransform: 'none' }}
-        >
-          Создать
-        </Button>
-      </Box>
-
-      {/* Date Filters */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         <TextField
           size="small"
           type="date"
@@ -406,7 +454,7 @@ const DeclarationsListPage = () => {
           value={dateFrom}
           onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
           InputLabelProps={{ shrink: true }}
-          sx={{ width: 180, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' } }}
+          sx={{ width: 160, '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'white', fontSize: 13 } }}
         />
         <TextField
           size="small"
@@ -415,142 +463,137 @@ const DeclarationsListPage = () => {
           value={dateTo}
           onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
           InputLabelProps={{ shrink: true }}
-          sx={{ width: 180, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: 'white' } }}
+          sx={{ width: 160, '& .MuiOutlinedInput-root': { borderRadius: '10px', bgcolor: 'white', fontSize: 13 } }}
         />
         {(dateFrom || dateTo || statusFilter) && (
           <Button
             size="small"
             onClick={() => { setDateFrom(''); setDateTo(''); setStatusFilter(null); setSearchQuery(''); setPage(1); }}
-            sx={{ textTransform: 'none', borderRadius: 2 }}
+            sx={{ textTransform: 'none', borderRadius: '10px', fontSize: 13, color: '#64748b' }}
           >
-            Сбросить фильтры
+            Сбросить
           </Button>
         )}
       </Box>
 
       {/* Quick Filter Chips */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', gap: 0.75, mb: 2.5, flexWrap: 'wrap' }}>
         {[
           { label: 'Все', value: null },
-          { label: 'Черновики', value: ['draft'] },
-          { label: 'На проверке', value: ['checking_lvl1', 'checking_lvl2', 'final_check'] },
-          { label: 'Подписано', value: ['signed'] },
+          { label: 'Новые', value: ['new'] },
+          { label: 'Требуют внимания', value: ['requires_attention'] },
+          { label: 'Готовы к отправке', value: ['ready_to_send'] },
           { label: 'Отправлено', value: ['sent'] },
-          { label: 'Выпущено', value: ['released'] },
-          { label: 'Отклонено', value: ['rejected'] },
-        ].map((chip) => (
-          <Chip
-            key={chip.label}
-            label={chip.label}
-            size="small"
-            variant={JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 'filled' : 'outlined'}
-            color={JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 'primary' : 'default'}
-            onClick={() => { setStatusFilter(chip.value); setPage(1); }}
-            sx={{ fontWeight: JSON.stringify(statusFilter) === JSON.stringify(chip.value) ? 700 : 400 }}
-          />
-        ))}
+        ].map((chip) => {
+          const isActive = JSON.stringify(statusFilter) === JSON.stringify(chip.value);
+          return (
+            <Chip
+              key={chip.label}
+              label={chip.label}
+              size="small"
+              variant={isActive ? 'filled' : 'outlined'}
+              color={isActive ? 'primary' : 'default'}
+              onClick={() => { setStatusFilter(chip.value); setPage(1); }}
+              sx={{
+                fontWeight: isActive ? 600 : 400,
+                fontSize: 13,
+                borderRadius: '8px',
+                height: 30,
+                border: isActive ? undefined : '1px solid rgba(226,232,240,0.8)',
+              }}
+            />
+          );
+        })}
       </Box>
 
       {/* Metrics */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
-          <Card
-            onClick={() => handleMetricClick(null)}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
+        {[
+          {
+            label: 'Новые',
+            value: metrics.newCount,
+            statuses: ['new'] as string[],
+            icon: <DescriptionIcon sx={{ fontSize: 18 }} />,
+            iconBg: 'rgba(239,246,255,1)',
+            iconColor: '#2563eb',
+            borderColor: 'rgba(191,219,254,0.8)',
+          },
+          {
+            label: 'Требуют внимания',
+            value: metrics.checking,
+            statuses: ['requires_attention'] as string[],
+            icon: <WarningAmberIcon sx={{ fontSize: 18 }} />,
+            iconBg: 'rgba(255,251,235,1)',
+            iconColor: '#d97706',
+            borderColor: 'rgba(253,230,138,0.8)',
+          },
+          {
+            label: 'Готово к отправке',
+            value: metrics.released,
+            statuses: ['ready_to_send'] as string[],
+            icon: <CheckCircleIcon sx={{ fontSize: 18 }} />,
+            iconBg: 'rgba(236,253,245,1)',
+            iconColor: '#059669',
+            borderColor: 'rgba(167,243,208,0.8)',
+          },
+          {
+            label: 'Отправлено',
+            value: metrics.sent,
+            statuses: ['sent'] as string[],
+            icon: <SendFilledIcon sx={{ fontSize: 18 }} />,
+            iconBg: 'rgba(241,245,249,1)',
+            iconColor: '#64748b',
+            borderColor: 'rgba(226,232,240,0.6)',
+          },
+        ].map((m) => (
+          <Paper
+            key={m.label}
+            onClick={() => handleMetricClick(m.statuses)}
             sx={{
+              p: 2,
               cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(null) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(null) ? 'primary.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
+              borderRadius: '14px',
+              border: '1px solid',
+              borderColor: isMetricActive(m.statuses) ? m.borderColor : 'rgba(226,232,240,0.8)',
+              boxShadow: isMetricActive(m.statuses) ? `0 0 0 1px ${m.borderColor}` : 'none',
+              transition: 'all 0.15s',
+              '&:hover': { boxShadow: '0 1px 4px rgba(0,0,0,0.05)' },
             }}
           >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="info.main" fontWeight={700}>{metrics.total}</Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Всего деклараций</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <WorkIcon color="info" />
-                </Box>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: '#64748b', mb: 0.5 }}>{m.label}</Typography>
+                <Typography
+                  sx={{
+                    fontSize: 26,
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    fontVariantNumeric: 'tabular-nums',
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.1,
+                  }}
+                >
+                  {m.value}
+                </Typography>
               </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            onClick={() => handleMetricClick(['checking_lvl1', 'checking_lvl2', 'final_check'])}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(['checking_lvl1', 'checking_lvl2', 'final_check']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['checking_lvl1', 'checking_lvl2', 'final_check']) ? 'warning.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="warning.main" fontWeight={700}>
-                    {metrics.checking}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>На проверке</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <SendIcon color="warning" />
-                </Box>
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '10px',
+                  bgcolor: m.iconBg,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: m.iconColor,
+                }}
+              >
+                {m.icon}
               </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            onClick={() => handleMetricClick(['released'])}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(['released']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['released']) ? 'success.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="success.main" fontWeight={700}>
-                    {metrics.released}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Выпущены</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckIcon color="success" />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-
-          <Card
-            onClick={() => handleMetricClick(['rejected', 'docs_requested'])}
-            sx={{
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: isMetricActive(['rejected', 'docs_requested']) ? '2px solid' : '2px solid transparent',
-              borderColor: isMetricActive(['rejected', 'docs_requested']) ? 'error.main' : 'transparent',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 },
-            }}
-          >
-            <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-              <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                <Box>
-                  <Typography variant="h4" color="error.main" fontWeight={700}>
-                    {metrics.attention}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" mt={0.5}>Требуют внимания</Typography>
-                </Box>
-                <Box sx={{ width: 48, height: 48, borderRadius: 3, background: 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <ErrorIcon color="error" />
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Box>
+            </Box>
+          </Paper>
+        ))}
+      </Box>
 
         {viewMode === 'kanban' ? (
           <KanbanView declarations={filteredAndSortedItems} onClickDeclaration={(id) => navigate(`/declarations/${id}/edit`)} />
@@ -702,7 +745,7 @@ const DeclarationsListPage = () => {
                           bgcolor: declaration.type_code?.startsWith('IM') ? '#e3f2fd' : '#fff3e0',
                           color: declaration.type_code?.startsWith('IM') ? '#1565c0' : '#e65100',
                           fontWeight: 500,
-                          fontSize: 11,
+                          fontSize: 12,
                           textTransform: 'uppercase',
                           letterSpacing: 0.5,
                           '& .MuiChip-icon': {

@@ -70,7 +70,7 @@ const AdminAuditPage = () => {
   return (
     <AppLayout breadcrumbs={[{ label: 'Администрирование' }, { label: 'Аудит-лог' }]}>
       <Container maxWidth="xl" sx={{ py: 3 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ mb: 3 }}>Аудит-лог действий</Typography>
+        <Typography variant="h5" fontWeight={700} sx={{ mb: 3, color: '#0f172a' }}>Аудит-лог действий</Typography>
 
         <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
           <TextField
@@ -90,11 +90,11 @@ const AdminAuditPage = () => {
             </Select>
           </FormControl>
           {data && (
-            <Chip label={`Всего записей: ${data.total}`} variant="outlined" sx={{ alignSelf: 'center' }} />
+            <Chip label={`Всего записей: ${data.total}`} variant="outlined" sx={{ alignSelf: 'center', borderColor: 'rgba(148,163,184,0.55)', color: '#64748b', fontWeight: 600 }} />
           )}
         </Box>
 
-        <Paper variant="outlined">
+        <Paper variant="outlined" sx={{ boxShadow: 'none' }}>
           <Table size="small">
             <TableHead>
               <TableRow>

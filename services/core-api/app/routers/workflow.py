@@ -14,6 +14,7 @@ from app.middleware.auth import get_current_user
 from app.models import (
     Declaration,
     DeclarationStatus,
+    SignatureStatus,
     DeclarationItem,
     DeclarationLog,
     DeclarationStatusHistory,
@@ -22,7 +23,13 @@ from app.models import (
 )
 from app.models.hs_code_history import HsCodeHistory
 from app.models.parse_issue import ParseIssue
-from app.schemas import StatusChangeRequest
+from app.services.declaration_state_service import (
+    recalculate_declaration_state,
+    reset_signature_if_needed,
+    can_send,
+    handle_first_open,
+    STATUS_DISPLAY,
+)
 
 logger = structlog.get_logger()
 
@@ -31,20 +38,10 @@ router = APIRouter(
     tags=["workflow"],
 )
 
-VALID_TRANSITIONS = {
-    DeclarationStatus.DRAFT: {DeclarationStatus.CHECKING_LVL1},
-    DeclarationStatus.CHECKING_LVL1: {DeclarationStatus.CHECKING_LVL2, DeclarationStatus.DRAFT},
-    DeclarationStatus.CHECKING_LVL2: {DeclarationStatus.FINAL_CHECK, DeclarationStatus.DRAFT},
-    DeclarationStatus.FINAL_CHECK: {DeclarationStatus.SIGNED, DeclarationStatus.DRAFT},
-    DeclarationStatus.SIGNED: {DeclarationStatus.SENT},
-}
-
 REQUIRED_FIELDS_FOR_SEND = [
     "type_code", "company_id", "country_dispatch_code", "country_destination_code",
     "incoterms_code", "currency_code", "total_invoice_value",
 ]
-
-GATED_STATUSES = {DeclarationStatus.SIGNED, DeclarationStatus.SENT}
 
 
 class PreSendCheck(BaseModel):
@@ -205,8 +202,8 @@ def _build_document_matrix_checks(
     recognized_doc_types = sorted(t for t, items in docs_by_type.items() if items and t != "other")
     need_transport_doc = bool(
         declaration.transport_type_border
-        or declaration.transport_at_border
-        or declaration.transport_on_border_id
+        or declaration.departure_vehicle_info
+        or declaration.border_vehicle_info
     )
     need_packing_list = bool(
         items_count > 1
@@ -439,7 +436,7 @@ def _build_cross_document_checks(
             ),
         ))
 
-    if transport_doc and need_transport_doc and not (declaration.transport_at_border or declaration.transport_on_border_id):
+    if transport_doc and need_transport_doc and not (declaration.departure_vehicle_info or declaration.border_vehicle_info):
         checks.append(PreSendCheck(
             code="TRANSPORT_DOC_NOT_APPLIED",
             severity="warning",
@@ -618,104 +615,190 @@ async def pre_send_check_endpoint(
     return check_result
 
 
-@router.post("/status", response_model=dict)
-async def change_status(
+async def _load_declaration_with_access(
     declaration_id: uuid.UUID,
-    data: StatusChangeRequest,
+    db: AsyncSession,
+    current_user: User,
+) -> Declaration:
+    """Load declaration and verify company access. Raises on failure."""
+    result = await db.execute(
+        select(Declaration).where(Declaration.id == declaration_id)
+    )
+    declaration = result.scalar_one_or_none()
+    if not declaration:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Declaration not found")
+    if current_user.company_id and declaration.company_id != current_user.company_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    if not current_user.company_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User must be associated with a company")
+    return declaration
+
+
+@router.post("/open", response_model=dict)
+async def open_declaration(
+    declaration_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark declaration as opened by user. Transitions from NEW to
+    REQUIRES_ATTENTION or READY_TO_SEND based on validation."""
+    declaration = await _load_declaration_with_access(declaration_id, db, current_user)
+
+    old_status = declaration.status
+    await handle_first_open(declaration, db, user_id=str(current_user.id))
+    await db.commit()
+    await db.refresh(declaration)
+
+    return {
+        "declaration_id": str(declaration.id),
+        "old_status": old_status,
+        "new_status": declaration.status,
+        "processing_status": declaration.processing_status,
+        "signature_status": declaration.signature_status,
+    }
+
+
+@router.post("/recalculate", response_model=dict)
+async def recalculate_endpoint(
+    declaration_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Force re-evaluation of declaration state (REQUIRES_ATTENTION / READY_TO_SEND)."""
+    declaration = await _load_declaration_with_access(declaration_id, db, current_user)
+
+    if declaration.status == DeclarationStatus.SENT.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot recalculate a sent declaration",
+        )
+
+    old_status = declaration.status
+    await recalculate_declaration_state(declaration, db, user_id=str(current_user.id))
+    await db.commit()
+    await db.refresh(declaration)
+
+    return {
+        "declaration_id": str(declaration.id),
+        "old_status": old_status,
+        "new_status": declaration.status,
+    }
+
+
+@router.post("/sign", response_model=dict)
+async def sign_declaration(
+    declaration_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Sign a declaration. Only allowed when status is READY_TO_SEND."""
+    declaration = await _load_declaration_with_access(declaration_id, db, current_user)
+
+    if declaration.status != DeclarationStatus.READY_TO_SEND.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Подпись возможна только в статусе «Готово к отправке». Текущий: {declaration.status}",
+        )
+
+    if declaration.signature_status == SignatureStatus.SIGNED.value:
+        return {
+            "declaration_id": str(declaration.id),
+            "signature_status": SignatureStatus.SIGNED.value,
+            "message": "Already signed",
+        }
+
+    declaration.signature_status = SignatureStatus.SIGNED.value
+    declaration.updated_at = datetime.utcnow()
+
+    log_entry = DeclarationLog(
+        declaration_id=declaration.id,
+        user_id=current_user.id,
+        action="sign",
+        old_value={"signature_status": SignatureStatus.UNSIGNED.value},
+        new_value={"signature_status": SignatureStatus.SIGNED.value},
+    )
+    db.add(log_entry)
+    await db.commit()
+
+    logger.info(
+        "declaration_signed",
+        declaration_id=str(declaration.id),
+        user_id=str(current_user.id),
+    )
+
+    return {
+        "declaration_id": str(declaration.id),
+        "signature_status": SignatureStatus.SIGNED.value,
+        "status": declaration.status,
+    }
+
+
+@router.post("/send", response_model=dict)
+async def send_declaration(
+    declaration_id: uuid.UUID,
     force: bool = Query(False, description="Override blocking checks with audit reason"),
     override_reason: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Change declaration status. Validates transitions. Runs pre-send gate for sign/send."""
-    result = await db.execute(
-        select(Declaration).where(Declaration.id == declaration_id)
-    )
-    declaration = result.scalar_one_or_none()
+    """Send declaration to customs. Requires READY_TO_SEND + SIGNED."""
+    declaration = await _load_declaration_with_access(declaration_id, db, current_user)
 
-    if not declaration:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Declaration not found",
-        )
-
-    if current_user.company_id and declaration.company_id != current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied",
-        )
-    if not current_user.company_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User must be associated with a company",
-        )
-
-    try:
-        new_status = DeclarationStatus(data.new_status)
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status: {data.new_status}",
-        )
-
-    current_status_enum = DeclarationStatus(declaration.status)
-
-    allowed_transitions = VALID_TRANSITIONS.get(current_status_enum, set())
-    if new_status not in allowed_transitions:
+    if not can_send(declaration) and not force:
+        problems = []
+        if declaration.status != DeclarationStatus.READY_TO_SEND.value:
+            problems.append(f"status={declaration.status} (нужен ready_to_send)")
+        if declaration.signature_status != SignatureStatus.SIGNED.value:
+            problems.append("декларация не подписана")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                f"Invalid status transition: {current_status_enum.value} -> {new_status.value}. "
-                f"Allowed transitions: {[s.value for s in allowed_transitions]}"
-            ),
+            detail=f"Отправка невозможна: {'; '.join(problems)}",
         )
 
-    if new_status in GATED_STATUSES:
-        gate_result = await run_pre_send_checks(declaration, db)
-        if not gate_result.passed and not force:
+    if force and not can_send(declaration):
+        if not override_reason:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail={
-                    "message": f"Pre-send gate failed: {gate_result.blocking_count} blocking issues",
-                    "checks": [c.model_dump() for c in gate_result.checks],
-                    "blocking_count": gate_result.blocking_count,
-                },
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="override_reason is required when force=true",
             )
-        if not gate_result.passed and force:
-            if not override_reason:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="override_reason is required when force=true",
-                )
-            logger.warning(
-                "pre_send_gate_overridden",
-                declaration_id=str(declaration_id),
-                user_id=str(current_user.id),
-                reason=override_reason,
-                blocking_count=gate_result.blocking_count,
-            )
+        logger.warning(
+            "send_gate_overridden",
+            declaration_id=str(declaration_id),
+            user_id=str(current_user.id),
+            reason=override_reason,
+            status=declaration.status,
+            signature_status=declaration.signature_status,
+        )
+
+    gate_result = await run_pre_send_checks(declaration, db)
+    if not gate_result.passed and not force:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": f"Pre-send gate failed: {gate_result.blocking_count} blocking issues",
+                "checks": [c.model_dump() for c in gate_result.checks],
+                "blocking_count": gate_result.blocking_count,
+            },
+        )
 
     old_status = declaration.status
-
-    declaration.status = new_status
+    declaration.status = DeclarationStatus.SENT.value
+    declaration.submitted_at = datetime.utcnow()
     declaration.updated_at = datetime.utcnow()
-
-    await db.commit()
-    await db.refresh(declaration)
 
     log_entry = DeclarationLog(
         declaration_id=declaration.id,
         user_id=current_user.id,
         action="status_change",
         old_value={"status": old_status},
-        new_value={"status": new_status.value},
+        new_value={"status": DeclarationStatus.SENT.value},
     )
     db.add(log_entry)
 
     history_entry = DeclarationStatusHistory(
         declaration_id=declaration.id,
-        status_code=new_status.value,
-        status_text=f"Status changed from {old_status} to {new_status.value}",
+        status_code=DeclarationStatus.SENT.value,
+        status_text="Декларация отправлена",
         source="system",
     )
     db.add(history_entry)
@@ -724,25 +807,23 @@ async def change_status(
         override_log = DeclarationLog(
             declaration_id=declaration.id,
             user_id=current_user.id,
-            action="pre_send_gate_override",
+            action="send_gate_override",
             old_value={"reason": override_reason},
-            new_value={"new_status": new_status.value},
+            new_value={"status": DeclarationStatus.SENT.value},
         )
         db.add(override_log)
 
     await db.commit()
 
     logger.info(
-        "declaration_status_changed",
+        "declaration_sent",
         declaration_id=str(declaration.id),
-        old_status=old_status,
-        new_status=new_status.value,
         user_id=str(current_user.id),
     )
 
     return {
         "declaration_id": str(declaration.id),
         "old_status": old_status,
-        "new_status": new_status.value,
-        "changed_at": datetime.utcnow().isoformat(),
+        "new_status": DeclarationStatus.SENT.value,
+        "sent_at": declaration.submitted_at.isoformat() if declaration.submitted_at else None,
     }

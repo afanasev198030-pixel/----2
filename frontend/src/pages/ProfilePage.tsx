@@ -77,26 +77,26 @@ const ProfilePage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Профиль' }]}>
-      <Typography variant="h5" fontWeight={700} gutterBottom>Профиль</Typography>
-      <Paper sx={{ p: 3, mb: 3, maxWidth: 600 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Личные данные</Typography>
+      <Typography variant="h5" fontWeight={700} gutterBottom sx={{ color: '#0f172a' }}>Профиль</Typography>
+      <Paper sx={{ p: 3, mb: 3, maxWidth: 600, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+        <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Личные данные</Typography>
         <TextField fullWidth label="Email" value={me?.email || ''} disabled size="small" sx={{ mb: 2 }} />
         <TextField fullWidth label="Роль" value={me?.role || ''} disabled size="small" sx={{ mb: 2 }} />
         <TextField fullWidth label="Имя" value={fullName || me?.full_name || ''} onChange={(e) => setFullName(e.target.value)} size="small" sx={{ mb: 2 }} />
         <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveName} size="small">Сохранить имя</Button>
       </Paper>
-      <Paper sx={{ p: 3, mb: 3, maxWidth: 600 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Интеграции</Typography>
+      <Paper sx={{ p: 3, mb: 3, maxWidth: 600, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+        <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Интеграции</Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
           {me?.telegram_id ? (
             <>
               <TelegramIcon color="primary" />
-              <Typography>Telegram привязан (ID: {me.telegram_id})</Typography>
+              <Typography sx={{ color: '#0f172a' }}>Telegram привязан (ID: {me.telegram_id})</Typography>
             </>
           ) : (
             <>
               <TelegramIcon color="disabled" />
-              <Typography color="text.secondary">Telegram не привязан</Typography>
+              <Typography sx={{ color: '#64748b' }}>Telegram не привязан</Typography>
               <Button variant="outlined" onClick={handleLinkTelegram} size="small">
                 Привязать Telegram
               </Button>
@@ -105,8 +105,8 @@ const ProfilePage = () => {
         </Box>
         
         {me?.role === 'admin' && (
-          <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'divider' }}>
-            <Typography variant="subtitle2" sx={{ mb: 2 }}>Настройки Telegram Бота (Только для администраторов)</Typography>
+          <Box sx={{ mt: 3, pt: 3, borderTop: '1px solid', borderColor: 'rgba(241,245,249,1)' }}>
+            <Typography variant="subtitle2" sx={{ mb: 2, color: '#0f172a' }}>Настройки Telegram Бота (Только для администраторов)</Typography>
             <TextField 
               fullWidth 
               label="Токен бота (от @BotFather)" 
@@ -132,8 +132,8 @@ const ProfilePage = () => {
           </Box>
         )}
       </Paper>
-      <Paper sx={{ p: 3, maxWidth: 600 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Смена пароля</Typography>
+      <Paper sx={{ p: 3, maxWidth: 600, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+        <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Смена пароля</Typography>
         <TextField fullWidth label="Текущий пароль" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} size="small" sx={{ mb: 2 }} />
         <TextField fullWidth label="Новый пароль" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} size="small" sx={{ mb: 2 }} />
         <Button variant="outlined" startIcon={<LockIcon />} onClick={handleChangePassword} size="small">Изменить пароль</Button>

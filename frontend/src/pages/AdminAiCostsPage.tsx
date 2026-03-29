@@ -31,8 +31,8 @@ const AdminAiCostsPage = () => {
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <MoneyIcon color="primary" />
-            <Typography variant="h5">Unit-экономика AI</Typography>
+            <MoneyIcon sx={{ color: '#2563eb' }} />
+            <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>Unit-экономика AI</Typography>
           </Box>
           <TextField
             select size="small" value={days}
@@ -46,12 +46,12 @@ const AdminAiCostsPage = () => {
           </TextField>
         </Box>
 
-        <Alert severity="info" sx={{ mb: 2 }}>
+        <Alert severity="info" sx={{ mb: 2, boxShadow: 'none', border: '1px solid rgba(226,232,240,0.9)' }}>
           Отслеживание затрат на AI-обработку деклараций. Показывает сколько токенов и денег тратится
           на каждую операцию, какая модель дороже, и какова стоимость обработки одной декларации.
         </Alert>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>Ошибка загрузки данных</Alert>}
+        {error && <Alert severity="error" sx={{ mb: 2, boxShadow: 'none' }}>Ошибка загрузки данных</Alert>}
 
         {isLoading ? (
           <Grid container spacing={2}>
@@ -64,22 +64,22 @@ const AdminAiCostsPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                    <MoneyIcon sx={{ fontSize: 32, color: 'warning.main', mb: 0.5 }} />
-                    <Typography variant="h5" fontWeight={700} color="warning.main">
+                    <MoneyIcon sx={{ fontSize: 32, color: '#d97706', mb: 0.5 }} />
+                    <Typography variant="h5" fontWeight={700} sx={{ color: '#d97706' }}>
                       ${fmt(data.totals.cost_usd, 4)}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">Общие затраты</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>Общие затраты</Typography>
                   </CardContent>
                 </Card>
               </Grid>
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                    <DeclIcon sx={{ fontSize: 32, color: 'primary.main', mb: 0.5 }} />
-                    <Typography variant="h5" fontWeight={700} color="primary.main">
+                    <DeclIcon sx={{ fontSize: 32, color: '#2563eb', mb: 0.5 }} />
+                    <Typography variant="h5" fontWeight={700} sx={{ color: '#2563eb' }}>
                       ${fmt(data.unit_economics.cost_per_declaration_usd, 4)}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
                       Стоимость 1 декларации ({data.unit_economics.declarations_processed} обработано)
                     </Typography>
                   </CardContent>
@@ -88,11 +88,11 @@ const AdminAiCostsPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                    <TokenIcon sx={{ fontSize: 32, color: 'info.main', mb: 0.5 }} />
-                    <Typography variant="h5" fontWeight={700} color="info.main">
+                    <TokenIcon sx={{ fontSize: 32, color: '#8b5cf6', mb: 0.5 }} />
+                    <Typography variant="h5" fontWeight={700} sx={{ color: '#8b5cf6' }}>
                       {fmtInt(data.totals.total_tokens)}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>
                       Токенов ({fmtInt(data.totals.calls)} вызовов)
                     </Typography>
                   </CardContent>
@@ -101,11 +101,11 @@ const AdminAiCostsPage = () => {
               <Grid item xs={6} md={3}>
                 <Card variant="outlined">
                   <CardContent sx={{ textAlign: 'center', py: 2 }}>
-                    <SpeedIcon sx={{ fontSize: 32, color: 'success.main', mb: 0.5 }} />
-                    <Typography variant="h5" fontWeight={700} color="success.main">
+                    <SpeedIcon sx={{ fontSize: 32, color: '#059669', mb: 0.5 }} />
+                    <Typography variant="h5" fontWeight={700} sx={{ color: '#059669' }}>
                       {fmtInt(data.totals.avg_duration_ms)} мс
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">Среднее время ответа</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>Среднее время ответа</Typography>
                   </CardContent>
                 </Card>
               </Grid>
@@ -114,10 +114,10 @@ const AdminAiCostsPage = () => {
             {/* By operation */}
             <Grid container spacing={2}>
               <Grid item xs={12} md={6}>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>По операциям</Typography>
+                <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>По операциям</Typography>
                   {data.by_operation.length === 0 ? (
-                    <Typography variant="caption" color="text.secondary">Нет данных</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>Нет данных</Typography>
                   ) : (
                     <TableContainer>
                       <Table size="small">
@@ -132,7 +132,7 @@ const AdminAiCostsPage = () => {
                         <TableBody>
                           {data.by_operation.map((row: any) => (
                             <TableRow key={row.operation}>
-                              <TableCell><Chip label={row.operation} size="small" /></TableCell>
+                              <TableCell><Chip label={row.operation} size="small" variant="outlined" color="primary" sx={{ borderColor: 'rgba(37,99,235,0.35)', fontWeight: 500 }} /></TableCell>
                               <TableCell align="right">{fmtInt(row.calls)}</TableCell>
                               <TableCell align="right">{fmtInt(row.tokens)}</TableCell>
                               <TableCell align="right">${fmt(row.cost_usd, 4)}</TableCell>
@@ -146,10 +146,10 @@ const AdminAiCostsPage = () => {
               </Grid>
 
               <Grid item xs={12} md={6}>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>По моделям</Typography>
+                <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>По моделям</Typography>
                   {data.by_model.length === 0 ? (
-                    <Typography variant="caption" color="text.secondary">Нет данных</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>Нет данных</Typography>
                   ) : (
                     <TableContainer>
                       <Table size="small">
@@ -164,7 +164,7 @@ const AdminAiCostsPage = () => {
                         <TableBody>
                           {data.by_model.map((row: any) => (
                             <TableRow key={row.model}>
-                              <TableCell><Chip label={row.model} size="small" variant="outlined" /></TableCell>
+                              <TableCell><Chip label={row.model} size="small" variant="outlined" sx={{ borderColor: 'rgba(148,163,184,0.55)', color: '#64748b', fontWeight: 500 }} /></TableCell>
                               <TableCell align="right">{fmtInt(row.calls)}</TableCell>
                               <TableCell align="right">{fmtInt(row.tokens)}</TableCell>
                               <TableCell align="right">${fmt(row.cost_usd, 4)}</TableCell>

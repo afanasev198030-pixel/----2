@@ -18,12 +18,17 @@ import structlog
 from app.database import get_db
 from app.middleware.auth import get_current_user
 from app.models import (
-    Declaration, DeclarationStatus, DeclarationItem,
+    Declaration, DeclarationStatus, ProcessingStatus, DeclarationItem,
     Counterparty, Document, DeclarationLog, User, Company, Classifier,
     CustomsPayment,
 )
 from app.models.declaration_item_document import DeclarationItemDocument
 from app.schemas.declaration import DeclarationResponse
+from app.services.declaration_state_service import (
+    recalculate_declaration_state,
+    reset_signature_if_needed,
+    set_processing_status,
+)
 from app.utils.declaration_helpers import (
     merge_company_inn_kpp as _build_declarant_inn_kpp,
     normalize_digits as _normalize_digits,
@@ -414,7 +419,7 @@ class ParsedItem(BaseModel):
     unit: Optional[str] = None
     unit_price: Optional[float] = None
     line_total: Optional[float] = None
-    invoice_currency: Optional[str] = None  # валюта инвойса (для гр. 42: сверка с валютой контракта)
+    invoice_currency: Optional[str] = None
     hs_code: Optional[str] = None
     hs_code_name: Optional[str] = None
     country_origin_code: Optional[str] = None
@@ -422,6 +427,8 @@ class ParsedItem(BaseModel):
     net_weight: Optional[float] = None
     package_count: Optional[int] = None
     package_type: Optional[str] = None
+    customs_value_rub: Optional[float] = None
+    statistical_value_usd: Optional[float] = None
 
 
 class ParsedDocumentRef(BaseModel):
@@ -470,10 +477,10 @@ class ApplyParsedRequest(BaseModel):
     transport_doc_number: Optional[str] = None
     transport_type: Optional[str] = None  # 40=воздушный, 10=морской, 30=авто
     transport_type_inland: Optional[str] = None  # Гр. 26: вид транспорта внутри страны (может отличаться от border)
-    transport_id: Optional[str] = None   # Гр. 21: идентификатор ТС (номер рейса / рег. номер / судно)
-    transport_country_code: Optional[str] = None  # Гр. 21 подраздел 2: страна регистрации ТС
-    vehicle_reg_number: Optional[str] = None  # Гр. 18: бортовой/рег. номер ТС (не номер AWB!)
-    vehicle_country_code: Optional[str] = None  # Гр. 18: код страны регистрации ТС
+    border_vehicle_info: Optional[str] = None   # Гр. 21: идентификатор ТС на границе
+    border_vehicle_country: Optional[str] = None  # Гр. 21: страна регистрации ТС на границе
+    departure_vehicle_info: Optional[str] = None  # Гр. 18: полное описание ТС при отправлении
+    departure_vehicle_country: Optional[str] = None  # Гр. 18: код страны регистрации ТС
     delivery_place: Optional[str] = None  # Гр. 20: место поставки по Инкотермс
     customs_office_code: Optional[str] = None  # Код таможенного поста (8 цифр)
     goods_location: Optional[str] = None
@@ -497,6 +504,15 @@ class ApplyParsedRequest(BaseModel):
     deal_nature_code: Optional[str] = "010"
     deal_specifics_code: Optional[str] = "00"
     type_code: Optional[str] = "IM40"
+
+    exchange_rate: Optional[float] = None  # Гр. 23: курс валюты (от AI, не запрашивать повторно)
+    loading_place: Optional[str] = None   # Гр. 27
+    entry_customs_code: Optional[str] = None  # Гр. 29
+    warehouse_name: Optional[str] = None  # Гр. 49
+    warehouse_requisites: Optional[str] = None  # Гр. 49
+    goods_location_svh_doc_id: Optional[str] = None  # Гр. 30
+    special_ref_code: Optional[str] = None  # Гр. 7
+    preference_code: Optional[str] = None  # Гр. 36
 
     # Транспортные расходы (графа 17 ДТС-1)
     freight_amount: Optional[float] = None
@@ -627,22 +643,27 @@ async def _apply_declaration_header_fields(
         declaration.currency_code = currency
 
     if currency and currency.upper() != "RUB":
-        try:
-            from app.middleware.logging_middleware import tracing_headers
-            async with httpx.AsyncClient(timeout=10) as http:
-                resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest", headers=tracing_headers())
-                resp.raise_for_status()
-                rates = resp.json().get("rates", {})
-                rate_value = rates.get(currency.upper())
-                if rate_value and float(rate_value) > 0:
-                    exchange_rate = Decimal(str(rate_value))
-                else:
-                    logger.warning("currency_rate_not_found", currency=currency, available=list(rates.keys())[:10])
-        except Exception as conv_err:
-            logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
+        ai_rate = _to_decimal(data.exchange_rate)
+        if ai_rate and ai_rate > 0:
+            exchange_rate = ai_rate
+            logger.info("exchange_rate_from_ai", currency=currency, rate=float(exchange_rate))
+        else:
+            try:
+                from app.middleware.logging_middleware import tracing_headers
+                async with httpx.AsyncClient(timeout=10) as http:
+                    resp = await http.get("http://calc-service:8005/api/v1/calc/exchange-rates/latest", headers=tracing_headers())
+                    resp.raise_for_status()
+                    rates = resp.json().get("rates", {})
+                    rate_value = rates.get(currency.upper())
+                    if rate_value and float(rate_value) > 0:
+                        exchange_rate = Decimal(str(rate_value))
+                    else:
+                        logger.warning("currency_rate_not_found", currency=currency, available=list(rates.keys())[:10])
+            except Exception as conv_err:
+                logger.warning("calc_service_convert_failed", error=str(conv_err), currency=currency)
 
         declaration.exchange_rate = exchange_rate
-        logger.info("exchange_rate_fetched", currency=currency, rate=float(exchange_rate))
+        logger.info("exchange_rate_applied", currency=currency, rate=float(exchange_rate))
 
     if data.total_amount is not None:
         declaration.total_invoice_value = Decimal(str(data.total_amount))
@@ -662,7 +683,22 @@ async def _apply_declaration_header_fields(
         declaration.incoterms_code = (data.incoterms or "").strip().upper()[:3] or None
 
     if data.country_origin:
-        declaration.country_origin_name = (data.country_origin or "")[:60] or None
+        raw_origin = (data.country_origin or "").strip()
+        special_values = {"РАЗНЫЕ", "НЕИЗВЕСТНО", "ЕВРОСОЮЗ", "EU"}
+        if raw_origin.upper() in special_values:
+            declaration.country_origin_name = raw_origin.upper()
+        elif len(raw_origin) == 2 and raw_origin.upper().isalpha():
+            resolved_name = await db.execute(
+                select(Classifier.name_ru).where(
+                    Classifier.classifier_type == "country",
+                    Classifier.code == raw_origin.upper(),
+                    Classifier.is_active == True,
+                ).limit(1)
+            )
+            country_name = resolved_name.scalar_one_or_none()
+            declaration.country_origin_name = (country_name or raw_origin)[:60]
+        else:
+            declaration.country_origin_name = raw_origin[:60] or None
     normalized_country_dispatch = await _normalize_classifier_code(db, "country", data.country_dispatch)
     if normalized_country_dispatch:
         declaration.country_dispatch_code = normalized_country_dispatch
@@ -711,19 +747,35 @@ async def _apply_declaration_header_fields(
         inland = transport_map.get(str(data.transport_type_inland).lower().strip(), str(data.transport_type_inland)[:2])
         declaration.transport_type_inland = inland
 
-    if data.vehicle_reg_number:
-        declaration.transport_at_border = str(data.vehicle_reg_number)[:100]
-        declaration.transport_reg_number = str(data.vehicle_reg_number)[:50]
-    if data.vehicle_country_code:
-        declaration.transport_nationality_code = str(data.vehicle_country_code)[:2]
-    if data.transport_id:
-        declaration.transport_on_border_id = str(data.transport_id)[:100]
+    if data.departure_vehicle_info:
+        declaration.departure_vehicle_info = str(data.departure_vehicle_info)[:100]
+        declaration.transport_reg_number = str(data.departure_vehicle_info)[:50]
+    if data.departure_vehicle_country:
+        declaration.departure_vehicle_country = str(data.departure_vehicle_country)[:2]
+    if data.border_vehicle_info:
+        declaration.border_vehicle_info = str(data.border_vehicle_info)[:100]
+    if data.border_vehicle_country:
+        declaration.border_vehicle_country = str(data.border_vehicle_country)[:2]
+    if data.transport_doc_number:
+        declaration.transport_doc_number = str(data.transport_doc_number)[:100]
     if data.delivery_place:
         declaration.delivery_place = str(data.delivery_place)[:200]
     if data.customs_office_code:
         declaration.customs_office_code = _normalize_digits(data.customs_office_code)[:8] or None
     if data.goods_location and not declaration.goods_location:
         declaration.goods_location = data.goods_location.strip()
+    if data.loading_place:
+        declaration.loading_place = str(data.loading_place)[:200]
+    if data.entry_customs_code:
+        declaration.entry_customs_code = _normalize_digits(data.entry_customs_code)[:8] or None
+    if data.warehouse_name:
+        declaration.warehouse_name = str(data.warehouse_name)[:200]
+    if data.warehouse_requisites:
+        declaration.warehouse_requisites = str(data.warehouse_requisites)[:500]
+    if data.goods_location_svh_doc_id:
+        declaration.goods_location_svh_doc_id = str(data.goods_location_svh_doc_id)[:100]
+    if data.special_ref_code:
+        declaration.special_ref_code = str(data.special_ref_code)[:20]
 
     # Графа 54: signatory / broker
     if data.signatory_name:
@@ -781,10 +833,11 @@ async def _apply_declaration_header_fields(
             ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
             ("deal_specifics_code", 2), ("freight_currency", 3),
             ("customs_office_code", 8), ("type_code", 10),
-            ("country_origin_name", 60), ("transport_at_border", 100),
-            ("transport_on_border_id", 100), ("delivery_place", 200),
+            ("country_origin_name", 60), ("departure_vehicle_info", 100),
+            ("border_vehicle_info", 100), ("delivery_place", 200),
             ("declarant_inn_kpp", 30), ("declarant_ogrn", 15), ("declarant_phone", 20),
-            ("transport_reg_number", 50), ("transport_nationality_code", 2),
+            ("transport_reg_number", 50), ("departure_vehicle_country", 2),
+            ("border_vehicle_country", 2), ("transport_doc_number", 100),
         ],
     )
     await _fill_goods_location_from_post(db, declaration)
@@ -876,27 +929,44 @@ async def _create_declaration_items(
             risk_flags=data.risk_flags,
         )
 
-        if graph_42:
+        ai_cv = _to_decimal(item_data.customs_value_rub)
+        if ai_cv and ai_cv > 0:
+            item.customs_value_rub = ai_cv.quantize(Decimal("0.01"))
+        elif graph_42:
             item.customs_value_rub = (graph_42 * exchange_rate).quantize(Decimal("0.01"))
+
+        ai_sv = _to_decimal(item_data.statistical_value_usd)
+        if ai_sv and ai_sv > 0:
+            item.statistical_value_usd = ai_sv.quantize(Decimal("0.01"))
 
         db.add(item)
         await db.flush()
         created_items.append(item)
         items_created += 1
 
+        item_docs_json = []
         for doc_ref in data.documents:
             normalized_type = _normalize_doc_type(
                 doc_ref.doc_type, doc_ref.doc_code,
                 doc_ref.doc_type_name, doc_ref.original_filename,
             )
             doc_kind_code = await _resolve_doc_kind_code(db, normalized_type, doc_ref.doc_code)
+            doc_date_parsed = _parse_doc_date(doc_ref.doc_date)
             db.add(DeclarationItemDocument(
                 declaration_item_id=item.id,
                 doc_kind_code=doc_kind_code,
                 doc_number=doc_ref.doc_number,
-                doc_date=_parse_doc_date(doc_ref.doc_date),
+                doc_date=doc_date_parsed,
                 presenting_kind_code="1",
             ))
+            item_docs_json.append({
+                "doc_kind_code": doc_kind_code,
+                "doc_number": doc_ref.doc_number or "",
+                "doc_date": str(doc_date_parsed) if doc_date_parsed else "",
+                "presenting_kind_code": "1",
+            })
+        if item_docs_json:
+            item.documents_json = item_docs_json
 
         if hs_code and desc_norm and current_user.company_id:
             try:
@@ -1094,10 +1164,10 @@ async def apply_parsed_data(
     if not declaration:
         raise HTTPException(status_code=404, detail="Declaration not found")
 
-    if declaration.status not in (DeclarationStatus.DRAFT, DeclarationStatus.CHECKING_LVL1):
+    if declaration.status == DeclarationStatus.SENT.value:
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot apply parsed data to declaration with status: {declaration.status}",
+            detail=f"Cannot apply parsed data to a sent declaration",
         )
 
     counters = {"counterparties": 0, "items": 0, "documents": 0}
@@ -1410,8 +1480,14 @@ async def apply_parsed_data(
 
         # --- 5. Сохранить evidence_map и ai_confidence ---
         if data.evidence_map:
+            all_docs = created_docs
+            if not all_docs:
+                existing = await db.execute(
+                    select(Document).where(Document.declaration_id == declaration.id)
+                )
+                all_docs = list(existing.scalars().all())
             declaration.evidence_map = _enrich_evidence_map_with_document_ids(
-                data.evidence_map, created_docs,
+                data.evidence_map, all_docs,
             )
         if data.confidence is not None:
             declaration.ai_confidence = Decimal(str(data.confidence))
@@ -1434,13 +1510,22 @@ async def apply_parsed_data(
                 ("trading_country_code", 2), ("transport_type_border", 2), ("transport_type_inland", 2),
                 ("currency_code", 3), ("incoterms_code", 3), ("deal_nature_code", 3),
                 ("deal_specifics_code", 2), ("customs_office_code", 8), ("type_code", 10),
-                ("country_origin_name", 60), ("transport_at_border", 100),
-                ("transport_on_border_id", 100), ("delivery_place", 200),
+                ("country_origin_name", 60), ("departure_vehicle_info", 100),
+                ("border_vehicle_info", 100), ("delivery_place", 200),
                 ("declarant_inn_kpp", 30), ("declarant_ogrn", 15), ("declarant_phone", 20),
                 ("freight_currency", 3),
-                ("transport_reg_number", 50), ("transport_nationality_code", 2),
+                ("transport_reg_number", 50), ("departure_vehicle_country", 2),
+                ("border_vehicle_country", 2), ("transport_doc_number", 100),
             ],
         )
+
+        set_processing_status(
+            declaration, ProcessingStatus.AUTO_FILLED, db,
+            user_id=str(current_user.id),
+        )
+        reset_signature_if_needed(declaration, db, user_id=str(current_user.id))
+        if declaration.status != DeclarationStatus.NEW.value:
+            await recalculate_declaration_state(declaration, db, user_id=str(current_user.id))
 
         await db.commit()
 
@@ -1493,7 +1578,9 @@ async def create_from_parsed(
     declaration = Declaration(
         type_code=data.type_code or "IM40",
         company_id=current_user.company_id,
-        status=DeclarationStatus.DRAFT,
+        status=DeclarationStatus.NEW,
+        processing_status=ProcessingStatus.NOT_STARTED.value,
+        signature_status="unsigned",
         created_by=current_user.id,
     )
     db.add(declaration)

@@ -819,7 +819,7 @@ def _llm_enrich(raw_text: str, result: dict) -> dict:
         if not settings.has_llm:
             logger.debug("llm_enrich_skip_no_llm")
             return {}
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         import json as _json
         client = get_llm_client(operation="invoice_llm_enrich")
 
@@ -877,7 +877,7 @@ Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items el
             ],
             temperature=0,
             max_tokens=4000,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
         text = strip_code_fences(resp.choices[0].message.content)
         logger.debug("llm_enrich_raw_response", response_length=len(text), first_100=text[:100])
@@ -1219,7 +1219,7 @@ def _llm_enrich_debug(raw_text: str, result: dict) -> dict:
             debug["skipped_reason"] = "no_llm_configured"
             return debug
 
-        from app.services.llm_client import get_llm_client, get_model
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
         import json as _json
 
         items = result.get("items", [])
@@ -1282,7 +1282,7 @@ Return JSON object with keys: {', '.join(missing)}{', items' if has_bad_items el
             ],
             temperature=0,
             max_tokens=4000,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
         debug["duration_ms"] = int((_time.monotonic() - t0) * 1000)
 

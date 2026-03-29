@@ -12,12 +12,12 @@ export interface Counterparty {
 }
 
 export const getCounterparties = async (q?: string, type?: string): Promise<Counterparty[]> => {
-  const response = await client.get<Counterparty[]>('/counterparties/', { params: { q, type } });
+  const response = await client.get<Counterparty[]>('/counterparties', { params: { q, type } });
   return response.data;
 };
 
 export const createCounterparty = async (data: Partial<Counterparty>): Promise<Counterparty> => {
-  const response = await client.post<Counterparty>('/counterparties/', data);
+  const response = await client.post<Counterparty>('/counterparties', data);
   return response.data;
 };
 

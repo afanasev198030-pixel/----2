@@ -12,7 +12,7 @@ from typing import Optional
 
 import structlog
 
-from app.services.llm_client import get_llm_client, get_model
+from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
 from app.services.llm_json import strip_code_fences
 
 logger = structlog.get_logger()
@@ -424,21 +424,26 @@ _MAX_TOKENS_RETRY = 12000
 # ---------------------------------------------------------------------------
 
 def _llm_call_with_json_fallback(client, model: str, messages: list, max_tokens: int):
-    """Try with response_format=json_object first. If response is empty, retry without it."""
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-        )
-        content = resp.choices[0].message.content
-        if content and content.strip():
-            return resp
-        logger.info("llm_json_mode_empty_response_retrying_without")
-    except Exception as e:
-        logger.info("llm_json_mode_unsupported_fallback", error=str(e)[:200])
+    """Call LLM requesting JSON output. Uses response_format for providers that support it,
+    falls back to prompt-only JSON for others (e.g. Cloud.ru gpt-oss-120b)."""
+    from app.services.llm_client import json_format_kwargs
+    fmt = json_format_kwargs()
+
+    if fmt:
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0,
+                max_tokens=max_tokens,
+                **fmt,
+            )
+            content = resp.choices[0].message.content
+            if content and content.strip():
+                return resp
+            logger.info("llm_json_mode_empty_response_retrying_without")
+        except Exception as e:
+            logger.info("llm_json_mode_unsupported_fallback", error=str(e)[:200])
 
     return client.chat.completions.create(
         model=model,
@@ -778,7 +783,7 @@ def classify_and_extract_with_correction(raw_text: str, filename: str) -> dict:
             ],
             temperature=0,
             max_tokens=_MAX_TOKENS_PRIMARY,
-            response_format={"type": "json_object"},
+            **json_format_kwargs(),
         )
 
         corrected_raw = resp.choices[0].message.content or ""
