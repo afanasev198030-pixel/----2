@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # LLM Provider settings
-    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, anthropic, custom
+    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, anthropic, proxyapi, custom
     LLM_BASE_URL: str = ""
     LLM_API_KEY: str = ""  # Primary API key
     LLM_MODEL: str = "deepseek-chat"

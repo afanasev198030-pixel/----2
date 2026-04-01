@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 
@@ -234,6 +234,47 @@ async def configure_ai(data: dict):
         "model": new_settings.effective_model,
         "base_url": new_settings.effective_base_url,
     }
+
+
+@app.get("/api/v1/ai/models")
+async def list_llm_models():
+    """Динамический список моделей от текущего LLM-провайдера (OpenAI-compatible / proxyapi)."""
+    import asyncio
+    from app.config import get_settings as _gs
+    import openai
+
+    current_settings = _gs()
+    if not current_settings.has_llm:
+        return {"models": [], "error": "LLM API ключ не настроен"}
+
+    if current_settings.LLM_PROVIDER == "anthropic":
+        try:
+            return {"models": [
+                {"id": current_settings.ANTHROPIC_MODEL, "owned_by": "anthropic"},
+                {"id": "claude-3-5-sonnet-20241022", "owned_by": "anthropic"},
+            ]}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e)[:200])
+
+    client = openai.OpenAI(
+        api_key=current_settings.effective_api_key,
+        base_url=current_settings.effective_base_url,
+    )
+
+    def _fetch():
+        resp = client.models.list()
+        return [
+            {"id": getattr(m, "id", ""), "created": getattr(m, "created", None), "owned_by": getattr(m, "owned_by", "")}
+            for m in resp.data
+        ]
+
+    try:
+        items = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        logger.info("llm_models_listed", count=len(items), provider=current_settings.LLM_PROVIDER)
+        return {"models": items}
+    except Exception as e:
+        logger.error("llm_models_list_failed", error=str(e))
+        raise HTTPException(status_code=400, detail=f"Не удалось получить список моделей: {str(e)[:200]}")
 
 
 @app.on_event("startup")

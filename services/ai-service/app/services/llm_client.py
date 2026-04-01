@@ -38,9 +38,15 @@ PROVIDER_PROFILES: dict[str, dict] = {
     },
     "anthropic": {
         "base_url": "https://api.anthropic.com/v1",
-        "default_model": "claude-3-5-sonnet-20241022",  # best available as of 2026
+        "default_model": "claude-3-5-sonnet-20241022",
         "reasoning_model": "claude-3-5-sonnet-20241022",
         "supports_json_mode": False,
+    },
+    "proxyapi": {
+        "base_url": "https://api.proxyapi.ru/openai/v1",
+        "default_model": "gpt-4o",
+        "reasoning_model": "gpt-4o",
+        "supports_json_mode": True,
     },
 }
 

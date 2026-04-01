@@ -73,6 +73,21 @@ const SettingsPage = () => {
   const [parseIssues, setParseIssues] = useState<any>(null);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [availableModels, setAvailableModels] = useState<Array<{id: string, owned_by?: string}>>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+
+  const loadModels = useCallback(async () => {
+    setModelsLoading(true);
+    try {
+      const resp = await client.get('/ai/models');
+      const models = (resp.data?.models || []).filter((m: any) => m.id);
+      if (models.length > 0) {
+        setAvailableModels(models);
+      }
+    } catch (e) {
+      console.error('Failed to load models from provider:', e);
+    } finally { setModelsLoading(false); }
+  }, []);
 
   const loadAiDebug = useCallback(async () => {
     setDebugLoading(true);
@@ -95,7 +110,7 @@ const SettingsPage = () => {
     finally { setIssuesLoading(false); }
   }, []);
 
-  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); loadParseIssues(); }, []);
+  useEffect(() => { loadSettings(); loadTrainingStats(); loadAiDebug(); loadParseIssues(); loadModels(); }, []);
 
   const loadSettings = async () => {
     try {
@@ -127,6 +142,7 @@ const SettingsPage = () => {
       const baseUrlMap: Record<string, string | undefined> = {
         deepseek: 'https://api.deepseek.com',
         cloud_ru: 'https://foundation-models.api.cloud.ru/v1',
+        proxyapi: baseUrl || 'https://api.proxyapi.ru/openai/v1',
         custom: baseUrl || undefined,
       };
       const resp = await client.post('/settings/openai-key', {
@@ -145,6 +161,7 @@ const SettingsPage = () => {
         setApiKey('');
         await loadSettings();
         await loadTrainingStats();
+        await loadModels();
       }
     } catch (e: any) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Ошибка сохранения' });
@@ -156,6 +173,7 @@ const SettingsPage = () => {
       await client.post('/settings/openai-model', { key: 'openai_model', value: model });
       setMessage({ type: 'success', text: `Модель изменена на ${model}` });
       await loadSettings();
+      await loadModels();
     } catch (e: any) {
       setMessage({ type: 'error', text: e?.response?.data?.detail || 'Ошибка' });
     }
@@ -839,6 +857,7 @@ const SettingsPage = () => {
             <option value="openai">OpenAI</option>
             <option value="cloud_ru">Cloud.ru (Foundation Models)</option>
             <option value="anthropic">Anthropic (Claude Opus 4.6)</option>
+            <option value="proxyapi">ProxyAPI (прокси для OpenAI/Claude)</option>
             <option value="custom">Custom (свой URL)</option>
           </TextField>
         </Box>
@@ -858,6 +877,22 @@ const SettingsPage = () => {
             API ключ начинается с <code>sk-ant-</code>.<br />
             Рекомендуется для сложных задач таможенного оформления.
           </Alert>
+        )}
+
+        {provider === 'proxyapi' && (
+          <>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <strong>ProxyAPI</strong> — OpenAI-совместимый прокси.<br />
+              Позволяет использовать OpenAI, Claude и другие модели через единый ключ.<br />
+              После сохранения ключа список моделей загрузится автоматически.
+            </Alert>
+            <TextField
+              fullWidth label="ProxyAPI Base URL" placeholder="https://api.proxyapi.ru/openai/v1"
+              value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+              size="small" sx={{ mb: 2 }}
+              helperText="URL прокси-сервера (по умолчанию https://api.proxyapi.ru/openai/v1)"
+            />
+          </>
         )}
 
         {provider === 'custom' && (
@@ -898,29 +933,50 @@ const SettingsPage = () => {
 
       {/* Model Selection */}
       <Paper sx={{ p: 3, mb: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
-        <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Модель LLM</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="h6" sx={{ color: '#0f172a' }}>Модель LLM</Typography>
+          {modelsLoading && <CircularProgress size={16} />}
+          {availableModels.length > 0 && (
+            <Chip label={`${availableModels.length} моделей от провайдера`} size="small" sx={{ backgroundColor: 'rgba(236,253,245,0.8)', color: '#065f46', border: '1px solid rgba(167,243,208,0.6)', fontWeight: 500 }} />
+          )}
+        </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 200 }} SelectProps={{ native: true }}>
-            <optgroup label="Anthropic">
-              <option value="claude-3-opus-4-6-202503">Claude Opus 4.6 (рекомендуется)</option>
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-            </optgroup>
-            <optgroup label="Cloud.ru">
-              <option value="openai/gpt-oss-120b">GPT-OSS 120B (Cloud.ru)</option>
-            </optgroup>
-            <optgroup label="OpenAI">
-              <option value="gpt-4.1">GPT-4.1</option>
-              <option value="gpt-4.1-mini">GPT-4.1 Mini (быстрее)</option>
-              <option value="gpt-4.1-nano">GPT-4.1 Nano (дешёвый)</option>
-              <option value="gpt-4o">GPT-4o (legacy)</option>
-              <option value="gpt-4o-mini">GPT-4o Mini (legacy)</option>
-            </optgroup>
-            <optgroup label="DeepSeek">
-              <option value="deepseek-chat">DeepSeek V3</option>
-              <option value="deepseek-reasoner">DeepSeek R1 (рассуждения)</option>
-            </optgroup>
+          <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 300 }} SelectProps={{ native: true }}>
+            {availableModels.length > 0 ? (
+              <optgroup label={`Доступные модели (${provider})`}>
+                {availableModels.map((m) => (
+                  <option key={m.id} value={m.id}>{m.id}{m.owned_by ? ` (${m.owned_by})` : ''}</option>
+                ))}
+              </optgroup>
+            ) : (
+              <>
+                <optgroup label="Anthropic">
+                  <option value="claude-3-opus-4-6-202503">Claude Opus 4.6</option>
+                  <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                </optgroup>
+                <optgroup label="Cloud.ru">
+                  <option value="openai/gpt-oss-120b">GPT-OSS 120B (Cloud.ru)</option>
+                </optgroup>
+                <optgroup label="OpenAI">
+                  <option value="gpt-4.1">GPT-4.1</option>
+                  <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                  <option value="gpt-4.1-nano">GPT-4.1 Nano</option>
+                  <option value="gpt-4o">GPT-4o</option>
+                  <option value="gpt-4o-mini">GPT-4o Mini</option>
+                </optgroup>
+                <optgroup label="DeepSeek">
+                  <option value="deepseek-chat">DeepSeek V3</option>
+                  <option value="deepseek-reasoner">DeepSeek R1</option>
+                </optgroup>
+              </>
+            )}
           </TextField>
-          <Button variant="outlined" onClick={handleSaveModel}>Применить</Button>
+          <Button variant="outlined" onClick={handleSaveModel} startIcon={modelsLoading ? <CircularProgress size={14} /> : <RefreshIcon />}>
+            Применить
+          </Button>
+          <Button size="small" onClick={loadModels} disabled={modelsLoading}>
+            Обновить список
+          </Button>
         </Box>
       </Paper>
 
