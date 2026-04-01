@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     LLM_PROJECT_ID: str = ""  # Cloud.ru x-project-id header (optional)
     EMBED_PROVIDER: str = "cloud_ru"  # cloud_ru, openai, local
     EMBED_MODEL: str = "BAAI/bge-m3"  # Cloud.ru: BAAI/bge-m3 (1024 dim, multilingual)
-    EMBED_BASE_URL: str = ""  # empty = use LLM_BASE_URL
+    EMBED_BASE_URL: str = "https://foundation-models.api.cloud.ru/v1"
     EMBED_API_KEY: str = ""  # empty = use effective_api_key
 
     # Vision OCR (DeepSeek-OCR-2 via Cloud.ru — replaces Tesseract/pdfplumber)
