@@ -415,6 +415,11 @@ class ParsedItem(BaseModel):
     line_no: int = 1
     description: Optional[str] = None
     commercial_name: Optional[str] = None
+    manufacturer: Optional[str] = None
+    trademark: Optional[str] = None
+    model_name: Optional[str] = None
+    article_number: Optional[str] = None
+    serial_number: Optional[str] = None
     quantity: Optional[float] = None
     unit: Optional[str] = None
     unit_price: Optional[float] = None
@@ -912,7 +917,12 @@ async def _create_declaration_items(
             declaration_id=declaration.id,
             item_no=item_data.line_no,
             description=item_data.description,
-            commercial_name=((item_data.commercial_name or item_data.description) or "")[:500] or None,
+            commercial_name=(item_data.commercial_name or item_data.description) or None,
+            manufacturer=((item_data.manufacturer or "")[:300]) or None,
+            trademark=((item_data.trademark or "")[:200]) or None,
+            model_name=((item_data.model_name or "")[:200]) or None,
+            article_number=((item_data.article_number or "")[:100]) or None,
+            serial_number=((item_data.serial_number or "")[:200]) or None,
             hs_code=(hs_code or "")[:10] or None,
             country_origin_code=(item_country_origin_code or "")[:2] or None,
             gross_weight=_to_decimal(item_data.gross_weight),
@@ -1012,7 +1022,7 @@ async def _create_declaration_items(
                         "feedback_type": "hs_auto_confirmed",
                         "predicted_value": hs_code,
                         "actual_value": hs_code,
-                        "description": (item_data.description or "")[:300],
+                        "description": (item_data.commercial_name or item_data.description or "")[:300],
                         "company_id": str(current_user.company_id) if current_user.company_id else "",
                         "counterparty_name": (data.seller.name if data.seller else ""),
                     },
@@ -1270,6 +1280,24 @@ async def apply_parsed_data(
 
         exchange_rate = await _apply_declaration_header_fields(db, declaration, data)
 
+        # --- 2b. Удалить старые позиции (при повторном парсинге) ---
+        old_item_ids = (await db.execute(
+            select(DeclarationItem.id).where(DeclarationItem.declaration_id == declaration.id)
+        )).scalars().all()
+        if old_item_ids:
+            await db.execute(
+                delete(DeclarationItemDocument).where(
+                    DeclarationItemDocument.declaration_item_id.in_(old_item_ids)
+                )
+            )
+            await db.execute(
+                delete(DeclarationItem).where(DeclarationItem.declaration_id == declaration.id)
+            )
+            await db.flush()
+            logger.info("old_items_cleared",
+                        declaration_id=str(declaration.id),
+                        removed_count=len(old_item_ids))
+
         # --- 3. Создать товарные позиции ---
         counters["items"], created_items = await _create_declaration_items(
             db,
@@ -1474,7 +1502,11 @@ async def apply_parsed_data(
             except Exception as pay_err:
                 logger.warning("customs_payment_calc_failed", error=str(pay_err)[:200])
 
-        # --- 4. Привязать документы ---
+        # --- 4. Привязать документы (удалить старые при повторном парсинге) ---
+        await db.execute(
+            delete(Document).where(Document.declaration_id == declaration.id)
+        )
+        await db.flush()
         doc_count, created_docs = _attach_parsed_documents(db, declaration, data.documents)
         counters["documents"] = doc_count
 

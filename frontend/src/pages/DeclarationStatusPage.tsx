@@ -1,9 +1,9 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box, Typography, Button, Paper, Chip, Divider, Snackbar,
-  CircularProgress,
+  CircularProgress, Alert,
 } from '@mui/material';
 import {
   CheckCircle as CheckCircleIcon,
@@ -24,14 +24,20 @@ import {
   Edit as EditIcon,
   EditNote as EditNoteIcon,
   Refresh as RefreshIcon,
+  Add as AddIcon,
 } from '@mui/icons-material';
 import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import DocumentViewer from '../components/DocumentViewer';
 import HSCodeSuggestions from '../components/HSCodeSuggestions';
+import RequirementsPanel from '../components/RequirementsPanel';
+import RiskPanel from '../components/RiskPanel';
+import NextActionsPanel from '../components/NextActionsPanel';
+import DocumentUploadPanel from '../components/DocumentUploadPanel';
 import { getDeclaration, getPreSendCheck, getDeclarationLogs, patchEvidenceMap } from '../api/declarations';
 import { getItems, updateItem } from '../api/items';
 import { getDocuments } from '../api/documents';
+import { getDts, generateDts } from '../api/customsValue';
 import client from '../api/client';
 import {
   Declaration, DeclarationItem, Document as DocType,
@@ -133,10 +139,43 @@ const DeclarationStatusPage = () => {
     } catch { setSnackMsg('Ошибка XML'); }
   };
 
+  const { data: dtsData } = useQuery({
+    queryKey: ['dts', id],
+    queryFn: () => getDts(id!),
+    enabled: !!id,
+    retry: false,
+  });
+  const hasDts = !!dtsData;
+
+  const generateDtsMut = useMutation({
+    mutationFn: () => generateDts(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dts', id] });
+      setSnackMsg('ДТС сформирована');
+      navigate(`/declarations/${id}/dts-view`);
+    },
+    onError: () => setSnackMsg('Ошибка формирования ДТС'),
+  });
+
+  const handleApplyParsed = useCallback(async (parsed: any) => {
+    if (!id) return;
+    try {
+      await client.post(`/declarations/${id}/apply-parsed`, parsed);
+      queryClient.invalidateQueries({ queryKey: ['declaration', id] });
+      queryClient.invalidateQueries({ queryKey: ['declaration-items', id] });
+      queryClient.invalidateQueries({ queryKey: ['declaration-docs', id] });
+      queryClient.invalidateQueries({ queryKey: ['pre-send-check', id] });
+      setSnackMsg('Данные из документа применены');
+    } catch { setSnackMsg('Ошибка применения данных'); }
+  }, [id, queryClient]);
+
   const handleEvidenceChange = async (field: string, patch: Partial<FieldEvidence>) => {
     if (!id) return;
     await patchEvidenceMap(id, { [field]: patch });
   };
+
+  const maxRiskScore = useMemo(() => Math.max(0, ...items.map(i => (i as any).risk_score || 0)), [items]);
+  const allRisks = useMemo(() => items.flatMap(i => ((i as any).risk_flags as any)?.risks || []), [items]);
 
   if (declLoading || !decl) {
     return (
@@ -289,12 +328,22 @@ const DeclarationStatusPage = () => {
               sx={{ color: '#475569', borderColor: 'rgba(226,232,240,1)', bgcolor: 'rgba(255,255,255,0.6)', '&:hover': { bgcolor: 'rgba(255,255,255,0.8)' }, fontSize: 12, borderRadius: '10px' }}>
               Редактировать декларацию
             </Button>
-            <Button variant="outlined" size="small"
-              startIcon={<AssignmentIcon sx={{ fontSize: '14px !important' }} />}
-              onClick={() => navigate(`/declarations/${id}/dts-view`)}
-              sx={{ color: '#6d28d9', borderColor: 'rgba(221,214,254,0.6)', bgcolor: 'rgba(245,243,255,0.4)', '&:hover': { bgcolor: 'rgba(245,243,255,0.8)' }, fontSize: 12, borderRadius: '10px' }}>
-              Открыть ДТС
-            </Button>
+            {hasDts ? (
+              <Button variant="outlined" size="small"
+                startIcon={<AssignmentIcon sx={{ fontSize: '14px !important' }} />}
+                onClick={() => navigate(`/declarations/${id}/dts-view`)}
+                sx={{ color: '#6d28d9', borderColor: 'rgba(221,214,254,0.6)', bgcolor: 'rgba(245,243,255,0.4)', '&:hover': { bgcolor: 'rgba(245,243,255,0.8)' }, fontSize: 12, borderRadius: '10px' }}>
+                Открыть ДТС
+              </Button>
+            ) : (
+              <Button variant="outlined" size="small"
+                startIcon={<AddIcon sx={{ fontSize: '14px !important' }} />}
+                onClick={() => generateDtsMut.mutate()}
+                disabled={generateDtsMut.isPending}
+                sx={{ color: '#6d28d9', borderColor: 'rgba(221,214,254,0.6)', bgcolor: 'rgba(245,243,255,0.4)', '&:hover': { bgcolor: 'rgba(245,243,255,0.8)' }, fontSize: 12, borderRadius: '10px' }}>
+                {generateDtsMut.isPending ? 'Формирование...' : 'Сформировать ДТС'}
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -308,6 +357,16 @@ const DeclarationStatusPage = () => {
           </Box>
         )}
       </Paper>
+
+      {/* Next Actions */}
+      <NextActionsPanel
+        declaration={decl}
+        items={items}
+        documentsCount={docs.length}
+        onGoToUpload={() => setDocViewerOpen(true)}
+        onGoToReview={() => navigate(`/declarations/${id}/form`)}
+        onOpenDocuments={() => setDocViewerOpen(true)}
+      />
 
       {/* Grid: Issues + Summary */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '3fr 2fr' }, gap: 2.5, mb: 2.5 }}>
@@ -488,9 +547,29 @@ const DeclarationStatusPage = () => {
                 unitPrice={item.unit_price ?? undefined}
                 declarationId={id}
               />
+
+              {(item as any).drift_status && (
+                <Alert severity="warning" sx={{ mt: 1, fontSize: 12 }} variant="outlined">
+                  Дрейф ТН ВЭД: текущий код <b>{item.hs_code}</b> отличается от ранее используемого <b>{(item as any).historical_hs_code}</b>
+                  {(item as any).historical_usage_count && ` (использовался ${(item as any).historical_usage_count} раз)`}
+                  {(item as any).drift_message && ` — ${(item as any).drift_message}`}
+                </Alert>
+              )}
+
+              <RequirementsPanel
+                hsCode={item.hs_code || ''}
+                description={item.description || ''}
+              />
             </Paper>
           ))}
         </Paper>
+      )}
+
+      {/* Risk Assessment */}
+      {maxRiskScore > 0 && (
+        <Box sx={{ mb: 2.5 }}>
+          <RiskPanel riskScore={maxRiskScore} risks={allRisks} source="Позиции декларации" />
+        </Box>
       )}
 
       {/* Documents Summary */}
@@ -542,6 +621,8 @@ const DeclarationStatusPage = () => {
             />
           ))}
         </Box>
+        <Divider sx={{ my: 2 }} />
+        <DocumentUploadPanel declarationId={id} onParsedData={handleApplyParsed} />
       </Paper>
 
       {/* Secondary Nav */}

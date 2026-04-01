@@ -97,13 +97,18 @@ flowchart TD
 
 **Ключевые файлы:**
 - `services/ai-service/app/main.py`
-- `services/ai-service/app/services/agent_crew.py` (**монолит, ~3700 строк** — главный кандидат на рефакторинг)
+- `services/ai-service/app/services/agent_crew.py` (555 строк — оркестратор pipeline, рефакторинг Этап 2 завершён)
+- `services/ai-service/app/services/declaration_compiler.py` (LLM-компиляция декларации — промпт + вызов)
+- `services/ai-service/app/services/post_processing.py` (детерминированная пост-обработка: расчёты, нормализация, валидация)
+- `services/ai-service/app/services/parsing_utils.py` (shared утилиты: safe_float, normalize_hs_code, to_dict)
+- `services/ai-service/app/services/reference_data.py` (загрузчик JSON-справочников: таможенные посты, коды документов)
 - `services/ai-service/app/services/rules_engine.py`
 - `services/ai-service/app/services/index_manager.py`
 - `services/ai-service/app/services/dspy_modules.py`
 - `services/ai-service/app/services/llm_parser.py`
 - `services/ai-service/app/config.py` (Pydantic Settings с LLM/OCR)
 - `services/ai-service/app/workers/tasks.py` (ARQ worker — фоновая обработка)
+- `services/ai-service/app/data/*.json` (справочники: customs_offices, document_codes, iata_cities, eu_countries)
 
 **Важные замечания по AI:**
 - Основной путь — линейный pipeline в `DeclarationCrew.process_documents()`.
@@ -206,19 +211,35 @@ Docker Compose healthchecks используют `/ready`. `depends_on` с `cond
 | 1.9 | Backup/DR (PostgreSQL, MinIO, ChromaDB) | В очереди | Нет backup стратегии |
 | 1.10 | Единый конфиг LLM/OCR | В очереди | **Проблема:** 3 источника правды (`.env`, БД `core.system_settings`, `os.environ` в памяти) конфликтуют. БД перезаписывает `.env` при старте (`main.py:252`). `/configure` не пишет в БД — теряется при рестарте. ai-worker не получает `/configure` (отдельный процесс). Модель не привязана к провайдеру → `Model Not Exist` при переключении. ARQ polling bug (`info.success`) → двойная обработка. **Решение:** БД — единый источник; `/configure` пишет в БД; Redis pub/sub для уведомления ai-worker; валидация provider+model; fix ARQ polling |
 
-### Этап 2: AI Core — разбиение agent_crew.py
+### Этап 2: AI Core — рефакторинг agent_crew.py
 
-Цель: разбить монолитный `agent_crew.py` (~3700 строк) на модульные сервисы.
+**Актуальный анализ** (31 марта 2026, по коду — не по документации):
+- Файл вырос до **4158 строк**, из них **~2000 — мёртвый код** (legacy-методы, неиспользуемые классификаторы, CrewAI).
+- Живой код: ~2200 строк. Единственные вызывающие: `workers/tasks.py` (`process_documents`) и `routers/smart_parser.py` (`process_documents` + debug-путь через `_compile_declaration_llm`/`_post_process_compilation`).
+- OCR уже вынесен в `ocr_service.py`, LLM-classify в `llm_parser.py`, HS-классификация в `dspy_modules.HSCodeClassifier` + `index_manager`, риски в `dspy_modules.RiskAnalyzer` + `index_manager`, валидация в `rules_engine.validate_declaration`. Повторно выделять их НЕ нужно.
 
-| # | Задача | Статус | Детали |
-|---|--------|--------|--------|
-| 2.1 | Выделить `DocumentProcessor` (OCR + classify) | В очереди | Шаги 1-2 из `process_documents()` |
-| 2.2 | Выделить `DeclarationCompiler` (LLM сборка) | В очереди | `_compile_declaration_llm` + постобработка |
-| 2.3 | Выделить `HsClassificationService` (RAG + DSPy) | В очереди | Шаг 6 — HS classification |
-| 2.4 | Выделить `RiskService` | В очереди | Шаг 7 — risk assessment |
-| 2.5 | Выделить `ValidationService` | В очереди | `validate_declaration` + quality checks |
-| 2.6 | Создать `DeclarationPipeline` (оркестратор) | В очереди | Линейный pipeline, заменяет `process_documents()` |
-| 2.7 | Решить судьбу CrewAI (`_run_crewai`) | В очереди | Не используется — удалить или спрятать за флагом |
+**Реальные проблемы, которые решает рефакторинг:**
+1. **~2000 строк мёртвого кода** — `_compile_declaration` (1000 строк), `_compile_by_rules_legacy`, `_run_crewai`, `_batch_parse_secondary`, 5 неиспользуемых standalone-функций. Усложняют навигацию, создают риск случайных правок.
+2. **`_post_process_compilation` — 670 строк / 8+ ответственностей** — IATA-lookup, фильтрация позиций, финансовые расчёты, валидация классификаторов, инкотермс, форматирование — всё в одном методе. Ошибка в одном шаге ломает весь результат. Невозможно тестировать и дебажить отдельные шаги.
+3. **`_safe_float` — 3 разных реализации** в `agent_crew.py`, `dspy_modules.py`, `invoice_parser.py` с разным поведением (`replace(",", ".")` есть только в одной). Источник реальных багов при парсинге чисел из документов.
+4. **Справочные данные вшиты в код** — таблицы IATA→таможенный пост, AWB-префиксы, коды документов (гр. 44), коды сертификатов. Добавление аэропорта или поста = правка Python + деплой.
+5. **Нет изоляции ошибок** — если `_fetch_exchange_rates()` упал, таможенная стоимость не рассчитана, но pipeline продолжает работу с нулями. Нет чёткого issue для пользователя, результат выглядит "готовым", хотя стоимость пуста.
+
+| # | Задача | Статус | Что решает |
+|---|--------|--------|------------|
+| 2.0 | Удаление мёртвого кода (~2000 строк) | **ВЫПОЛНЕНО** | Удалены: `_compile_declaration` (1000 строк), `_compile_by_rules_legacy` (185), `_run_crewai` (60), `_batch_parse_secondary` (200), `_detect_doc_type`/`_detect_doc_type_debug`/`_classify_invoice_content` (350), `_parse_svh_doc` (70), `_parse_transport_doc_llm` (115), CrewAI import. Файл: 4158 → 2158 строк. Неиспользуемые импорты (`EvidenceTracker`, `build_graph_rules_prompt`, `get_source_priority_map`, `build_strategies_prompt`, `InvoiceExtractor`, `ContractExtractor`, `PackingExtractor`) очищены |
+| 2.1 | Единый модуль утилит `parsing_utils.py` | **ВЫПОЛНЕНО** | Создан `app/services/parsing_utils.py` с единой реализацией `safe_float()` (объединены 3 дубля), `normalize_hs_code()`, `to_dict()`, `invoice_score()`, `check_needs_vision_retry()`. Дубли в `agent_crew.py`, `dspy_modules.py`, `invoice_parser.py` заменены на делегацию. `smart_parser.py` обновлён (импорт `_check_needs_vision_retry` из `parsing_utils`) |
+| 2.2 | Справочные данные → `app/data/*.json` | **ВЫПОЛНЕНО** | Созданы: `customs_offices.json` (61 IATA + 9 AWB + default), `document_codes.json` (коды документов гр. 44), `iata_cities.json` (IATA→город), `eu_countries.json`. Создан `app/services/reference_data.py` с ленивой загрузкой и функциями `lookup_customs_office()`, `resolve_iata_city()`, `get_eu_countries()`. Inline-таблицы удалены из `agent_crew.py` |
+| 2.3 | Декомпозиция `_post_process_compilation` → `post_processing.py` | **ВЫПОЛНЕНО** | Создан `app/services/post_processing.py` (1247 строк): `post_process_compilation()`, `enrich_evidence_map()`, `distribute_weights()`, `build_documents_list()`, `document_payload()`, `_fetch_exchange_rates()`, `_fetch_payments()`, `_determine_preference_code()`. `agent_crew.py` делегирует через `_post_process_compilation`. Контракт `smart_parser.py` debug-пути сохранён |
+| 2.4 | Изоляция ошибок в pipeline | **ВЫПОЛНЕНО** | Обёрнуты в try/except: Step 4 (`_post_process_compilation`), Step 6 (HS classify — per item), Step 6b (`_fetch_payments`), Step 7 (risk assessment), Step 8 (precedent search). Каждый генерирует issue с `severity: "error"`, pipeline продолжает работу |
+| 2.5 | Вынести `_compile_declaration_llm` → `declaration_compiler.py` | **ВЫПОЛНЕНО** | Создан `app/services/declaration_compiler.py` (234 строки): `compile_declaration(parsed_docs)` — промпт, LLM-вызов, retry-логика. `agent_crew.py` делегирует. `smart_parser.py` debug-путь обновлён на прямой import из `declaration_compiler` |
+
+**Что убрано из плана (и почему):**
+- ~~`DocumentProcessor` (OCR + classify)~~ — OCR уже в `ocr_service.py`, classify уже в `llm_parser.py`. Выделять нечего.
+- ~~`HsClassificationService`~~ — шаг 6 = цикл по позициям (60 строк), вся логика уже в `dspy_modules.HSCodeClassifier` + `index_manager.search_hs_codes()`. Обёртка ради обёртки.
+- ~~`RiskService`~~ — шаг 7 = 5 строк делегации в `dspy_modules.RiskAnalyzer`. Уже вынесено.
+- ~~`ValidationService`~~ — `validate_declaration()` уже в `rules_engine.py`.
+- ~~`DeclarationPipeline` (абстрактный оркестратор)~~ — после очистки `process_documents()` будет ~150 строк линейного кода. Абстракция ради абстракции не несёт пользы при одной реализации.
 
 ### Этап 3: Rules Engine Consolidation
 
@@ -283,6 +304,6 @@ Docker Compose healthchecks используют `/ready`. `depends_on` с `cond
 
 ---
 
-**Последнее обновление:** 22 марта 2026 (завершены Этапы 1.1–1.5; fix: ai-service non-blocking sync fallback)
+**Последнее обновление:** 31 марта 2026 (Этап 2 ВЫПОЛНЕН: agent_crew.py 4158→555 строк; создано 4 модуля + 4 JSON-справочника; 3 дубля _safe_float устранены; ошибки pipeline изолированы)
 
 Этот документ актуализируется при каждом значительном изменении архитектуры или завершении этапа рефакторинга.

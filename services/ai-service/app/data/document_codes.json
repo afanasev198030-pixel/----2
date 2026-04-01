@@ -1,0 +1,51 @@
+{
+  "doc_type_codes": {
+    "invoice": "04021",
+    "contract": "03011",
+    "packing": "04024",
+    "packing_list": "04024",
+    "specification": "04091",
+    "transport_invoice": "04025",
+    "application_statement": "05999",
+    "tech_description": "05011",
+    "insurance": "03041",
+    "payment_order": "03031",
+    "reference_gtd": "09023",
+    "svh_doc": "09023",
+    "certificate_origin": "06019",
+    "origin_certificate": "06019",
+    "license": "01011",
+    "permit": "01999",
+    "sanitary": "07013",
+    "veterinary": "07012",
+    "phytosanitary": "07011",
+    "conformity_declaration": "01191",
+    "other": "09023"
+  },
+  "transport_doc_codes": {
+    "40": "02013",
+    "30": "02011",
+    "10": "02015",
+    "20": "02011",
+    "80": "02015"
+  },
+  "origin_cert_codes": {
+    "CT-1": "06011",
+    "Form A": "06012",
+    "EUR.1": "06013",
+    "Declaration of Origin": "06021"
+  },
+  "transport_doc_names": {
+    "02013": "Авиационная накладная (AWB)",
+    "02011": "Транспортная накладная (CMR)",
+    "02015": "Коносамент (B/L)",
+    "02091": "Транспортный документ"
+  },
+  "cert_names": {
+    "06011": "Сертификат происхождения СТ-1",
+    "06012": "Сертификат происхождения Form A",
+    "06013": "Сертификат происхождения EUR.1",
+    "06021": "Декларация о происхождении",
+    "06019": "Сертификат происхождения"
+  }
+}

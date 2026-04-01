@@ -75,14 +75,8 @@ const ItemBlock = ({ itm, pi, docs }: { itm: any; pi: any; docs?: any[] }) => (
         Грузовые места и описание товаров<br />
         Маркировка и количество — Номера контейнеров — Количество и отличительные особенности
         <br />
-        {f(itm.description || itm.commercial_name)}
+        <span style={{ whiteSpace: 'pre-line' }}>{f(itm.description || itm.commercial_name)}</span>
         <br />
-        {itm.package_count != null && (
-          <>
-            {itm.package_count} {f(itm.package_type)}
-            <br />
-          </>
-        )}
         {itm.additional_unit_qty != null && (
           <>
             {num(itm.additional_unit_qty, 0)} {f(itm.additional_unit) || 'ШТ'}
@@ -859,6 +853,72 @@ const DeclarationViewPage = () => {
           </div>
         );
       })}
+
+      {/* ── ДОПОЛНЕНИЕ (лист дополнения к ДТ) ── */}
+      {items.length > 0 && (
+        <div className="dt-sheet" style={{ border: bT, padding: 10, marginTop: 20, fontSize: 10, fontFamily: 'Arial, sans-serif' }}>
+          <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, marginBottom: 10, textTransform: 'uppercase' }}>
+            Дополнение на {items.length} л., к ДТ N {f(decl.number_internal || '')}
+          </div>
+          {items.map((itm: any, idx: number) => (
+            <div key={itm.id || idx} style={{ marginBottom: 16, pageBreakInside: 'avoid' }}>
+              <div style={{ fontWeight: 700, fontSize: 11, borderBottom: '1px solid #333', paddingBottom: 2, marginBottom: 6 }}>
+                Товар № {itm.item_no || idx + 1}
+              </div>
+              {itm.documents_json?.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontWeight: 600, fontSize: 10, marginBottom: 3 }}>К ГРАФЕ 44 (Документы)</div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ border: '1px solid #999', padding: '2px 4px', textAlign: 'left', fontWeight: 600 }}>Код</th>
+                        <th style={{ border: '1px solid #999', padding: '2px 4px', textAlign: 'left', fontWeight: 600 }}>Номер</th>
+                        <th style={{ border: '1px solid #999', padding: '2px 4px', textAlign: 'left', fontWeight: 600 }}>Дата</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itm.documents_json.map((doc: any, di: number) => (
+                        <tr key={di}>
+                          <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{doc.doc_kind_code || doc.code || ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{doc.doc_number || doc.number || ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{doc.doc_date || doc.date || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 10, marginBottom: 3 }}>К ГРАФЕ 31 (Описание и характеристики товара)</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 9 }}>
+                  <thead>
+                    <tr>
+                      {['Гр.', 'Наименование', 'Производитель', 'Марка', 'Модель', 'Кол-во', 'Ед.изм', 'Артикул', 'Серийные NN'].map(h => (
+                        <th key={h} style={{ border: '1px solid #999', padding: '2px 4px', textAlign: 'left', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px', textAlign: 'center' }}>{itm.item_no || idx + 1}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.commercial_name || itm.description)}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.manufacturer) || 'ОТСУТСТВУЕТ'}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.trademark) || 'ОТСУТСТВУЕТ'}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.model_name) || 'ОТСУТСТВУЕТ'}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px', textAlign: 'right' }}>
+                        {itm.additional_unit_qty != null ? num(itm.additional_unit_qty, 0) : (itm.package_count ?? '')}
+                      </td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.additional_unit) || 'ШТ'}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.article_number) || 'ОТСУТСТВУЕТ'}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '2px 4px' }}>{f(itm.serial_number) || 'ОТСУТСТВУЮТ'}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <style>{`
         @media print {

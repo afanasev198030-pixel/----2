@@ -56,6 +56,8 @@ def _detect_drone_product_kind(description: str) -> str:
         "motor", "brushless", "antenna", "receiver", "camera", "propeller", "frame", "gimbal",
         "pdb", "bec", "gps module", "stack", "регулятор", "контроллер", "мотор", "антенн",
         "камера", "пропеллер", "рама", "передатчик", "приемник", "приёмник",
+        "приём видео", "приёма видео", "видеоприём", "видеоприемник", "видеоприёмник",
+        "видеопередат", "5.8g", "5.8ггц", "5.8 ггц", "5.8ghz",
     ]
 
     has_complete = _contains_any(text, complete_drone_words)
@@ -117,6 +119,8 @@ def _build_candidates(selected: Optional[dict], rag_results: list[dict], keyword
             conf_val = float(conf)
         except (ValueError, TypeError):
             conf_val = 0.0
+        if conf_val < 0.40:
+            continue
         merged.append({
             "hs_code": code,
             "name_ru": r.get("name_ru", "") or "",
@@ -454,7 +458,8 @@ class HSCodeClassifier:
         # Коды верифицированы по ТН ВЭД ЕАЭС 2024
         _COMPONENT_HS_RULES = [
             # VTX — видеопередатчик (8525 60 — передающая аппаратура с встроенным приёмником)
-            (["vtx", "video transmitter", "видеопередатчик", "передатчик видео", "5.8g transmitter"],
+            (["vtx", "video transmitter", "видеопередатчик", "передатчик видео", "5.8g transmitter",
+              "передачи видеосигнал", "передач видео"],
              "8525601000", "Аппаратура передающая с встроенным приёмным устройством (VTX)", 0.93),
             # ESC — регулятор оборотов (8504 40 — преобразователи статические)
             (["esc ", "esc-", "speed controller", "регулятор оборотов", "регулятор хода", "blheli", "simonk"],
@@ -486,7 +491,9 @@ class HSCodeClassifier:
             (["connector", "коннектор", "разъем", "разъём", "plug", "socket", "pin ", "pin connector"],
              "8536699008", "Штепсели и розетки", 0.85),
             # Приёмник (8526 92 — аппаратура дистанционного управления)
-            (["receiver", "приемник", "приёмник", "elrs", "crossfire", "rxsr", "flysky", "frsky", "radiolink"],
+            (["receiver", "приемник", "приёмник", "приёма видео", "приёма сигнал",
+              "приём видеосигнал", "видеоприёмник", "видеоприемник",
+              "elrs", "crossfire", "rxsr", "flysky", "frsky", "radiolink"],
              "8526920000", "Аппаратура дистанционного управления (приёмник RC)", 0.92),
         ]
 
@@ -778,13 +785,8 @@ def _refine_hs_code(llm_client, prefix_6: str, description: str, model: str) -> 
 
 
 def _safe_float(value) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        s = str(value).replace(",", ".").replace(" ", "").strip()
-        return float(s)
-    except (ValueError, TypeError):
-        return None
+    from app.services.parsing_utils import safe_float
+    return safe_float(value)
 
 
 def _safe_int(value) -> Optional[int]:

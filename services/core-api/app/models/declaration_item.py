@@ -31,7 +31,7 @@ class DeclarationItem(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
     package_count: Mapped[Optional[int]] = mapped_column(Integer)
     package_type: Mapped[Optional[str]] = mapped_column(String(50))
-    commercial_name: Mapped[Optional[str]] = mapped_column(String(500))
+    commercial_name: Mapped[Optional[str]] = mapped_column(Text)
     manufacturer: Mapped[Optional[str]] = mapped_column(String(300))
     trademark: Mapped[Optional[str]] = mapped_column(String(200))
     model_name: Mapped[Optional[str]] = mapped_column(String(200))

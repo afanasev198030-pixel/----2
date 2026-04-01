@@ -86,6 +86,15 @@ async def process_declaration_task(
 
         # Apply parsed result to declaration in core-api
         if declaration_id:
+            for _dbg_it in (result.get("items") or [])[:3]:
+                logger.info("apply_parsed_item_debug",
+                            desc=(_dbg_it.get("description") or "")[:60],
+                            comm_name=(_dbg_it.get("commercial_name") or "")[:60],
+                            manufacturer=_dbg_it.get("manufacturer"),
+                            trademark=_dbg_it.get("trademark"),
+                            model_name=_dbg_it.get("model_name"),
+                            article_number=_dbg_it.get("article_number"),
+                            serial_number=_dbg_it.get("serial_number"))
             try:
                 async with httpx.AsyncClient(timeout=30) as client:
                     apply_resp = await client.post(
