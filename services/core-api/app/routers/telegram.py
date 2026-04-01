@@ -40,7 +40,7 @@ async def generate_link_token(
     # Get bot username from DB settings or env
     from app.routers.settings import _get_setting
     import os
-    bot_username = await _get_setting(db, "telegram_bot_username") or os.environ.get("TELEGRAM_BOT_USERNAME", "YourBrokerBot")
+    bot_username = (await _get_setting(db, "telegram_bot_username") or os.environ.get("TELEGRAM_BOT_USERNAME", "YourBrokerBot")).lstrip("@")
     
     return {"link_url": f"https://t.me/{bot_username}?start={token}", "token": token}
 
