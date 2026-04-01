@@ -32,6 +32,13 @@ PRICING_PER_M = {
     "deepseek-chat": {"input": 0.27, "output": 1.10},
     "deepseek-reasoner": {"input": 0.55, "output": 2.19},
     "openai/gpt-oss-120b": {"input": 0.039, "output": 0.100},
+    "anthropic/claude-opus-4-6": {"input": 15.00, "output": 75.00},
+    "anthropic/claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    "anthropic/claude-haiku-4-5": {"input": 0.80, "output": 4.00},
+    "claude-opus-4-6": {"input": 15.00, "output": 75.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
+    "claude-3-opus-4-6-202503": {"input": 15.00, "output": 75.00},
 }
 
 
@@ -65,7 +72,10 @@ def get_usage_context() -> dict[str, str]:
 
 
 def calc_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    pricing = PRICING_PER_M.get(model, {"input": 2.00, "output": 8.00})
+    pricing = PRICING_PER_M.get(model)
+    if not pricing:
+        base = model.split("/")[-1] if "/" in model else model
+        pricing = PRICING_PER_M.get(base, {"input": 2.00, "output": 8.00})
     return (input_tokens * pricing["input"] + output_tokens * pricing["output"]) / 1_000_000
 
 
