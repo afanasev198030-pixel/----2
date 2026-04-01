@@ -260,6 +260,9 @@ services:
       LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-deepseek-reasoner}
       LLM_PROJECT_ID: ${LLM_PROJECT_ID:-}
       EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_BASE_URL: ${OCR_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
       OCR_API_KEY: ${OCR_API_KEY:-}
@@ -315,6 +318,9 @@ services:
       LLM_REASONING_MODEL: ${LLM_REASONING_MODEL:-deepseek-reasoner}
       LLM_PROJECT_ID: ${LLM_PROJECT_ID:-}
       EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-m3}
+      EMBED_BASE_URL: ${EMBED_BASE_URL:-}
+      EMBED_API_KEY: ${EMBED_API_KEY:-}
       OCR_ENABLED: ${OCR_ENABLED:-false}
       OCR_BASE_URL: ${OCR_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
       OCR_API_KEY: ${OCR_API_KEY:-}
