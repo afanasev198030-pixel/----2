@@ -854,7 +854,9 @@ const SettingsPage = () => {
 
         {provider === 'anthropic' && (
           <Alert severity="info" sx={{ mb: 2 }}>
-            Используется Claude Opus 4.6. API ключ должен начинаться с <code>sk-ant-</code>
+            <strong>Anthropic Claude Opus 4.6</strong><br />
+            API ключ начинается с <code>sk-ant-</code>.<br />
+            Рекомендуется для сложных задач таможенного оформления.
           </Alert>
         )}
 
