@@ -313,7 +313,7 @@ def _run_parse_debug(file_data: list[tuple[bytes, str]]) -> dict:
         extracted["doc_type"] = doc_type
 
         vision_retry_info: dict = {}
-        from app.services.agent_crew import _check_needs_vision_retry
+        from app.services.parsing_utils import check_needs_vision_retry as _check_needs_vision_retry
         missing_fields = _check_needs_vision_retry(doc_type, extracted)
         if missing_fields:
             from app.config import get_settings as _get_settings
@@ -392,7 +392,8 @@ def _run_parse_debug(file_data: list[tuple[bytes, str]]) -> dict:
             crew = DeclarationCrew()
 
             t_llm = _time.monotonic()
-            llm_result = crew._compile_declaration_llm(parsed_docs)
+            from app.services.declaration_compiler import compile_declaration
+            llm_result = compile_declaration(parsed_docs)
             llm_compile_ms = int((_time.monotonic() - t_llm) * 1000)
 
             t_pp = _time.monotonic()
@@ -497,6 +498,16 @@ class ClassifyHSRequest(BaseModel):
     declaration_id: Optional[str] = None
 
 
+def _clean_classify_input(raw: str) -> str:
+    """Strip field-31 formatting so RAG/LLM get a clean product description."""
+    import re as _re
+    text = raw.strip()
+    text = _re.sub(r"^1[-.]\s*", "", text)
+    text = _re.sub(r"\n\d+[-.].+$", "", text)
+    text = _re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 @router.post("/classify-hs-rag")
 async def classify_hs_rag(request: ClassifyHSRequest):
     """
@@ -506,19 +517,21 @@ async def classify_hs_rag(request: ClassifyHSRequest):
     if not request.description:
         raise HTTPException(status_code=400, detail="Description is required")
 
+    clean_desc = _clean_classify_input(request.description)
+
     context_tokens = set_usage_context(declaration_id=request.declaration_id or "", operation="hs_classify_dspy")
     try:
         # RAG поиск по ChromaDB
         index_manager = get_index_manager()
-        rag_results = index_manager.search_hs_codes(request.description)
+        rag_results = index_manager.search_hs_codes(clean_desc)
 
         # DSPy классификация
         classifier = HSCodeClassifier()
-        result = classifier.classify(request.description, rag_results)
+        result = classifier.classify(clean_desc, rag_results)
 
         logger.info(
             "hs_rag_classified",
-            description=request.description[:50],
+            description=clean_desc[:50],
             hs_code=result.get("hs_code"),
             confidence=result.get("confidence"),
             source=result.get("source"),
@@ -535,15 +548,29 @@ async def classify_hs_rag(request: ClassifyHSRequest):
                 if g < 1 or g > 97: return ""
             except ValueError: return ""
             return c
+
         if result.get("hs_code"):
             result["hs_code"] = _pad10(result["hs_code"])
-        for c in result.get("candidates", []):
+
+        # Promote candidates to top-level suggestions (main result first)
+        candidates = result.pop("candidates", [])
+        for c in candidates:
             if c.get("hs_code"):
                 c["hs_code"] = _pad10(c["hs_code"])
 
+        main_code = result.get("hs_code", "")
+        all_suggestions = [result]
+        seen_codes = {main_code}
+        for c in candidates:
+            code = c.get("hs_code", "")
+            if code and code not in seen_codes:
+                seen_codes.add(code)
+                all_suggestions.append(c)
+
+        quality_rag = [r for r in rag_results if r.get("score", 0) >= 0.40]
         return {
-            "suggestions": [result],
-            "rag_candidates": rag_results[:5],
+            "suggestions": all_suggestions[:6],
+            "rag_candidates": quality_rag[:5],
         }
 
     except Exception as e:

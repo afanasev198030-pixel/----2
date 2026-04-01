@@ -178,7 +178,12 @@ _TYPE_SCHEMAS: dict[str, str] = {
         "total_amount, items_count"
     ),
     "tech_description": (
-        "products: [{name, purpose, materials, specifications, application_area, operating_conditions}]"
+        "products: [{product_name, "
+        "full_description (ПОЛНОЕ описание товара из документа — включая назначение, материалы, "
+        "технические характеристики, область применения, условия эксплуатации, всё дословно БЕЗ сокращений), "
+        "manufacturer, brand, model, article_number, serial_numbers, "
+        "purpose, materials, technical_specs, country_origin (ISO alpha-2), "
+        "suggested_hs_description (материал + назначение + тип — одно предложение)}]"
     ),
     "transport_doc": (
         "awb_number, shipper_name, shipper_address, consignee_name, consignee_address,\n"
@@ -224,6 +229,10 @@ _TYPE_SCHEMAS: dict[str, str] = {
         "applicant_name, applicant_ogrn,\n"
         "product_name (full product description with model),\n"
         "manufacturer_name, manufacturer_country (ISO alpha-2),\n"
+        "brand (trademark / торговая марка, if present, else null),\n"
+        "model (model name / серия, if present, else null),\n"
+        "article_number (артикул / part number, if present, else null),\n"
+        "serial_numbers (serial numbers comma-separated, if present, else null),\n"
         "hs_code (ТН ВЭД ЕАЭС code, 10 digits),\n"
         "quantity, quantity_unit,\n"
         "invoice_number, invoice_date, contract_number, contract_date,\n"
@@ -347,7 +356,7 @@ For "specification":
   total_amount, items_count
 
 For "tech_description":
-  products: [{{name, purpose, materials, specifications, application_area, operating_conditions}}]
+  products: [{{product_name, full_description (ПОЛНОЕ описание товара из документа — всё дословно БЕЗ сокращений), manufacturer, brand, model, article_number, serial_numbers, purpose, materials, technical_specs, country_origin (ISO alpha-2), suggested_hs_description}}]
 
 For "transport_doc":
   awb_number, shipper_name, shipper_address, consignee_name, consignee_address,
@@ -396,6 +405,10 @@ For "conformity_declaration":
   applicant_name, applicant_ogrn,
   product_name (full product description with model),
   manufacturer_name, manufacturer_country (ISO alpha-2),
+  brand (trademark / торговая марка, if present, else null),
+  model (model name, if present, else null),
+  article_number (артикул / part number, if present, else null),
+  serial_numbers (serial numbers comma-separated, if present, else null),
   hs_code (ТН ВЭД 10 digits), quantity, quantity_unit,
   invoice_number, invoice_date, contract_number, contract_date,
   technical_regulation, conformity_scheme,

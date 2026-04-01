@@ -59,7 +59,7 @@ export const classifyHS = async (
         source: c.source || 'candidate',
       }));
     const rag = (response.data.rag_candidates || [])
-      .filter((c: any) => c.code && c.code.length >= 4)
+      .filter((c: any) => c.code && c.code.length >= 4 && (c.score || 0) >= 0.45)
       .slice(0, 3)
       .map((c: any) => ({
         hs_code: c.code.length < 10 ? c.code.padEnd(10, '0') : c.code,

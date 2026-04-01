@@ -26,10 +26,14 @@ import {
   AccessTime as ClockIcon,
   InsertDriveFile as FileIcon,
 } from '@mui/icons-material';
+import { Alert } from '@mui/material';
 import AppLayout from '../components/AppLayout';
 import StatusChip from '../components/StatusChip';
 import DocumentViewer from '../components/DocumentViewer';
 import HSCodeSuggestions from '../components/HSCodeSuggestions';
+import RequirementsPanel from '../components/RequirementsPanel';
+import RiskPanel from '../components/RiskPanel';
+import AiExplainPanel from '../components/AiExplainPanel';
 import { getDeclaration, updateDeclaration, patchEvidenceMap, getDeclarationLogs } from '../api/declarations';
 import { getItems, updateItem } from '../api/items';
 import { getDocuments } from '../api/documents';
@@ -865,6 +869,83 @@ const DeclarationFormPage = () => {
               </Box>
             );
           })}
+
+          {/* ── ДОПОЛНЕНИЕ (лист дополнения к ДТ) ── */}
+          {items.length > 0 && (
+            <Box sx={{
+              mt: 3, bgcolor: 'white', borderRadius: 4,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)',
+              overflow: 'hidden',
+            }}>
+              <Box sx={{
+                borderBottom: '2px solid rgba(226,232,240,0.9)', px: 3, py: 1.75,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)',
+              }}>
+                <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#334155', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                  Дополнение на {items.length} л., к ДТ N {decl.number_internal || decl.id.slice(0, 13)}
+                </Typography>
+              </Box>
+              {items.map((itm, idx) => {
+                const it = itm as any;
+                return (
+                  <Box key={itm.id} sx={{ px: 3, py: 2, borderBottom: idx < items.length - 1 ? '1px solid rgba(226,232,240,0.7)' : 'none' }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1e293b', mb: 1 }}>
+                      Товар № {itm.item_no || idx + 1}
+                    </Typography>
+                    {it.documents_json?.length > 0 && (
+                      <Box sx={{ mb: 1.5 }}>
+                        <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#475569', mb: 0.5 }}>К ГРАФЕ 44 (Документы)</Typography>
+                        <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, '& th, & td': { border: '1px solid rgba(226,232,240,0.7)', p: '3px 6px' } }}>
+                          <thead>
+                            <tr>
+                              <Box component="th" sx={{ fontWeight: 600, textAlign: 'left', color: '#64748b' }}>Код</Box>
+                              <Box component="th" sx={{ fontWeight: 600, textAlign: 'left', color: '#64748b' }}>Номер</Box>
+                              <Box component="th" sx={{ fontWeight: 600, textAlign: 'left', color: '#64748b' }}>Дата</Box>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {it.documents_json.map((doc: any, di: number) => (
+                              <tr key={di}>
+                                <Box component="td">{doc.doc_kind_code || doc.code || ''}</Box>
+                                <Box component="td">{doc.doc_number || doc.number || ''}</Box>
+                                <Box component="td">{doc.doc_date || doc.date || ''}</Box>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </Box>
+                      </Box>
+                    )}
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#475569', mb: 0.5 }}>К ГРАФЕ 31 (Описание и характеристики товара)</Typography>
+                    <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, '& th, & td': { border: '1px solid rgba(226,232,240,0.7)', p: '3px 6px' } }}>
+                      <thead>
+                        <tr>
+                          {['Гр.', 'Наименование', 'Производитель', 'Марка', 'Модель', 'Кол-во', 'Ед.изм', 'Артикул', 'Серийные NN'].map(h => (
+                            <Box component="th" key={h} sx={{ fontWeight: 600, textAlign: 'left', color: '#64748b', whiteSpace: 'nowrap' }}>{h}</Box>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <Box component="td" sx={{ textAlign: 'center' }}>{itm.item_no || idx + 1}</Box>
+                          <Box component="td">{f(it.commercial_name || it.description)}</Box>
+                          <Box component="td">{f(it.manufacturer) || 'ОТСУТСТВУЕТ'}</Box>
+                          <Box component="td">{f(it.trademark) || 'ОТСУТСТВУЕТ'}</Box>
+                          <Box component="td">{f(it.model_name) || 'ОТСУТСТВУЕТ'}</Box>
+                          <Box component="td" sx={{ textAlign: 'right' }}>
+                            {it.additional_unit_qty ? numFmt(it.additional_unit_qty, 0) : (it.package_count ?? '')}
+                          </Box>
+                          <Box component="td">{f(it.additional_unit) || 'ШТ'}</Box>
+                          <Box component="td">{f(it.article_number) || 'ОТСУТСТВУЕТ'}</Box>
+                          <Box component="td">{f(it.serial_number) || 'ОТСУТСТВУЮТ'}</Box>
+                        </tr>
+                      </tbody>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
         </Box>
 
         {/* SourceDrawer */}
@@ -900,6 +981,8 @@ const DeclarationFormPage = () => {
                   setSnackMsg(`Код ${code} применён`);
                 } catch { setSnackMsg('Ошибка сохранения кода'); }
               } : undefined}
+              declaration={decl}
+              allItems={items}
             />
           </Box>
         )}
@@ -1172,13 +1255,14 @@ function FormCell({ cell, value, state, isSelected, isEditing, sourceStr, sxOver
 
 /* ================== SourceDrawerContent ================== */
 
-function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, docs, forceSourceTab, onClose, onStartEdit, onApplyValue, onApplyFromSource, onForceSourceTabClose, isEditing, onResetToAi, item, declarationId, onHsSelect }: {
+function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, docs, forceSourceTab, onClose, onStartEdit, onApplyValue, onApplyFromSource, onForceSourceTabClose, isEditing, onResetToAi, item, declarationId, onHsSelect, declaration, allItems }: {
   cell: CellDef; value: string; state: CellState; evidence?: EvidenceMapEntry; sourceDoc?: DocType;
   logs: DeclarationLogEntry[]; docs: DocType[]; forceSourceTab: boolean;
   onClose: () => void; onStartEdit: () => void; onApplyValue: (v: string) => void;
   onApplyFromSource: (value: string, docId: string, docType: string) => void;
   onForceSourceTabClose: () => void; isEditing: boolean; onResetToAi?: () => void;
   item?: DeclarationItem; declarationId?: string; onHsSelect?: (code: string, name: string) => void;
+  declaration?: Declaration; allItems?: DeclarationItem[];
 }) {
   const st = STATE_STYLES[state];
   const confidence = evidence?.confidence != null ? Math.round(evidence.confidence * 100) : null;
@@ -1477,6 +1561,46 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                     declarationId={declarationId}
                   />
                 </Box>
+              </Box>
+            )}
+
+            {/* HS drift warning (field 33) */}
+            {cell.field === 'hs_code' && item && (item as any).drift_status && (
+              <Box sx={{ px: 2, pt: 1.5 }}>
+                <Alert severity="warning" sx={{ fontSize: 12 }} variant="outlined">
+                  Дрейф кода: ранее использовался <b>{(item as any).historical_hs_code}</b>
+                  {(item as any).historical_usage_count && ` (${(item as any).historical_usage_count} раз)`}
+                  {(item as any).drift_message && ` — ${(item as any).drift_message}`}
+                </Alert>
+              </Box>
+            )}
+
+            {/* Requirements for HS code (field 33) */}
+            {cell.field === 'hs_code' && item && (
+              <Box sx={{ px: 2, pt: 1.5 }}>
+                <DrawerLabel text="ТРЕБОВАНИЯ К ДОКУМЕНТАМ" />
+                <RequirementsPanel
+                  hsCode={item.hs_code || ''}
+                  description={item.description || ''}
+                />
+              </Box>
+            )}
+
+            {/* Risk assessment for item (field 33) */}
+            {cell.field === 'hs_code' && item && ((item as any).risk_score || 0) > 0 && (
+              <Box sx={{ px: 2, pt: 1.5 }}>
+                <DrawerLabel text="ОЦЕНКА РИСКОВ" />
+                <RiskPanel
+                  riskScore={(item as any).risk_score || 0}
+                  risks={((item as any).risk_flags as any)?.risks || []}
+                />
+              </Box>
+            )}
+
+            {/* AI Explain Panel */}
+            {declaration && allItems && (
+              <Box sx={{ px: 2, pt: 2 }}>
+                <AiExplainPanel declaration={declaration} items={allItems} />
               </Box>
             )}
 

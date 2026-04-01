@@ -55,10 +55,10 @@ def get_training_log() -> list[dict]:
 
 
 class IndexManager:
-    """RAG через ChromaDB + OpenAI embeddings."""
+    """RAG через ChromaDB + Cloud.ru/OpenAI embeddings (BAAI/bge-m3)."""
 
-    EMBED_MODEL = "text-embedding-3-small"
-    EMBED_DIM = 1536
+    DEFAULT_EMBED_MODEL = "BAAI/bge-m3"
+    DEFAULT_EMBED_DIM = 1024
 
     def __init__(self, chromadb_url: str, openai_api_key: str = "", openai_model: str = "gpt-4o"):
         self._chromadb_url = chromadb_url
@@ -67,7 +67,8 @@ class IndexManager:
         self._initialized = False
         self._chromadb_connected = False
         self._chroma_client = None
-        self._openai_client = None  # Used for embeddings only
+        self._openai_client = None
+        self._embed_model = self.DEFAULT_EMBED_MODEL
 
     # ── properties ──────────────────────────────────────────────
     @property
@@ -84,7 +85,7 @@ class IndexManager:
         if not self._openai_client:
             return []
         resp = self._openai_client.embeddings.create(
-            model=self.EMBED_MODEL,
+            model=self._embed_model,
             input=texts,
         )
         return [d.embedding for d in resp.data]
@@ -111,26 +112,31 @@ class IndexManager:
             _log_event("chromadb_connect_failed", str(e), "error")
             return
 
-        # Embeddings: multilingual E5 (local) or OpenAI (cloud)
         from app.config import get_settings
         settings = get_settings()
-        ef = _get_embedding_function()
-        if ef:
-            self._openai_client = None  # Не нужен — используем E5 локально
-            _log_event("embed_provider_e5", f"model={_E5_MODEL}, local multilingual embeddings")
-        elif settings.EMBED_PROVIDER == "openai" and _openai_available:
-            embed_key = settings.effective_api_key
+
+        self._embed_model = settings.EMBED_MODEL or self.DEFAULT_EMBED_MODEL
+
+        if settings.EMBED_PROVIDER in ("cloud_ru", "openai") and _openai_available:
+            embed_key = settings.effective_embed_api_key
+            embed_url = settings.effective_embed_base_url
             if embed_key and embed_key != "sk-your-key-here":
+                extra_headers = {}
+                if settings.LLM_PROJECT_ID:
+                    extra_headers["x-project-id"] = settings.LLM_PROJECT_ID
                 self._openai_client = _openai_mod.OpenAI(
                     api_key=embed_key,
-                    base_url="https://api.openai.com/v1",
+                    base_url=embed_url,
+                    default_headers=extra_headers or None,
                 )
-                _log_event("openai_embed_client_ready", f"model={self.EMBED_MODEL}")
+                _log_event("embed_client_ready",
+                           f"provider={settings.EMBED_PROVIDER}, model={self._embed_model}, url={embed_url}")
             else:
-                _log_event("openai_embed_no_key", "Set key in Settings page", "warning")
+                self._openai_client = None
+                _log_event("embed_no_key", "No API key for embeddings", "warning")
         else:
             self._openai_client = None
-            _log_event("embed_provider_default", "Using ChromaDB default ONNX embeddings")
+            _log_event("embed_provider_default", "Using ChromaDB default ONNX embeddings (local)")
 
         self._initialized = True
 
@@ -240,11 +246,10 @@ class IndexManager:
                 return []
 
             if self._openai_client:
-                emb = self._embed_one(f"Товар: {description}")
+                emb = self._embed_one(description)
                 results = col.query(query_embeddings=[emb], n_results=top_k)
             else:
-                # E5 или ONNX — ChromaDB использует embedding_function коллекции
-                results = col.query(query_texts=[f"query: {description}"], n_results=top_k)
+                results = col.query(query_texts=[description], n_results=top_k)
 
             out = []
             for i, doc_id in enumerate(results["ids"][0]):
@@ -275,7 +280,7 @@ class IndexManager:
                 emb = self._embed_one(declaration_text)
                 results = col.query(query_embeddings=[emb], n_results=top_k)
             else:
-                results = col.query(query_texts=[f"query: {declaration_text}"], n_results=top_k)
+                results = col.query(query_texts=[declaration_text], n_results=top_k)
 
             out = []
             for i, _ in enumerate(results["ids"][0]):
@@ -322,23 +327,37 @@ class IndexManager:
             logger.error("precedent_search_failed", error=str(e))
             return []
 
+    @staticmethod
+    def _clean_precedent_desc(raw: str) -> str:
+        """Strip field-31 formatting noise for clean embedding storage."""
+        import re
+        text = raw.strip()
+        text = re.sub(r"^Товар:\s*", "", text)
+        text = re.sub(r"\.\s*Код ТН ВЭД:\s*\d+\.?\s*$", "", text)
+        text = re.sub(r"^1[-.]\s*", "", text)
+        text = re.sub(r"\n\d+[-.].+$", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
     def add_precedent(self, description: str, hs_code: str, metadata: dict = None):
         """Add a precedent after successful declaration release."""
         if not self._chroma_client:
             return
+        clean = self._clean_precedent_desc(description)
+        if len(clean) < 5:
+            return
         try:
             col = self._chroma_client.get_or_create_collection("precedents")
-            text = f"Товар: {description}. Код ТН ВЭД: {hs_code}."
             doc_id = f"prec_{uuid.uuid4().hex[:12]}"
-            meta = {"hs_code": hs_code, "description": description[:500], **(metadata or {})}
+            meta = {"hs_code": hs_code, "description": clean[:500], **(metadata or {})}
 
             if self._openai_client:
-                emb = self._embed_one(text)
-                col.add(ids=[doc_id], documents=[text], metadatas=[meta], embeddings=[emb])
+                emb = self._embed_one(clean)
+                col.add(ids=[doc_id], documents=[clean], metadatas=[meta], embeddings=[emb])
             else:
-                col.add(ids=[doc_id], documents=[text], metadatas=[meta])
+                col.add(ids=[doc_id], documents=[clean], metadatas=[meta])
 
-            _log_event("precedent_added", f"hs={hs_code} desc={description[:60]}")
+            _log_event("precedent_added", f"hs={hs_code} desc={clean[:60]}")
         except Exception as e:
             logger.error("precedent_add_failed", error=str(e))
 

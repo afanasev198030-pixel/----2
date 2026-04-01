@@ -23,7 +23,10 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "deepseek-chat"  # Default: DeepSeek V3
     LLM_REASONING_MODEL: str = "deepseek-reasoner"  # DeepSeek R1 for complex tasks
     LLM_PROJECT_ID: str = ""  # Cloud.ru x-project-id header (optional)
-    EMBED_PROVIDER: str = "local"  # local (onnxruntime), openai
+    EMBED_PROVIDER: str = "cloud_ru"  # cloud_ru, openai, local
+    EMBED_MODEL: str = "BAAI/bge-m3"  # Cloud.ru: BAAI/bge-m3 (1024 dim, multilingual)
+    EMBED_BASE_URL: str = ""  # empty = use LLM_BASE_URL
+    EMBED_API_KEY: str = ""  # empty = use effective_api_key
 
     # Vision OCR (DeepSeek-OCR-2 via Cloud.ru — replaces Tesseract/pdfplumber)
     OCR_ENABLED: bool = False
@@ -52,6 +55,9 @@ class Settings(BaseSettings):
     ARQ_MAX_JOBS: int = 3
     ARQ_JOB_TIMEOUT_SECONDS: int = 1800  # 30 minutes
 
+    # Parallel file processing in parse-smart
+    PARSE_PARALLEL_WORKERS: int = 2
+
     @property
     def chromadb_url(self) -> str:
         return f"http://{self.CHROMADB_HOST}:{self.CHROMADB_PORT}"
@@ -76,6 +82,16 @@ class Settings(BaseSettings):
     def effective_api_key(self) -> str:
         """Return the best available API key."""
         return self.LLM_API_KEY or self.OPENAI_API_KEY or ""
+
+    @property
+    def effective_embed_api_key(self) -> str:
+        """Return API key for embeddings (falls back to LLM key)."""
+        return self.EMBED_API_KEY or self.effective_api_key
+
+    @property
+    def effective_embed_base_url(self) -> str:
+        """Return base URL for embeddings (falls back to LLM base URL)."""
+        return self.EMBED_BASE_URL or self.effective_base_url
 
     @property
     def effective_base_url(self) -> str:

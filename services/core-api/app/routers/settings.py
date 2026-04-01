@@ -485,16 +485,17 @@ async def rag_status():
 
 @router.post("/init-rag")
 async def init_rag(
+    force: bool = True,
     current_user: User = Depends(require_role(UserRole.ADMIN)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Запустить фоновую индексацию ТН ВЭД в ChromaDB (батчами по 50 с паузами)."""
+    """Запустить фоновую индексацию ТН ВЭД в ChromaDB (батчами по 50 с паузами).
+    force=True — удалить коллекцию и создать заново. force=False — дозаполнить."""
     import os
 
     if _rag_status["running"]:
         return {"status": "already_running", "message": f"Индексация уже идёт: {_rag_status['indexed']}/{_rag_status['total']}"}
 
-    # Fetch codes from DB (быстро)
     r = await db.execute(text(
         "SELECT code, name_ru, parent_code FROM core.classifiers "
         "WHERE classifier_type='hs_code' AND is_active=true "
@@ -507,34 +508,43 @@ async def init_rag(
         return {"status": "no_codes", "message": "Нет кодов ТН ВЭД в БД."}
 
     ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
+    force_first_batch = force
 
-    # Запуск в фоне
     async def _index_background():
-        BATCH_SIZE = 50  # маленькие батчи — не нагружает сервер
-        PAUSE = 1.0      # пауза между батчами (секунды)
+        BATCH_SIZE = 50
+        PAUSE = 1.5
+        MAX_RETRIES = 2
         _rag_status.update({"running": True, "progress": 0, "total": len(all_codes), "indexed": 0, "errors": 0, "message": "Индексация запущена..."})
         batches = [all_codes[i:i + BATCH_SIZE] for i in range(0, len(all_codes), BATCH_SIZE)]
         for idx, batch in enumerate(batches):
-            try:
-                async with httpx.AsyncClient(timeout=300, headers=tracing_headers()) as client:
-                    resp = await client.post(
-                        f"{ai_url}/api/v1/ai/index-hs-codes",
-                        json={"codes": batch, "force": (idx == 0)},
-                    )
-                    resp.raise_for_status()
-                _rag_status["indexed"] += len(batch)
-                _rag_status["progress"] = round(100 * _rag_status["indexed"] / _rag_status["total"])
-                _rag_status["message"] = f"Батч {idx+1}/{len(batches)}: {_rag_status['indexed']}/{_rag_status['total']}"
-            except Exception as e:
-                _rag_status["errors"] += 1
-                logger.warning("rag_batch_failed", batch=idx+1, error=str(e)[:100])
+            success = False
+            for attempt in range(MAX_RETRIES + 1):
+                try:
+                    async with httpx.AsyncClient(timeout=600, headers=tracing_headers()) as client:
+                        resp = await client.post(
+                            f"{ai_url}/api/v1/ai/index-hs-codes",
+                            json={"codes": batch, "force": (idx == 0 and force_first_batch)},
+                        )
+                        resp.raise_for_status()
+                    _rag_status["indexed"] += len(batch)
+                    _rag_status["progress"] = round(100 * _rag_status["indexed"] / _rag_status["total"])
+                    _rag_status["message"] = f"Батч {idx+1}/{len(batches)}: {_rag_status['indexed']}/{_rag_status['total']}"
+                    success = True
+                    break
+                except Exception as e:
+                    if attempt < MAX_RETRIES:
+                        await asyncio.sleep(5 * (attempt + 1))
+                    else:
+                        _rag_status["errors"] += 1
+                        logger.warning("rag_batch_failed", batch=idx+1, error=str(e)[:100])
             await asyncio.sleep(PAUSE)
         _rag_status["running"] = False
         _rag_status["message"] = f"Готово: {_rag_status['indexed']}/{_rag_status['total']} кодов, ошибок: {_rag_status['errors']}"
         logger.info("rag_background_complete", indexed=_rag_status["indexed"], errors=_rag_status["errors"])
 
     asyncio.create_task(_index_background())
-    return {"status": "started", "message": f"Фоновая индексация {len(all_codes)} кодов запущена. Следите через GET /settings/init-rag/status"}
+    mode = "полная переиндексация" if force_first_batch else "дозаполнение"
+    return {"status": "started", "message": f"Фоновая индексация {len(all_codes)} кодов запущена ({mode}). GET /settings/init-rag/status"}
 
 
 @router.get("/training-stats")

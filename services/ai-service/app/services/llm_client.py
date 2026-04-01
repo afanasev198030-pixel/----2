@@ -34,7 +34,7 @@ PROVIDER_PROFILES: dict[str, dict] = {
         "base_url": "https://foundation-models.api.cloud.ru/v1",
         "default_model": "openai/gpt-oss-120b",
         "reasoning_model": "openai/gpt-oss-120b",
-        "supports_json_mode": False,
+        "supports_json_mode": True,
     },
 }
 

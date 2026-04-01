@@ -14,19 +14,8 @@ logger = structlog.get_logger()
 
 
 def _safe_float(v: Any) -> Optional[float]:
-    """Безопасное преобразование в float — не падает на строках вроде 'N/A', '2pcs'."""
-    if v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    if isinstance(v, str):
-        cleaned = re.sub(r'[^\d.\-]', '', v.strip())
-        if cleaned:
-            try:
-                return float(cleaned)
-            except (ValueError, TypeError):
-                pass
-    return None
+    from app.services.parsing_utils import safe_float
+    return safe_float(v)
 
 
 class CounterpartyParsed(BaseModel):

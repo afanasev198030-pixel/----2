@@ -219,6 +219,7 @@ export interface DeclarationItem {
   trademark?: string;
   model_name?: string;
   article_number?: string;
+  serial_number?: string;
   hs_code?: string;
   hs_code_letters?: string;
   hs_code_extra?: string;
