@@ -142,7 +142,7 @@ const SettingsPage = () => {
       const baseUrlMap: Record<string, string | undefined> = {
         deepseek: 'https://api.deepseek.com',
         cloud_ru: 'https://foundation-models.api.cloud.ru/v1',
-        proxyapi: baseUrl || 'https://api.proxyapi.ru/openai/v1',
+        proxyapi: baseUrl || 'https://openai.api.proxyapi.ru/v1',
         custom: baseUrl || undefined,
       };
       const resp = await client.post('/settings/openai-key', {
@@ -882,15 +882,17 @@ const SettingsPage = () => {
         {provider === 'proxyapi' && (
           <>
             <Alert severity="info" sx={{ mb: 2 }}>
-              <strong>ProxyAPI</strong> — OpenAI-совместимый прокси.<br />
-              Позволяет использовать OpenAI, Claude и другие модели через единый ключ.<br />
+              <strong>ProxyAPI</strong> — универсальный прокси для OpenAI, Claude, Gemini, DeepSeek.<br />
+              Один ключ, один URL — все модели доступны.<br />
+              Модели Claude: <code>anthropic/claude-opus-4-6</code>, <code>anthropic/claude-sonnet-4-6</code><br />
+              Модели OpenAI: <code>openai/gpt-4o</code>, <code>openai/gpt-4.1</code><br />
               После сохранения ключа список моделей загрузится автоматически.
             </Alert>
             <TextField
-              fullWidth label="ProxyAPI Base URL" placeholder="https://api.proxyapi.ru/openai/v1"
+              fullWidth label="ProxyAPI Base URL" placeholder="https://openai.api.proxyapi.ru/v1"
               value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
               size="small" sx={{ mb: 2 }}
-              helperText="URL прокси-сервера (по умолчанию https://api.proxyapi.ru/openai/v1)"
+              helperText="Универсальный URL (по умолчанию https://openai.api.proxyapi.ru/v1). Поддерживает все провайдеры через единый OpenAI SDK."
             />
           </>
         )}

@@ -43,9 +43,9 @@ PROVIDER_PROFILES: dict[str, dict] = {
         "supports_json_mode": False,
     },
     "proxyapi": {
-        "base_url": "https://api.proxyapi.ru/openai/v1",
-        "default_model": "gpt-4o",
-        "reasoning_model": "gpt-4o",
+        "base_url": "https://openai.api.proxyapi.ru/v1",
+        "default_model": "anthropic/claude-opus-4-6",
+        "reasoning_model": "anthropic/claude-opus-4-6",
         "supports_json_mode": True,
     },
 }
@@ -124,8 +124,16 @@ def get_reasoning_model() -> str:
 # ---------------------------------------------------------------------------
 
 def supports_json_mode() -> bool:
-    """Check if current LLM provider supports response_format=json_object."""
-    return get_provider_profile()["supports_json_mode"]
+    """Check if current LLM provider supports response_format=json_object.
+    ProxyAPI with Claude models doesn't support json mode."""
+    profile = get_provider_profile()
+    if not profile["supports_json_mode"]:
+        return False
+    from app.config import get_settings
+    model = get_settings().effective_model.lower()
+    if "claude" in model or "anthropic" in model:
+        return False
+    return True
 
 
 def json_format_kwargs() -> dict:
