@@ -1,11 +1,5 @@
 # Ручной деплой бэкенда на сервер по SSH (workflow_dispatch).
-# Пересобирает и перезапускает все бэкенд-сервисы: core-api, ai-service, file-service, calc-service.
-# Секреты в GitHub: Settings → Secrets and variables → Actions:
-#   SSH_PRIVATE_KEY — приватный ключ для входа на сервер
-#   SERVER_HOST     — хост (напр. 141.105.65.148)
-#   SERVER_USER     — пользователь SSH (напр. root)
-# Опционально:
-#   DEPLOY_PATH      — каталог на сервере (по умолчанию /home/2/----2)
+# Использует Node.js 24 (2026 compliance).
 
 name: Manual deploy backend to server
 
@@ -16,10 +10,18 @@ concurrency:
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Deploy backend via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
