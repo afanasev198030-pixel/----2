@@ -360,22 +360,22 @@ async def set_openai_model(
     await _set_setting(db, "openai_model", data.value)
     await _set_setting(db, "llm_model", data.value)
 
-    if data.value.startswith("deepseek"):
-        provider = "deepseek"
-        base_url = "https://api.deepseek.com"
-    elif "/" in data.value:
-        provider = "cloud_ru"
-        base_url = "https://foundation-models.api.cloud.ru/v1"
-    else:
-        provider = "openai"
-        base_url = "https://api.openai.com/v1"
+    import os
+    provider = await _get_setting(db, "llm_provider") or os.environ.get("LLM_PROVIDER", "deepseek")
+    base_url = await _get_setting(db, "llm_base_url") or ""
 
-    await _set_setting(db, "llm_provider", provider)
-    await _set_setting(db, "llm_base_url", base_url)
+    if not base_url:
+        provider_urls = {
+            "deepseek": "https://api.deepseek.com",
+            "openai": "https://api.openai.com/v1",
+            "cloud_ru": "https://foundation-models.api.cloud.ru/v1",
+            "proxyapi": "https://openai.api.proxyapi.ru/v1",
+            "anthropic": "https://api.anthropic.com/v1",
+        }
+        base_url = provider_urls.get(provider, "https://api.deepseek.com")
 
     ai_result = {}
     try:
-        import os
         ai_url = os.environ.get("AI_SERVICE_URL", "http://ai-service:8003")
         r_key = await db.execute(text("SELECT value FROM core.system_settings WHERE key='openai_api_key'"))
         api_key = (r_key.scalar() or "").strip()
