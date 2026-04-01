@@ -142,6 +142,7 @@ const SettingsPage = () => {
       const baseUrlMap: Record<string, string | undefined> = {
         deepseek: 'https://api.deepseek.com',
         cloud_ru: 'https://foundation-models.api.cloud.ru/v1',
+        anthropic: 'https://api.anthropic.com/v1',
         proxyapi: baseUrl || 'https://openai.api.proxyapi.ru/v1',
         custom: baseUrl || undefined,
       };
@@ -154,10 +155,9 @@ const SettingsPage = () => {
       });
       if (resp.data.status === 'saved') {
         const check = resp.data.ai_check || {};
-        if (check.status === 'ok') setMessage({ type: 'success', text: 'API ключ сохранён, проверен и применён.' });
-        else if (check.status === 'no_balance') setMessage({ type: 'error', text: 'Ключ сохранён, но на счету нет средств.' });
-        else if (check.status === 'invalid') setMessage({ type: 'error', text: 'Неверный API ключ.' });
-        else setMessage({ type: 'warning', text: `Ключ сохранён. ${check.message || ''}` });
+        if (check.status === 'ok') setMessage({ type: 'success', text: `API ключ сохранён и применён (${provider}).` });
+        else if (check.status === 'error') setMessage({ type: 'warning', text: `Ключ сохранён, но: ${check.message || 'AI-сервис не смог его применить'}` });
+        else setMessage({ type: 'info', text: `Ключ сохранён. ${check.message || 'Перезагрузите страницу.'}` });
         setApiKey('');
         await loadSettings();
         await loadTrainingStats();

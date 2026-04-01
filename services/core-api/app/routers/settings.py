@@ -33,7 +33,7 @@ async def get_llm_config_internal(db: AsyncSession = Depends(get_db)):
     api_key = await _get_setting(db, "llm_api_key") or await _get_setting(db, "openai_api_key") or ""
     provider = await _get_setting(db, "llm_provider") or "deepseek"
     base_url = await _get_setting(db, "llm_base_url") or ""
-    model = await _get_setting(db, "openai_model") or "deepseek-chat"
+    model = await _get_setting(db, "llm_model") or await _get_setting(db, "openai_model") or ""
     project_id = await _get_setting(db, "llm_project_id") or ""
     return {"llm_api_key": api_key, "llm_provider": provider, "llm_base_url": base_url, "openai_model": model, "llm_project_id": project_id}
 
@@ -282,18 +282,31 @@ async def set_openai_key(
     if data.project_id is not None:
         await _set_setting(db, "llm_project_id", data.project_id)
 
-    llm_model = await _get_setting(db, "llm_model") or os.environ.get("LLM_MODEL", "")
     llm_project_id = await _get_setting(db, "llm_project_id") or ""
-    logger.info("llm_key_saved", user_id=str(current_user.id), provider=llm_provider)
 
     provider_defaults = {
         "deepseek": {"base_url": "https://api.deepseek.com", "model": "deepseek-chat"},
         "openai": {"base_url": "https://api.openai.com/v1", "model": "gpt-4o"},
         "cloud_ru": {"base_url": "https://foundation-models.api.cloud.ru/v1", "model": "openai/gpt-oss-120b"},
+        "proxyapi": {"base_url": "https://openai.api.proxyapi.ru/v1", "model": "anthropic/claude-opus-4-6"},
+        "anthropic": {"base_url": "https://api.anthropic.com/v1", "model": "claude-3-5-sonnet-20241022"},
     }
     defaults = provider_defaults.get(llm_provider, provider_defaults["deepseek"])
+
+    old_provider = await _get_setting(db, "llm_provider_prev") or ""
+    llm_model = await _get_setting(db, "llm_model") or ""
+    provider_changed = data.provider and data.provider != old_provider
+    if provider_changed or not llm_model:
+        llm_model = defaults["model"]
+        await _set_setting(db, "llm_model", llm_model)
+        await _set_setting(db, "openai_model", llm_model)
+    if data.provider:
+        await _set_setting(db, "llm_provider_prev", data.provider)
+
     validate_base_url = llm_base_url or defaults["base_url"]
     validate_model = llm_model or defaults["model"]
+
+    logger.info("llm_key_saved", user_id=str(current_user.id), provider=llm_provider, model=validate_model)
 
     ai_check = {"status": "unknown", "message": ""}
     try:
