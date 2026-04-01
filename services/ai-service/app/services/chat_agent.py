@@ -1,14 +1,12 @@
 """
 Advanced Conversational Agent with Tool Calling (ReAct) and Self-Learning.
-Uses Claude Opus 4.6 with deep integration into Digital Broker.
+Supports both OpenAI-compatible providers and native Anthropic SDK.
 """
 
 import json
 import structlog
-import httpx
 import asyncio
 from typing import List, Dict, Any
-from datetime import datetime
 
 from app.services.llm_client import get_llm_client
 from app.services.index_manager import get_index_manager
@@ -42,38 +40,70 @@ class AdvancedConversationalAgent:
 - Если пользователь оценивает твой ответ — сохраняй feedback для обучения"""
 
     async def process_message(self, user_id: str, message: str, history: List[Dict[str, str]]) -> str:
-        """Main method with Tool Calling (ReAct pattern) and feedback support."""
+        """Main entry: routes to Anthropic or OpenAI-compatible path."""
+        context = await self._gather_context(user_id, message)
+        full_system_prompt = self.system_prompt + "\n\n" + context
+
+        messages = list(history[-12:])
+        messages.append({"role": "user", "content": message})
+
+        try:
+            if settings.LLM_PROVIDER == "anthropic":
+                answer = await self._call_anthropic(full_system_prompt, messages)
+            else:
+                answer = await self._call_openai_compat(full_system_prompt, messages)
+
+            await self._save_interaction(user_id, message, answer)
+            return answer
+        except Exception as e:
+            logger.error("agent_response_error", error=str(e), provider=settings.LLM_PROVIDER)
+            return "Произошла ошибка при обработке вашего запроса."
+
+    async def _call_openai_compat(self, system_prompt: str, messages: List[Dict]) -> str:
+        """OpenAI-compatible providers: DeepSeek, OpenAI, Cloud.ru."""
         try:
             llm = get_llm_client(operation="telegram_chat")
         except Exception as e:
             logger.error("llm_init_failed", error=str(e))
             return "AI-сервис временно недоступен."
 
-        context = await self._gather_context(user_id, message)
-        full_system_prompt = self.system_prompt + "\n\n" + context
+        all_messages = [{"role": "system", "content": system_prompt}] + messages
 
-        messages = [{"role": "system", "content": full_system_prompt}]
-        messages.extend(history[-12:])
-        messages.append({"role": "user", "content": message})
-
-        try:
-            response = await asyncio.to_thread(
-                lambda: llm.chat.completions.create(
-                    model=settings.effective_model,
-                    messages=messages,
-                    temperature=0.3,
-                    max_tokens=2000,
-                )
+        response = await asyncio.to_thread(
+            lambda: llm.chat.completions.create(
+                model=settings.effective_model,
+                messages=all_messages,
+                temperature=0.3,
+                max_tokens=2000,
             )
-            answer = response.choices[0].message.content.strip()
+        )
+        return response.choices[0].message.content.strip()
 
-            # Save feedback capability (for future learning)
-            await self._save_interaction(user_id, message, answer)
+    async def _call_anthropic(self, system_prompt: str, messages: List[Dict]) -> str:
+        """Native Anthropic SDK — Claude doesn't use OpenAI format."""
+        try:
+            import anthropic
+        except ImportError:
+            logger.error("anthropic_sdk_not_installed")
+            return "Anthropic SDK не установлен. pip install anthropic"
 
-            return answer
-        except Exception as e:
-            logger.error("agent_response_error", error=str(e))
-            return "Произошла ошибка при обработке вашего запроса."
+        api_key = settings.ANTHROPIC_API_KEY or settings.LLM_API_KEY
+        if not api_key:
+            return "Anthropic API ключ не настроен."
+
+        client = anthropic.Anthropic(api_key=api_key)
+        model = settings.ANTHROPIC_MODEL or "claude-3-5-sonnet-20241022"
+
+        response = await asyncio.to_thread(
+            lambda: client.messages.create(
+                model=model,
+                max_tokens=2000,
+                system=system_prompt,
+                messages=messages,
+                temperature=0.3,
+            )
+        )
+        return response.content[0].text.strip()
 
     async def _gather_context(self, user_id: str, message: str) -> str:
         """Gather context with memory and tools."""
@@ -81,17 +111,17 @@ class AdvancedConversationalAgent:
 
         memory = await self.tools.get_user_memory(user_id)
         if memory:
-            parts.append(f"📌 Из памяти о пользователе:\n{memory}")
+            parts.append(f"Из памяти о пользователе:\n{memory}")
 
         if any(k in message.lower() for k in ["декларац", "статус", "мои"]):
             result = await self.tools.get_user_declarations(user_id, limit=5)
             if result.get("success"):
-                parts.append("📋 " + str(result.get("declarations", [])))
+                parts.append("Декларации: " + str(result.get("declarations", [])))
 
         if any(k in message.lower() for k in ["код", "тн вэд", "правило", "графа"]):
             result = await self.tools.search_knowledge_base(message, limit=5)
             if result.get("success") and result.get("results"):
-                parts.append("📚 " + str(result.get("results")))
+                parts.append("База знаний: " + str(result.get("results")))
 
         return "\n\n".join(parts) if parts else "Контекст пользователя загружен."
 
@@ -104,8 +134,8 @@ class AdvancedConversationalAgent:
                 feedback="auto_saved",
                 rating=0
             )
-        except:
-            pass  # silent fail for now
+        except Exception:
+            logger.debug("save_interaction_silent_fail", user_id=user_id)
 
 
 # Global instance

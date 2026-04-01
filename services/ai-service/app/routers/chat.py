@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 import redis.asyncio as redis
 
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.chat_agent import ConversationalAgent
+from app.services.chat_agent import AdvancedConversationalAgent
 from app.config import get_settings
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/api/v1/ai/chat", tags=["chat"])
 
 redis_client = redis.from_url(get_settings().REDIS_BROKER_URL, decode_responses=True)
-agent = ConversationalAgent()
+agent = AdvancedConversationalAgent()
 
 @router.post("", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):

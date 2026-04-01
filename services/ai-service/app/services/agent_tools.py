@@ -51,12 +51,12 @@ class AgentTools:
         try:
             from app.services.index_manager import get_index_manager
             index = get_index_manager()
-            results = index.search_precedents(query, limit=limit)
-            
-            if results and results.get("documents"):
+            results = index.search_precedents(query, top_k=limit)
+
+            if results:
                 return {
                     "success": True,
-                    "results": results["documents"][0][:limit],
+                    "results": [r.get("text", "") for r in results[:limit]],
                     "query": query
                 }
             return {"success": True, "results": [], "query": query}
@@ -76,6 +76,20 @@ class AgentTools:
             }
         except Exception as e:
             logger.error("tool_get_rules_failed", error=str(e))
+            return {"success": False, "error": str(e)}
+
+    async def get_user_info(self, user_id: str) -> Dict[str, Any]:
+        """Get user profile from core-api."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"{self.core_api_url}/api/v1/users/{user_id}",
+                )
+                if resp.status_code == 200:
+                    return {"success": True, "user": resp.json()}
+                return {"success": False, "error": f"HTTP {resp.status_code}"}
+        except Exception as e:
+            logger.error("tool_get_user_info_failed", user_id=user_id, error=str(e))
             return {"success": False, "error": str(e)}
 
     # ==================== MEMORY & FEEDBACK ====================

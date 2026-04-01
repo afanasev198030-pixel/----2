@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # LLM Provider settings
     LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, anthropic, custom
-    LLM_BASE_URL: str = "https://api.deepseek.com"
+    LLM_BASE_URL: str = ""
     LLM_API_KEY: str = ""  # Primary API key
     LLM_MODEL: str = "deepseek-chat"
     LLM_REASONING_MODEL: str = "deepseek-reasoner"

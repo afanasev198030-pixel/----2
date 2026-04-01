@@ -1,6 +1,7 @@
 ---
 description: Правила использования OpenClaw (Cursor Cloud Agents) в Digital Broker Platform
-alwaysApply: true
+alwaysApply: false
+globs: services/ai-service/**
 ---
 
 # OpenClaw Guidelines — Digital Broker 2026

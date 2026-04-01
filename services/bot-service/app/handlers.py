@@ -11,41 +11,6 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.services import CoreApiClient, FileServiceClient, AiServiceClient
 
 
-@router.message(CommandStart())
-async def cmd_start(message: Message):
-    """Handle /start command with clear onboarding."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🌐 Открыть веб-версию", url="http://141.105.65.148/")
-    builder.button(text="📖 Инструкция", callback_data="show_instructions")
-    
-    await message.answer(
-        "👋 **Добро пожаловать в Digital Broker Bot!**\n\n"
-        "Я помогу вам с таможенным оформлением:\n"
-        "• Автоматически обрабатывать документы\n"
-        "• Заполнять декларации\n"
-        "• Подбирать коды ТН ВЭД\n"
-        "• Отвечать на вопросы по оформлению\n\n"
-        "Чтобы начать — привяжите ваш аккаунт:",
-        reply_markup=builder.as_markup(),
-        parse_mode="Markdown"
-    )
-
-
-@router.callback_query(F.data == "show_instructions")
-async def show_instructions(callback: CallbackQuery):
-    """Show detailed instructions."""
-    await callback.message.edit_text(
-        "🔑 **Как привязать аккаунт к боту:**\n\n"
-        "1. Перейдите по кнопке ниже в веб-версию\n"
-        "2. Зайдите в **Настройки → Telegram**\n"
-        "3. Нажмите кнопку **«Сгенерировать токен для бота»**\n"
-        "4. Скопируйте токен\n"
-        "5. Вернитесь сюда и отправьте токен в чат\n\n"
-        "После этого я сразу вас подключу и вы сможете использовать все функции.",
-        parse_mode="Markdown"
-    )
-    await callback.answer("Инструкция показана")
-
 router = Router()
 core_api = CoreApiClient()
 file_service = FileServiceClient()
@@ -136,10 +101,35 @@ async def cmd_start(message: Message, state: FSMContext):
                 "Все файлы попадут в одну декларацию."
             )
         else:
+            builder = InlineKeyboardBuilder()
+            builder.button(text="🌐 Открыть веб-версию", url="http://141.105.65.148/")
+            builder.button(text="📖 Инструкция", callback_data="show_instructions")
             await message.answer(
-                "Привет! Я бот Digital Broker.\n"
-                "Пожалуйста, привяжите свой аккаунт через веб-интерфейс."
+                "👋 **Добро пожаловать в Digital Broker Bot!**\n\n"
+                "Я помогу вам с таможенным оформлением:\n"
+                "• Автоматически обрабатывать документы\n"
+                "• Заполнять декларации\n"
+                "• Подбирать коды ТН ВЭД\n"
+                "• Отвечать на вопросы по оформлению\n\n"
+                "Чтобы начать — привяжите ваш аккаунт:",
+                reply_markup=builder.as_markup(),
+                parse_mode="Markdown"
             )
+
+
+@router.callback_query(F.data == "show_instructions")
+async def show_instructions(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "🔑 **Как привязать аккаунт к боту:**\n\n"
+        "1. Перейдите по кнопке ниже в веб-версию\n"
+        "2. Зайдите в **Настройки → Telegram**\n"
+        "3. Нажмите кнопку **«Сгенерировать токен для бота»**\n"
+        "4. Скопируйте токен\n"
+        "5. Вернитесь сюда и отправьте токен в чат\n\n"
+        "После этого я сразу вас подключу и вы сможете использовать все функции.",
+        parse_mode="Markdown"
+    )
+    await callback.answer("Инструкция показана")
 
 
 @router.message(F.document)
@@ -291,6 +281,36 @@ async def handle_text_during_upload(message: Message, state: FSMContext):
     )
 
 
+@router.message(F.text.startswith(("sk-", "token-")))
+async def handle_auth_token(message: Message):
+    """Must be registered BEFORE handle_text — otherwise F.text catches it first."""
+    token = message.text.strip()
+    telegram_id = str(message.from_user.id)
+
+    await core_api.log_action(telegram_id, "telegram_token_received", {"token_length": len(token)})
+
+    success = await core_api.link_account(token, telegram_id)
+
+    if success:
+        await message.answer(
+            "✅ **Аккаунт успешно привязан!**\n\n"
+            "Теперь вы можете использовать бота:\n"
+            "• Отправляйте документы (PDF, Excel) — я их обработаю\n"
+            "• Спрашивайте статус ваших деклараций\n"
+            "• Задавайте вопросы по ТН ВЭД и правилам\n\n"
+            "Просто пишите сообщения или отправляйте файлы.",
+            parse_mode="Markdown"
+        )
+    else:
+        await message.answer(
+            "❌ **Не удалось привязать аккаунт.**\n\n"
+            "Возможно токен уже использован или истёк.\n"
+            "Пожалуйста, сгенерируйте новый токен в веб-интерфейсе:\n"
+            "Настройки → Telegram → «Сгенерировать токен»",
+            parse_mode="Markdown"
+        )
+
+
 @router.message(F.text)
 async def handle_text(message: Message):
     telegram_id = str(message.from_user.id)
@@ -325,33 +345,3 @@ async def handle_text(message: Message):
     await core_api.log_action(user["id"], "telegram_bot_replied", {"text": response})
 
     await msg.edit_text(response)
-
-
-@router.message(F.text.startswith(("sk-", "token-")))
-async def handle_auth_token(message: Message):
-    """Handle authentication token sent by user."""
-    token = message.text.strip()
-    telegram_id = str(message.from_user.id)
-    
-    await core_api.log_action(telegram_id, "telegram_token_received", {"token_length": len(token)})
-    
-    success = await core_api.link_account(token, telegram_id)
-    
-    if success:
-        await message.answer(
-            "✅ **Аккаунт успешно привязан!**\n\n"
-            "Теперь вы можете использовать бота:\n"
-            "• Отправляйте документы (PDF, Excel) — я их обработаю\n"
-            "• Спрашивайте статус ваших деклараций\n"
-            "• Задавайте вопросы по ТН ВЭД и правилам\n\n"
-            "Просто пишите сообщения или отправляйте файлы.",
-            parse_mode="Markdown"
-        )
-    else:
-        await message.answer(
-            "❌ **Не удалось привязать аккаунт.**\n\n"
-            "Возможно токен уже использован или истёк.\n"
-            "Пожалуйста, сгенерируйте новый токен в веб-интерфейсе:\n"
-            "Настройки → Telegram → «Сгенерировать токен»",
-            parse_mode="Markdown"
-        )
