@@ -36,6 +36,12 @@ PROVIDER_PROFILES: dict[str, dict] = {
         "reasoning_model": "openai/gpt-oss-120b",
         "supports_json_mode": True,
     },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com/v1",
+        "default_model": "claude-3-5-sonnet-20241022",  # best available as of 2026
+        "reasoning_model": "claude-3-5-sonnet-20241022",
+        "supports_json_mode": False,
+    },
 }
 
 _DEFAULT_PROFILE: dict = {

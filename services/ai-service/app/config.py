@@ -16,13 +16,17 @@ class Settings(BaseSettings):
     SERVICE_NAME: str = "ai-service"
     LOG_LEVEL: str = "INFO"
 
-    # LLM Provider settings (DeepSeek as default, OpenAI/Cloud.ru as alternatives)
-    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, custom
-    LLM_BASE_URL: str = "https://api.deepseek.com"  # DeepSeek API endpoint
+    # LLM Provider settings
+    LLM_PROVIDER: str = "deepseek"  # deepseek, openai, cloud_ru, anthropic, custom
+    LLM_BASE_URL: str = "https://api.deepseek.com"
     LLM_API_KEY: str = ""  # Primary API key
-    LLM_MODEL: str = "deepseek-chat"  # Default: DeepSeek V3
-    LLM_REASONING_MODEL: str = "deepseek-reasoner"  # DeepSeek R1 for complex tasks
+    LLM_MODEL: str = "deepseek-chat"
+    LLM_REASONING_MODEL: str = "deepseek-reasoner"
     LLM_PROJECT_ID: str = ""  # Cloud.ru x-project-id header (optional)
+
+    # Anthropic (Claude Opus 4.6)
+    ANTHROPIC_API_KEY: str = ""
+    ANTHROPIC_MODEL: str = "claude-3-opus-4-6-202503"
     EMBED_PROVIDER: str = "cloud_ru"  # cloud_ru, openai, local
     EMBED_MODEL: str = "BAAI/bge-m3"  # Cloud.ru: BAAI/bge-m3 (1024 dim, multilingual)
     EMBED_BASE_URL: str = "https://foundation-models.api.cloud.ru/v1"
@@ -81,6 +85,8 @@ class Settings(BaseSettings):
     @property
     def effective_api_key(self) -> str:
         """Return the best available API key."""
+        if self.LLM_PROVIDER == "anthropic":
+            return self.ANTHROPIC_API_KEY or self.LLM_API_KEY or self.OPENAI_API_KEY or ""
         return self.LLM_API_KEY or self.OPENAI_API_KEY or ""
 
     @property

@@ -838,6 +838,7 @@ const SettingsPage = () => {
             <option value="deepseek">DeepSeek (рекомендуется)</option>
             <option value="openai">OpenAI</option>
             <option value="cloud_ru">Cloud.ru (Foundation Models)</option>
+            <option value="anthropic">Anthropic (Claude Opus 4.6)</option>
             <option value="custom">Custom (свой URL)</option>
           </TextField>
         </Box>
@@ -849,6 +850,12 @@ const SettingsPage = () => {
             size="small" sx={{ mb: 2 }}
             helperText="Необязательное поле. ID проекта из личного кабинета Cloud.ru"
           />
+        )}
+
+        {provider === 'anthropic' && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Используется Claude Opus 4.6. API ключ должен начинаться с <code>sk-ant-</code>
+          </Alert>
         )}
 
         {provider === 'custom' && (
@@ -892,6 +899,10 @@ const SettingsPage = () => {
         <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Модель LLM</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <TextField select value={model} onChange={(e) => setModel(e.target.value)} size="small" sx={{ minWidth: 200 }} SelectProps={{ native: true }}>
+            <optgroup label="Anthropic">
+              <option value="claude-3-opus-4-6-202503">Claude Opus 4.6 (рекомендуется)</option>
+              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+            </optgroup>
             <optgroup label="Cloud.ru">
               <option value="openai/gpt-oss-120b">GPT-OSS 120B (Cloud.ru)</option>
             </optgroup>

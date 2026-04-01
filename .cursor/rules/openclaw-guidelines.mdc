@@ -1,0 +1,73 @@
+---
+description: Правила использования OpenClaw (Cursor Cloud Agents) в Digital Broker Platform
+alwaysApply: true
+---
+
+# OpenClaw Guidelines — Digital Broker 2026
+
+## Цель
+
+Использовать Cursor Cloud Agents (OpenClaw) для постепенного перехода от монолитного `agent_crew.py` к настоящей мультиагентной архитектуре.
+
+## Текущая архитектура (после рефакторинга)
+
+- `agent_crew.py` — тонкий оркестратор (~600 строк)
+- `declaration_compiler.py` — LLM-компиляция декларации
+- `post_processing.py` — детерминированная постобработка (1241 строка)
+- `parsing_utils.py` — общие утилиты
+- `reference_data.py` — справочники
+- `hs_classifier.py`, `rules_engine.py`, `escalation_agents.py`
+
+## Правила использования OpenClaw
+
+### 1. Какой агент создавать
+
+**Рекомендуемый порядок:**
+
+1. **HSClassifierCloudAgent** — первый и самый безопасный
+2. **DeclarationCompilerCloudAgent**
+3. **DocumentClassifierAgent**
+4. **RiskAssessorCloudAgent**
+5. **ValidationCloudAgent**
+6. **ConversationalSupportAgent** (улучшение chat_agent.py)
+
+### 2. Принципы создания агентов
+
+- Каждый Cloud Agent должен решать **одну чёткую задачу**
+- Использовать MCP (Model Context Protocol) для взаимодействия с сервисами
+- Сохранять совместимость с существующим Task Queue (ARQ)
+- Обязательно логировать все agent runs (`correlation_id`, стоимость, latency)
+- Использовать `Self-hosted` режим где возможно (без отправки кода наружу)
+
+### 3. Запреты
+
+- Не удалять и не ломать существующий линейный пайплайн до полной проверки нового агента
+- Не делать "Big Agent", который делает всё
+- Не дублировать сложную бизнес-логику из `post_processing.py` в LLM-промпты
+- Не отключать `EvidenceTracker` и `validate_declaration`
+
+### 4. Формат ответа при работе с OpenClaw
+
+```markdown
+## Planner
+Анализ + план внедрения агента
+
+## Writer
+Предложенное решение + код нового агента
+
+## Critic
+Риски, совместимость, безопасность, производительность
+
+## Refiner
+Финальная версия + инструкция по тестированию
+```
+
+## Метрики успеха
+
+- `agent_crew.py` должен стать меньше 800 строк
+- Каждый новый агент должен иметь отдельный MCP
+- Сохранение или улучшение качества парсинга (offline eval)
+- Снижение средней стоимости обработки одной декларации
+
+**Последнее обновление:** 1 апреля 2026
+---
