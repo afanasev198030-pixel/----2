@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, cast, String
 from sqlalchemy.orm import selectinload
 import structlog
 import redis.asyncio as redis
@@ -270,6 +270,27 @@ async def _resolve_user(identifier: str, db: AsyncSession) -> User:
     return await _resolve_user_by_telegram(identifier, db)
 
 
+async def _resolve_declaration(
+    declaration_id: str, user_id: uuid.UUID, db: AsyncSession,
+) -> Optional[Declaration]:
+    """Resolve declaration by full UUID or partial suffix (e.g. '8c0e6688')."""
+    try:
+        decl_uuid = uuid.UUID(declaration_id)
+        result = await db.execute(
+            select(Declaration).where(Declaration.id == decl_uuid, Declaration.created_by == user_id)
+        )
+        return result.scalar_one_or_none()
+    except (ValueError, AttributeError):
+        pass
+    suffix = declaration_id.lower().strip()
+    result = await db.execute(
+        select(Declaration)
+        .where(Declaration.created_by == user_id)
+        .where(cast(Declaration.id, String).ilike(f"%{suffix}"))
+    )
+    return result.scalar_one_or_none()
+
+
 @router.get("/user/{telegram_id}/declarations")
 async def get_user_declarations_by_telegram(
     telegram_id: str,
@@ -318,14 +339,7 @@ async def get_declaration_status_by_telegram(
     """Detailed status of a declaration including pre-send checks (internal, no JWT)."""
     user = await _resolve_user(telegram_id, db)
 
-    decl_uuid = uuid.UUID(declaration_id)
-    result = await db.execute(
-        select(Declaration).where(
-            Declaration.id == decl_uuid,
-            Declaration.created_by == user.id,
-        )
-    )
-    declaration = result.scalar_one_or_none()
+    declaration = await _resolve_declaration(declaration_id, user.id, db)
     if not declaration:
         raise HTTPException(status_code=404, detail="Declaration not found")
 

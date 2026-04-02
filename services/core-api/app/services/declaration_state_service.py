@@ -72,9 +72,9 @@ async def _notify_telegram(
         }
         async with httpx.AsyncClient(timeout=5.0) as client:
             await client.post(f"{BOT_SERVICE_URL}/notify", json=payload)
-        logger.info("telegram_notification_sent", event=event, declaration_id=str(declaration.id))
+        logger.info("telegram_notification_sent", notification_event=event, declaration_id=str(declaration.id))
     except Exception as e:
-        logger.warning("telegram_notification_failed", event=event, error=str(e))
+        logger.warning("telegram_notification_failed", notification_event=event, error=str(e))
 
 
 async def recalculate_declaration_state(

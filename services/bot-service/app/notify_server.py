@@ -119,7 +119,7 @@ async def notify_user(req: NotifyRequest):
             text=text,
             reply_markup=keyboard,
         )
-        logger.info("push_notification_sent", telegram_id=req.telegram_id, event=req.event)
+        logger.info("push_notification_sent", telegram_id=req.telegram_id, notification_event=req.event)
         return {"status": "ok"}
     except Exception as e:
         logger.error("push_notification_failed", telegram_id=req.telegram_id, error=str(e))
