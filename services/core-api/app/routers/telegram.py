@@ -350,9 +350,9 @@ async def get_declaration_status_by_telegram(
         "documents_count": doc_count_q.scalar() or 0,
         "pre_send_checks": {
             "blocking_count": check_result.blocking_count,
-            "warning_count": check_result.warning_count,
+            "warning_count": sum(1 for c in check_result.checks if not c.blocking),
             "checks": [
-                {"label": c.label, "severity": c.severity, "passed": c.passed}
+                {"label": c.message, "severity": c.severity, "passed": not c.blocking, "code": c.code}
                 for c in check_result.checks
             ],
         },
