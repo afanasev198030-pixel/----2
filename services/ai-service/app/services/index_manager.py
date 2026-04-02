@@ -184,13 +184,14 @@ class IndexManager:
             for c in batch:
                 code = c.get("code", "")
                 name = c.get("name_ru", "")
-                text = f"Код ТН ВЭД: {code}. {name}"
+                parent_code = c.get("parent_code", "") or ""
+
                 ids.append(f"hs_{code}")
-                documents.append(text)
+                documents.append(name.strip())
                 metadatas.append({
                     "code": code,
                     "name_ru": name[:500] if name else "",
-                    "parent_code": c.get("parent_code", "") or "",
+                    "parent_code": parent_code,
                 })
 
             if self._openai_client:
