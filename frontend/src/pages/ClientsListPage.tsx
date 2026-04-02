@@ -192,10 +192,10 @@ const ClientsListPage = () => {
             borderRadius: '14px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
             border: '1px solid rgba(226,232,240,0.8)',
-            overflow: 'hidden',
+            overflowX: 'auto',
           }}
         >
-          <Table>
+          <Table sx={{ minWidth: 700 }}>
             <TableHead>
               <TableRow>
                 <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
@@ -204,16 +204,16 @@ const ClientsListPage = () => {
                 <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
                   ИНН
                 </TableCell>
-                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)', display: { xs: 'none', md: 'table-cell' } }}>
                   КПП
                 </TableCell>
-                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)', display: { xs: 'none', md: 'table-cell' } }}>
                   Контракт
                 </TableCell>
-                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)', display: { xs: 'none', md: 'table-cell' } }}>
                   Тариф
                 </TableCell>
-                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)' }}>
+                <TableCell sx={{ color: '#0f172a', fontWeight: 600, fontSize: '0.75rem', borderBottom: '1px solid rgba(226,232,240,0.8)', display: { xs: 'none', md: 'table-cell' } }}>
                   Статус
                 </TableCell>
                 <TableCell
@@ -230,10 +230,10 @@ const ClientsListPage = () => {
                   <TableRow key={i}>
                     <TableCell><Skeleton variant="text" width={150} /></TableCell>
                     <TableCell><Skeleton variant="text" width={100} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={120} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={120} /></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={80} /></TableCell>
                     <TableCell><Skeleton variant="text" width={60} /></TableCell>
                   </TableRow>
                 ))
@@ -289,12 +289,12 @@ const ClientsListPage = () => {
                           {client.client_company?.inn || '—'}
                         </Typography>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Typography variant="body2" sx={{ color: '#64748b' }}>
                           {client.client_company?.kpp || '—'}
                         </Typography>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Typography variant="body2" sx={{ color: '#0f172a' }}>
                           {client.contract_number || '—'}
                         </Typography>
@@ -304,14 +304,14 @@ const ClientsListPage = () => {
                           </Typography>
                         )}
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Chip
                           label={tariff.label}
                           size="small"
                           sx={{ bgcolor: tariff.bg, color: tariff.color, fontWeight: 500, fontSize: 11 }}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Chip
                           label={client.is_active ? 'Активен' : 'Неактивен'}
                           size="small"

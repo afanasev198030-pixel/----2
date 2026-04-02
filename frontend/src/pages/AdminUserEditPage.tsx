@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container, Typography, Paper, Grid, TextField, Button, Box,
   FormControl, InputLabel, Select, MenuItem, Switch, FormControlLabel,
-  Table, TableHead, TableRow, TableCell, TableBody, Chip, Divider,
+  Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Chip,
   Alert, Snackbar, Pagination,
 } from '@mui/material';
 import { Save as SaveIcon, ArrowBack as BackIcon } from '@mui/icons-material';
@@ -105,20 +105,20 @@ const AdminUserEditPage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Администрирование' }, { label: 'Пользователи', path: '/admin/users' }, { label: user.full_name || user.email }]}>
-      <Container maxWidth="lg" sx={{ py: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-          <Button startIcon={<BackIcon />} onClick={() => navigate('/admin/users')}>Назад</Button>
-          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
+      <Container maxWidth="lg" sx={{ py: { xs: 2, md: 3 }, px: { xs: 1.5, sm: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 2, mb: 3 }}>
+          <Button startIcon={<BackIcon />} onClick={() => navigate('/admin/users')} sx={{ flexShrink: 0 }}>Назад</Button>
+          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a', minWidth: 0, flex: '1 1 200px' }}>
             {user.full_name || user.email}
           </Typography>
-          <Chip label={user.role} size="small" color={user.role === 'admin' ? 'error' : 'primary'} />
+          <Chip label={user.role} size="small" color={user.role === 'admin' ? 'error' : 'primary'} sx={{ flexShrink: 0 }} />
         </Box>
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
-            <Paper variant="outlined" sx={{ p: 3, boxShadow: 'none' }}>
+            <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, boxShadow: 'none' }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 2, color: '#0f172a' }}>Редактирование</Typography>
               <Grid container spacing={2}>
                 <Grid item xs={12}>
@@ -138,7 +138,7 @@ const AdminUserEditPage = () => {
                     onChange={(e) => setForm({ ...form, telegram_id: e.target.value })} 
                     helperText="Оставьте пустым для отвязки" />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid item xs={12} sm={6}>
                   <FormControl size="small" fullWidth>
                     <InputLabel>Роль</InputLabel>
                     <Select value={form.role} label="Роль" onChange={(e) => setForm({ ...form, role: e.target.value })}>
@@ -148,7 +148,7 @@ const AdminUserEditPage = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={6}>
+                <Grid item xs={12} sm={6}>
                   <FormControlLabel
                     control={<Switch checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />}
                     label={form.is_active ? 'Активен' : 'Деактивирован'}
@@ -160,7 +160,7 @@ const AdminUserEditPage = () => {
               </Button>
             </Paper>
 
-            <Paper variant="outlined" sx={{ p: 3, mt: 2, boxShadow: 'none' }}>
+            <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, mt: 2, boxShadow: 'none' }}>
               <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>Информация</Typography>
               <Typography variant="body2" sx={{ color: '#64748b' }}>ID: {user.id}</Typography>
               <Typography variant="body2" sx={{ color: '#64748b' }}>Компания: {user.company_id || '—'}</Typography>
@@ -170,12 +170,12 @@ const AdminUserEditPage = () => {
           </Grid>
 
           <Grid item xs={12} md={6}>
-            <Paper variant="outlined" sx={{ p: 3, boxShadow: 'none' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#0f172a' }}>
+            <Paper variant="outlined" sx={{ p: { xs: 2, sm: 3 }, boxShadow: 'none' }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 2 }}>
+                <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#0f172a', minWidth: 0 }}>
                   Действия пользователя ({auditTotal})
                 </Typography>
-                <FormControl size="small" sx={{ minWidth: 150 }}>
+                <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 150 }, maxWidth: { sm: 280 }, width: { xs: '100%', sm: 'auto' } }}>
                   <InputLabel>Фильтр</InputLabel>
                   <Select
                     value={auditActionFilter}
@@ -192,7 +192,9 @@ const AdminUserEditPage = () => {
                   </Select>
                 </FormControl>
               </Box>
-              <Table size="small">
+              <Box sx={{ overflowX: 'auto', width: '100%' }}>
+              <TableContainer sx={{ overflowX: 'auto' }}>
+              <Table size="small" sx={{ minWidth: 420 }}>
                 <TableHead>
                   <TableRow>
                     <TableCell sx={{ fontWeight: 600 }}>Дата</TableCell>
@@ -209,7 +211,7 @@ const AdminUserEditPage = () => {
                       </TableCell>
                       <TableCell>
                         {log.details ? (
-                          <Typography variant="caption" sx={{ display: 'block', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={JSON.stringify(log.details)}>
+                          <Typography variant="caption" sx={{ display: 'block', maxWidth: { xs: 180, sm: 250 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={JSON.stringify(log.details)}>
                             {log.details.text || log.details.filename || JSON.stringify(log.details)}
                           </Typography>
                         ) : '—'}
@@ -221,6 +223,8 @@ const AdminUserEditPage = () => {
                   )}
                 </TableBody>
               </Table>
+              </TableContainer>
+              </Box>
               {auditTotal > 20 && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 1 }}>
                   <Pagination size="small" count={Math.ceil(auditTotal / 20)} page={auditPage} onChange={(_, p) => setAuditPage(p)} />

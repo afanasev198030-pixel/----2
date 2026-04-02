@@ -77,17 +77,18 @@ const ProfilePage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Профиль' }]}>
-      <Typography variant="h5" fontWeight={700} gutterBottom sx={{ color: '#0f172a' }}>Профиль</Typography>
-      <Paper sx={{ p: 3, mb: 3, maxWidth: 600, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+      <Box sx={{ width: '100%', maxWidth: 600, mx: 'auto' }}>
+      <Typography variant="h5" fontWeight={700} gutterBottom sx={{ color: '#0f172a', fontSize: { xs: '1.25rem', sm: '1.5rem' } }}>Профиль</Typography>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: { xs: 2, sm: 3 }, width: '100%', maxWidth: '100%', boxSizing: 'border-box', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
         <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Личные данные</Typography>
         <TextField fullWidth label="Email" value={me?.email || ''} disabled size="small" sx={{ mb: 2 }} />
         <TextField fullWidth label="Роль" value={me?.role || ''} disabled size="small" sx={{ mb: 2 }} />
         <TextField fullWidth label="Имя" value={fullName || me?.full_name || ''} onChange={(e) => setFullName(e.target.value)} size="small" sx={{ mb: 2 }} />
         <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveName} size="small">Сохранить имя</Button>
       </Paper>
-      <Paper sx={{ p: 3, mb: 3, maxWidth: 600, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: { xs: 2, sm: 3 }, width: '100%', maxWidth: '100%', boxSizing: 'border-box', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
         <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Интеграции</Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 3, flexWrap: 'wrap' }}>
           {me?.telegram_id ? (
             <>
               <TelegramIcon color="primary" />
@@ -132,13 +133,14 @@ const ProfilePage = () => {
           </Box>
         )}
       </Paper>
-      <Paper sx={{ p: 3, maxWidth: 600, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, width: '100%', maxWidth: '100%', boxSizing: 'border-box', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
         <Typography variant="h6" sx={{ mb: 2, color: '#0f172a' }}>Смена пароля</Typography>
         <TextField fullWidth label="Текущий пароль" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} size="small" sx={{ mb: 2 }} />
         <TextField fullWidth label="Новый пароль" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} size="small" sx={{ mb: 2 }} />
         <Button variant="outlined" startIcon={<LockIcon />} onClick={handleChangePassword} size="small">Изменить пароль</Button>
       </Paper>
       <Snackbar open={snack.open} autoHideDuration={3000} onClose={() => setSnack({ ...snack, open: false })} message={snack.msg} />
+      </Box>
     </AppLayout>
   );
 };

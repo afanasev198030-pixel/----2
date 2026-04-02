@@ -180,7 +180,7 @@ const DeclarationStatusPage = () => {
   if (declLoading || !decl) {
     return (
       <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Статус' }]}>
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: { xs: 4, md: 8 } }}><CircularProgress /></Box>
       </AppLayout>
     );
   }
@@ -233,8 +233,9 @@ const DeclarationStatusPage = () => {
     <AppLayout breadcrumbs={[{ label: 'Декларации', path: '/declarations' }, { label: 'Статус декларации' }]}>
       {/* Toolbar */}
       <Box sx={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        mb: 2.5, flexWrap: 'wrap', gap: 1,
+        display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between',
+        mb: { xs: 2, md: 2.5 }, flexWrap: 'wrap', gap: { xs: 1.5, md: 1 },
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <Typography sx={{ fontSize: 15, fontWeight: 600 }}>
@@ -244,7 +245,10 @@ const DeclarationStatusPage = () => {
           <Typography sx={{ fontSize: 13, color: '#64748b' }}>{decl.type_code || 'IM40'}</Typography>
           <StatusChip status={decl.status} />
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+        <Box sx={{
+          display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'stretch', sm: 'center' }, gap: 0.75,
+        }}>
           <Button variant="outlined" size="small"
             startIcon={<DescriptionIcon sx={{ fontSize: '14px !important' }} />}
             onClick={handleExportPdf}
@@ -277,15 +281,20 @@ const DeclarationStatusPage = () => {
         position: 'relative', overflow: 'hidden', borderRadius: 4,
         border: '1px solid', borderColor: heroBorder,
         background: `linear-gradient(135deg, ${heroBg}, white, ${heroBg.replace('0.8', '0.4')})`,
-        p: 3, mb: 2.5,
+        p: { xs: 2, md: 3 }, mb: { xs: 2, md: 2.5 },
       }}>
         <Box sx={{
-          position: 'absolute', top: 0, right: 0, width: 256, height: 256,
+          position: 'absolute', top: 0, right: 0,
+          width: { xs: 160, md: 256 }, height: { xs: 160, md: 256 },
           bgcolor: heroBorder.replace('0.6', '0.15'), borderRadius: '50%',
           transform: 'translate(33%, -50%)', filter: 'blur(48px)',
         }} />
 
-        <Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <Box sx={{
+          position: 'relative', display: 'flex', flexDirection: { xs: 'column', md: 'row' },
+          alignItems: { xs: 'stretch', md: 'flex-start' }, justifyContent: 'space-between',
+          gap: { xs: 2, md: 0 },
+        }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flex: 1 }}>
             <Box sx={{
               p: 1.5, borderRadius: 4, bgcolor: heroBorder.replace('0.6', '0.5'),
@@ -316,7 +325,10 @@ const DeclarationStatusPage = () => {
             </Box>
           </Box>
 
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, ml: 3, flexShrink: 0 }}>
+          <Box sx={{
+            display: 'flex', flexDirection: 'column', gap: 1,
+            ml: { xs: 0, md: 3 }, flexShrink: 0, width: { xs: '100%', md: 'auto' },
+          }}>
             <Button variant="contained" startIcon={<SendIcon sx={{ fontSize: '16px !important' }} />}
               onClick={() => setSnackMsg('ФТС: будет в следующей версии')}
               sx={{ bgcolor: '#059669', '&:hover': { bgcolor: '#047857' }, fontSize: 13, fontWeight: 500, px: 2.5, py: 1, boxShadow: '0 1px 3px rgba(5,150,105,0.2)', borderRadius: '10px' }}>
@@ -369,7 +381,10 @@ const DeclarationStatusPage = () => {
       />
 
       {/* Grid: Issues + Summary */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '3fr 2fr' }, gap: 2.5, mb: 2.5 }}>
+      <Box sx={{
+        display: 'grid', gridTemplateColumns: { xs: '1fr', md: '3fr 2fr' },
+        gap: { xs: 2, md: 2.5 }, mb: { xs: 2, md: 2.5 },
+      }}>
         {/* Issues Panel */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -451,7 +466,11 @@ const DeclarationStatusPage = () => {
 
         {/* Declaration Summary */}
         <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box sx={{
+            display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between',
+            gap: { xs: 1, sm: 0 }, mb: { xs: 1.5, md: 2 },
+          }}>
             <Typography variant="h6">Краткая сводка</Typography>
             <Button size="small"
               startIcon={<FindInPageIcon sx={{ fontSize: '13px !important' }} />}
@@ -465,7 +484,7 @@ const DeclarationStatusPage = () => {
               <Box key={i}>
                 <Box sx={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  px: 2, py: 1.25,
+                  px: { xs: 1.5, md: 2 }, py: { xs: 1, md: 1.25 },
                   '&:hover': { bgcolor: 'rgba(248,250,252,0.5)' },
                   transition: 'background 0.15s',
                 }}>
@@ -481,8 +500,15 @@ const DeclarationStatusPage = () => {
 
       {/* Items & HS Codes */}
       {items.length > 0 && (
-        <Paper sx={{ p: 2.5, mb: 2.5, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Paper sx={{
+          p: { xs: 2, md: 2.5 }, mb: { xs: 2, md: 2.5 },
+          borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none',
+        }}>
+          <Box sx={{
+            display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+            alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between',
+            gap: { xs: 1, sm: 0 }, mb: { xs: 1.5, md: 2 },
+          }}>
             <Typography variant="h6">Товарные позиции</Typography>
             <Chip label={`${items.length} шт`} size="small" sx={{ bgcolor: '#f1f5f9', fontWeight: 600, fontSize: 11 }} />
           </Box>
@@ -492,12 +518,16 @@ const DeclarationStatusPage = () => {
               key={item.id}
               variant="outlined"
               sx={{
-                p: 2, mb: idx < items.length - 1 ? 1.5 : 0,
+                p: { xs: 1.5, md: 2 }, mb: idx < items.length - 1 ? 1.5 : 0,
                 borderRadius: '10px', borderColor: 'rgba(226,232,240,0.8)',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
-                <Box sx={{ flex: 1 }}>
+              <Box sx={{
+                display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'stretch', sm: 'flex-start' }, justifyContent: 'space-between',
+                gap: { xs: 1, sm: 0 }, mb: 1,
+              }}>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
                     <Chip
                       label={`№ ${item.item_no ?? idx + 1}`}
@@ -525,7 +555,11 @@ const DeclarationStatusPage = () => {
                   </Typography>
                 </Box>
 
-                <Box sx={{ textAlign: 'right', minWidth: 100 }}>
+                <Box sx={{
+                  textAlign: { xs: 'left', sm: 'right' },
+                  minWidth: { xs: 'unset', sm: 100 },
+                  width: { xs: '100%', sm: 'auto' },
+                }}>
                   {item.country_origin_code && (
                     <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
                       Страна: {item.country_origin_code}
@@ -567,14 +601,21 @@ const DeclarationStatusPage = () => {
 
       {/* Risk Assessment */}
       {maxRiskScore > 0 && (
-        <Box sx={{ mb: 2.5 }}>
+        <Box sx={{ mb: { xs: 2, md: 2.5 } }}>
           <RiskPanel riskScore={maxRiskScore} risks={allRisks} source="Позиции декларации" />
         </Box>
       )}
 
       {/* Documents Summary */}
-      <Paper sx={{ p: 2.5, mb: 2.5, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+      <Paper sx={{
+        p: { xs: 2, md: 2.5 }, mb: { xs: 2, md: 2.5 },
+        borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none',
+      }}>
+        <Box sx={{
+          display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between',
+          gap: { xs: 1, sm: 0 }, mb: { xs: 1.5, md: 2 },
+        }}>
           <Typography variant="h6">Документы</Typography>
           <Button size="small"
             startIcon={<FolderOpenIcon sx={{ fontSize: '13px !important' }} />}
@@ -583,7 +624,11 @@ const DeclarationStatusPage = () => {
             Открыть документы
           </Button>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2.5, mb: 2 }}>
+        <Box sx={{
+          display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          gap: { xs: 1.5, sm: 2.5 }, mb: { xs: 1.5, md: 2 },
+        }}>
           <MetricInline label="Загружено" value={String(docs.length)} />
           <MetricInline label="Обязательные" value={`${requiredPresent}/${requiredDocTypes.length}`} success={requiredPresent >= requiredDocTypes.length} />
           <MetricInline label="Дополнительные" value={String(optionalDocs.length)} />
@@ -626,7 +671,11 @@ const DeclarationStatusPage = () => {
       </Paper>
 
       {/* Secondary Nav */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 1.5, mb: 3 }}>
+      <Box sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(4, 1fr)' },
+        gap: { xs: 1, md: 1.5 }, mb: { xs: 2, md: 3 },
+      }}>
         <NavCard icon={<FindInPageIcon sx={{ fontSize: 18 }} />}
           label="Редактировать декларацию"
           desc={`${items.length} позиций · Форма редактирования`}
@@ -689,7 +738,7 @@ function IssueCard({ title, description, accentColor, actions }: {
   return (
     <Paper sx={{ position: 'relative', overflow: 'hidden', borderRadius: 3, border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none' }}>
       <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, bgcolor: accentColor, borderRadius: '3px 0 0 3px' }} />
-      <Box sx={{ pl: 2, pr: 1.5, py: 1.5 }}>
+      <Box sx={{ pl: { xs: 1.5, sm: 2 }, pr: { xs: 1.25, sm: 1.5 }, py: { xs: 1.25, sm: 1.5 } }}>
         <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
           <Box sx={{ p: 0.75, borderRadius: 2, bgcolor: 'rgba(255,251,235,1)', display: 'flex', mt: 0.25, flexShrink: 0 }}>
             <WarningAmberIcon sx={{ fontSize: 14, color: '#f59e0b' }} />
@@ -697,7 +746,10 @@ function IssueCard({ title, description, accentColor, actions }: {
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#1e293b', mb: 0.25 }}>{title}</Typography>
             <Typography sx={{ fontSize: 11, color: '#94a3b8', mb: 1.25 }}>{description}</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+            <Box sx={{
+              display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: { xs: 'stretch', sm: 'center' }, gap: 0.75, flexWrap: 'wrap',
+            }}>
               {actions.map((a, i) => (
                 <Button key={i} variant={a.primary ? 'contained' : 'outlined'} size="small"
                   onClick={a.onClick}
@@ -746,7 +798,7 @@ function NavCard({ icon, label, desc, onClick }: { icon: React.ReactNode; label:
     <Paper component="button" onClick={onClick}
       sx={{
         display: 'flex', alignItems: 'center', gap: 1.5,
-        p: 1.75, cursor: 'pointer', textAlign: 'left',
+        p: { xs: 1.25, md: 1.75 }, cursor: 'pointer', textAlign: 'left',
         bgcolor: 'white', borderRadius: '14px',
         border: '1px solid rgba(226,232,240,0.8)', boxShadow: 'none',
         transition: 'all 0.15s',

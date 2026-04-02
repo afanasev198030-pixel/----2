@@ -166,7 +166,7 @@ function DocumentDebugPanel({ doc }: { doc: ParseDebugDocument }) {
           ))}
         </Tabs>
       </Box>
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
         {tab === 0 && stages.ocr && <OcrStage ocr={stages.ocr} />}
         {tab === 1 && stages.classify_and_extract && (
           <ClassifyExtractStage data={stages.classify_and_extract} />
@@ -218,8 +218,9 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
             </Box>
           </AccordionSummary>
           <AccordionDetails>
-            <TableContainer>
-              <Table size="small">
+            <Box sx={{ overflowX: 'auto', width: '100%' }}>
+            <TableContainer sx={{ overflowX: 'auto' }}>
+              <Table size="small" sx={{ minWidth: 520 }}>
                 <TableBody>
                   {compilation.post_process.customs_office_code && (
                     <TableRow>
@@ -276,6 +277,7 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                 </TableBody>
               </Table>
             </TableContainer>
+            </Box>
 
             {compilation.post_process.freight_distribution && compilation.post_process.freight_distribution.length > 0 && (
               <Accordion sx={{ mt: 1 }}>
@@ -283,8 +285,9 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                   <Typography variant="body2">Распределение фрахта</Typography>
                 </AccordionSummary>
                 <AccordionDetails>
-                  <TableContainer>
-                    <Table size="small">
+                  <Box sx={{ overflowX: 'auto', width: '100%' }}>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table size="small" sx={{ minWidth: 560 }}>
                       <TableHead>
                         <TableRow>
                           <TableCell>Товар</TableCell>
@@ -307,6 +310,7 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  </Box>
                 </AccordionDetails>
               </Accordion>
             )}
@@ -319,8 +323,9 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                   </Typography>
                 </AccordionSummary>
                 <AccordionDetails>
-                  <TableContainer>
-                    <Table size="small">
+                  <Box sx={{ overflowX: 'auto', width: '100%' }}>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table size="small" sx={{ minWidth: 720 }}>
                       <TableHead>
                         <TableRow>
                           <TableCell>Описание</TableCell>
@@ -351,6 +356,7 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  </Box>
                 </AccordionDetails>
               </Accordion>
             )}
@@ -410,8 +416,9 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
             <Typography variant="body2">Evidence Map</Typography>
           </AccordionSummary>
           <AccordionDetails>
-            <TableContainer>
-              <Table size="small">
+            <Box sx={{ overflowX: 'auto', width: '100%' }}>
+            <TableContainer sx={{ overflowX: 'auto' }}>
+              <Table size="small" sx={{ minWidth: 640 }}>
                 <TableHead>
                   <TableRow>
                     <TableCell sx={{ fontWeight: 600 }}>Поле</TableCell>
@@ -447,6 +454,7 @@ function CompilationSection({ compilation }: { compilation: ParseDebugCompilatio
                 </TableBody>
               </Table>
             </TableContainer>
+            </Box>
           </AccordionDetails>
         </Accordion>
       )}
@@ -495,8 +503,8 @@ export default function AdminParseDebugPage() {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Админ' }, { label: 'Дебаг парсинга' }]}>
-      <Box sx={{ maxWidth: 1200, mx: 'auto', py: 3, px: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+      <Box sx={{ maxWidth: 1200, mx: 'auto', py: { xs: 2, md: 3 }, px: { xs: 1.5, sm: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, mb: 3 }}>
           <BugIcon color="primary" />
           <Typography variant="h5" fontWeight={600}>Дебаг парсинга документов (LLM v3)</Typography>
         </Box>
@@ -504,7 +512,7 @@ export default function AdminParseDebugPage() {
         <Paper
           variant="outlined"
           sx={{
-            p: 3, mb: 3, textAlign: 'center',
+            p: { xs: 2, sm: 3 }, mb: 3, textAlign: 'center',
             border: '2px dashed', borderColor: 'grey.400',
             bgcolor: 'grey.50', cursor: 'pointer',
             '&:hover': { borderColor: 'primary.main', bgcolor: 'primary.50' },
@@ -546,6 +554,7 @@ export default function AdminParseDebugPage() {
             <Button
               variant="contained" startIcon={<BugIcon />}
               onClick={handleRun} disabled={loading}
+              sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }}
             >
               {loading ? 'Парсинг...' : 'Запустить дебаг-парсинг'}
             </Button>
@@ -567,7 +576,7 @@ export default function AdminParseDebugPage() {
               return (
                 <Accordion key={i} defaultExpanded={result.documents.length <= 3}>
                   <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
                       <Typography variant="subtitle1" fontWeight={600}>
                         {doc.filename}
                       </Typography>

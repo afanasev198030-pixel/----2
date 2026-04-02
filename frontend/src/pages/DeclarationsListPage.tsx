@@ -600,8 +600,8 @@ const DeclarationsListPage = () => {
         ) : (
         <>
         {/* Table */}
-        <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
-          <Table>
+        <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', overflowX: 'auto' }}>
+          <Table sx={{ minWidth: 700 }}>
             {selectedIds.size > 0 && (
               <Box sx={{ p: 1, bgcolor: '#e3f2fd', display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Typography variant="body2">Выбрано: {selectedIds.size}</Typography>
@@ -611,7 +611,7 @@ const DeclarationsListPage = () => {
             )}
             <TableHead>
               <TableRow>
-                <TableCell padding="checkbox" sx={{ width: 40 }}>
+                <TableCell padding="checkbox" sx={{ width: 40, display: { xs: 'none', md: 'table-cell' } }}>
                   <Checkbox
                     size="small"
                     checked={filteredAndSortedItems?.length > 0 && selectedIds.size === filteredAndSortedItems?.length}
@@ -628,7 +628,7 @@ const DeclarationsListPage = () => {
                     Номер ДТ
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                   <TableSortLabel
                     active={sortField === 'created_at'}
                     direction={sortField === 'created_at' ? sortOrder : 'asc'}
@@ -637,7 +637,7 @@ const DeclarationsListPage = () => {
                     Дата
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                   <TableSortLabel
                     active={sortField === 'type_code'}
                     direction={sortField === 'type_code' ? sortOrder : 'asc'}
@@ -656,7 +656,7 @@ const DeclarationsListPage = () => {
                   </TableSortLabel>
                 </TableCell>
                 {hasAnyValue && (
-                  <TableCell align="right">
+                  <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                     <TableSortLabel
                       active={sortField === 'total_invoice_value'}
                       direction={sortField === 'total_invoice_value' ? sortOrder : 'asc'}
@@ -673,12 +673,12 @@ const DeclarationsListPage = () => {
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell padding="checkbox"><Skeleton variant="rectangular" width={18} height={18} sx={{ borderRadius: 0.5 }} /></TableCell>
+                    <TableCell padding="checkbox" sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="rectangular" width={18} height={18} sx={{ borderRadius: 0.5 }} /></TableCell>
                     <TableCell><Skeleton variant="text" width={120} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={80} /></TableCell>
-                    <TableCell><Skeleton variant="text" width={70} /></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={80} /></TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={70} /></TableCell>
                     <TableCell><Skeleton variant="text" width={100} /></TableCell>
-                    {hasAnyValue && <TableCell><Skeleton variant="text" width={90} /></TableCell>}
+                    {hasAnyValue && <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}><Skeleton variant="text" width={90} /></TableCell>}
                     <TableCell><Skeleton variant="text" width={60} /></TableCell>
                   </TableRow>
                 ))
@@ -714,7 +714,7 @@ const DeclarationsListPage = () => {
                     sx={{ cursor: 'pointer', '&:last-child td': { borderBottom: 0 } }}
                     onClick={() => navigate(`/declarations/${declaration.id}/edit`)}
                   >
-                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                    <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()} sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                       <Checkbox size="small" checked={selectedIds.has(declaration.id)} onChange={() => toggleSelect(declaration.id)} />
                     </TableCell>
                     <TableCell>
@@ -731,12 +731,12 @@ const DeclarationsListPage = () => {
                       )}
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                       <Typography variant="body2">{dayjs(declaration.created_at).format('DD.MM.YYYY')}</Typography>
                       <Typography variant="caption" color="text.secondary">{dayjs(declaration.created_at).format('HH:mm')}</Typography>
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                       <Chip
                         icon={declaration.type_code?.startsWith('IM') ? <ImportIcon sx={{ fontSize: '14px !important' }} /> : <ExportIcon sx={{ fontSize: '14px !important' }} />}
                         label={declaration.type_code?.startsWith('IM') ? 'Импорт' : 'Экспорт'}
@@ -760,7 +760,7 @@ const DeclarationsListPage = () => {
                     </TableCell>
 
                     {hasAnyValue && (
-                      <TableCell align="right">
+                      <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Typography variant="body2" fontWeight={500}>
                           {declaration.total_invoice_value
                             ? `${declaration.currency_code || '₽'} ${Number(declaration.total_invoice_value).toLocaleString('ru-RU', { minimumFractionDigits: 2 })}`

@@ -88,13 +88,13 @@ const AdminKnowledgePage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Админ', path: '/admin/users' }, { label: 'База знаний' }]}>
-      <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
+      <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 3 }}>
+          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a', minWidth: 0 }}>
             <BookIcon sx={{ mr: 1, verticalAlign: 'bottom', color: '#2563eb' }} />
             База знаний ({articles.length})
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Новая статья</Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }}>Новая статья</Button>
         </Box>
 
         <Alert severity="info" sx={{ mb: 2, boxShadow: 'none', border: '1px solid rgba(226,232,240,0.9)' }}>
@@ -104,12 +104,12 @@ const AdminKnowledgePage = () => {
         </Alert>
 
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={8}>
+          <Grid item xs={12} md={8}>
             <TextField size="small" fullWidth placeholder="Поиск по статьям..." value={search}
               onChange={e => setSearch(e.target.value)}
               InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: '#64748b' }} /> }} />
           </Grid>
-          <Grid item xs={4}>
+          <Grid item xs={12} md={4}>
             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
               <Chip label="Все" size="small" variant={!category ? 'filled' : 'outlined'} onClick={() => setCategory('')} />
               {CATEGORIES.map(c => (
@@ -166,16 +166,16 @@ const AdminKnowledgePage = () => {
         <DialogTitle>{editArticle ? 'Редактировать статью' : 'Новая статья'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
-            <Grid item xs={8}><TextField fullWidth label="Заголовок" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} size="small" /></Grid>
-            <Grid item xs={4}><TextField fullWidth label="Категория" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} size="small" select SelectProps={{ native: true }}>
+            <Grid item xs={12} sm={8}><TextField fullWidth label="Заголовок" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} size="small" /></Grid>
+            <Grid item xs={12} sm={4}><TextField fullWidth label="Категория" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} size="small" select SelectProps={{ native: true }}>
               {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
             </TextField></Grid>
             <Grid item xs={12}>
               <TextField fullWidth label="Содержание (Markdown)" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })}
                 multiline rows={12} size="small" />
             </Grid>
-            <Grid item xs={6}><TextField fullWidth label="Теги (через запятую)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} size="small" /></Grid>
-            <Grid item xs={6}><TextField fullWidth label="Коды ТН ВЭД (через запятую)" value={form.hs_codes} onChange={e => setForm({ ...form, hs_codes: e.target.value })} size="small" /></Grid>
+            <Grid item xs={12} sm={6}><TextField fullWidth label="Теги (через запятую)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} size="small" /></Grid>
+            <Grid item xs={12} sm={6}><TextField fullWidth label="Коды ТН ВЭД (через запятую)" value={form.hs_codes} onChange={e => setForm({ ...form, hs_codes: e.target.value })} size="small" /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions>

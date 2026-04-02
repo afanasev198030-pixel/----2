@@ -1,9 +1,10 @@
-import { ReactNode, useMemo, useContext } from 'react';
+import { ReactNode, useMemo, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   AppBar, Toolbar, Typography, Button, Box, Avatar, IconButton,
-  Tooltip, Breadcrumbs, Link,
+  Tooltip, Breadcrumbs, Link, Drawer, List, ListItemButton, ListItemIcon,
+  ListItemText, Divider, useTheme, useMediaQuery,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
@@ -14,12 +15,11 @@ import {
   NavigateNext as NavNextIcon,
   Home as HomeIcon,
   Notifications as NotificationsIcon,
-  DarkMode as DarkModeIcon,
-  LightMode as LightModeIcon,
+  Menu as MenuIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { getMe, logout } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
-import { ThemeToggleContext } from '../index';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -57,7 +57,9 @@ const ADMIN_NAV_ITEMS: Array<{ label: string; path: string; icon: any }> = [
 const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const themeCtx = useContext(ThemeToggleContext);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const { isAdmin } = useAuth();
 
   const { data: me } = useQuery({
@@ -139,39 +141,48 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
             Панель брокера
           </Typography>
 
-          {/* Main nav */}
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
-            {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => (
-              <Button
-                key={item.path}
-                startIcon={item.icon}
-                onClick={() => navigate(item.path)}
-                size="small"
-                sx={{
-                  color: isActive(item.path) ? '#2563eb' : '#475569',
-                  textTransform: 'none',
-                  fontWeight: isActive(item.path) ? 600 : 500,
-                  bgcolor: isActive(item.path) ? '#eef2ff' : 'transparent',
-                  borderRadius: '10px',
-                  px: 1.5, py: 0.6,
-                  fontSize: 13,
-                  transition: 'all 0.15s',
-                  '&:hover': {
-                    bgcolor: isActive(item.path) ? '#e0e7ff' : '#f1f5f9',
-                    color: isActive(item.path) ? '#2563eb' : '#1e293b',
-                  },
-                  '& .MuiButton-startIcon': {
-                    color: isActive(item.path) ? '#2563eb' : '#94a3b8',
-                  },
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </Box>
+          {/* Hamburger (mobile) */}
+          {isMobile && (
+            <IconButton onClick={() => setDrawerOpen(true)} sx={{ color: '#475569', mr: 0.5 }}>
+              <MenuIcon />
+            </IconButton>
+          )}
 
-          {/* Admin nav (icon-only) */}
-          {isAdmin && (
+          {/* Main nav (desktop) */}
+          {!isMobile && (
+            <Box sx={{ display: 'flex', gap: 0.5 }}>
+              {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => (
+                <Button
+                  key={item.path}
+                  startIcon={item.icon}
+                  onClick={() => navigate(item.path)}
+                  size="small"
+                  sx={{
+                    color: isActive(item.path) ? '#2563eb' : '#475569',
+                    textTransform: 'none',
+                    fontWeight: isActive(item.path) ? 600 : 500,
+                    bgcolor: isActive(item.path) ? '#eef2ff' : 'transparent',
+                    borderRadius: '10px',
+                    px: 1.5, py: 0.6,
+                    fontSize: 13,
+                    transition: 'all 0.15s',
+                    '&:hover': {
+                      bgcolor: isActive(item.path) ? '#e0e7ff' : '#f1f5f9',
+                      color: isActive(item.path) ? '#2563eb' : '#1e293b',
+                    },
+                    '& .MuiButton-startIcon': {
+                      color: isActive(item.path) ? '#2563eb' : '#94a3b8',
+                    },
+                  }}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </Box>
+          )}
+
+          {/* Admin nav (desktop, icon-only) */}
+          {!isMobile && isAdmin && (
             <Box sx={{ display: 'flex', gap: 0.3, ml: 1, pl: 1, borderLeft: '1px solid rgba(226,232,240,0.8)' }}>
               {ADMIN_NAV_ITEMS.map((item) => (
                 <Tooltip key={item.path} title={item.label}>
@@ -266,9 +277,80 @@ const AppLayout = ({ children, breadcrumbs, noPadding }: AppLayoutProps) => {
       )}
 
       {/* Page content */}
-      <Box sx={noPadding ? {} : { px: { xs: 2, md: 4 }, py: 2, maxWidth: 1400, mx: 'auto' }}>
+      <Box sx={noPadding ? {} : { px: { xs: 1.5, sm: 2, md: 4 }, py: 2, maxWidth: 1400, mx: 'auto' }}>
         {children}
       </Box>
+
+      {/* Mobile Drawer */}
+      <Drawer
+        anchor="left"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        PaperProps={{ sx: { width: 280, bgcolor: '#fff' } }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{
+              width: 34, height: 34, borderRadius: '10px', bgcolor: '#eef2ff',
+              border: '1px solid rgba(199,210,254,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Typography sx={{ color: '#3b82f6', fontWeight: 800, fontSize: 13 }}>ТД</Typography>
+            </Box>
+            <Typography sx={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Digital Broker</Typography>
+          </Box>
+          <IconButton size="small" onClick={() => setDrawerOpen(false)} sx={{ color: '#94a3b8' }}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Box>
+        <Divider />
+        <List sx={{ px: 1, py: 1 }}>
+          {NAV_ITEMS.filter(item => !item.adminOnly || isAdmin).map((item) => (
+            <ListItemButton
+              key={item.path}
+              onClick={() => { navigate(item.path); setDrawerOpen(false); }}
+              selected={isActive(item.path)}
+              sx={{
+                borderRadius: '10px', mb: 0.5, py: 1,
+                '&.Mui-selected': { bgcolor: '#eef2ff', color: '#2563eb' },
+                '&.Mui-selected:hover': { bgcolor: '#e0e7ff' },
+              }}
+            >
+              <ListItemIcon sx={{ minWidth: 36, color: isActive(item.path) ? '#2563eb' : '#94a3b8' }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14, fontWeight: isActive(item.path) ? 600 : 500 }} />
+            </ListItemButton>
+          ))}
+        </List>
+        {isAdmin && (
+          <>
+            <Divider sx={{ mx: 2 }} />
+            <Typography sx={{ px: 2, pt: 1.5, pb: 0.5, fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Администрирование
+            </Typography>
+            <List sx={{ px: 1, pb: 1 }}>
+              {ADMIN_NAV_ITEMS.map((item) => (
+                <ListItemButton
+                  key={item.path}
+                  onClick={() => { navigate(item.path); setDrawerOpen(false); }}
+                  selected={isActive(item.path)}
+                  sx={{
+                    borderRadius: '10px', mb: 0.5, py: 0.8,
+                    '&.Mui-selected': { bgcolor: '#eef2ff', color: '#2563eb' },
+                    '&.Mui-selected:hover': { bgcolor: '#e0e7ff' },
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36, color: isActive(item.path) ? '#2563eb' : '#94a3b8' }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 13, fontWeight: isActive(item.path) ? 600 : 500 }} />
+                </ListItemButton>
+              ))}
+            </List>
+          </>
+        )}
+      </Drawer>
     </Box>
   );
 };

@@ -43,7 +43,7 @@ const AdminDashboardPage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Админ', path: '/admin/users' }, { label: 'Dashboard' }]}>
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
         <Typography variant="h5" fontWeight={700} sx={{ mb: 3, color: '#0f172a' }}>
           <DashboardIcon sx={{ mr: 1, verticalAlign: 'bottom', color: '#2563eb' }} />
           Admin Dashboard
@@ -117,8 +117,9 @@ const AdminDashboardPage = () => {
               <Grid item xs={12} md={6}>
                 <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
                   <Typography variant="subtitle1" fontWeight={600} sx={{ mb: 1, color: '#0f172a' }}>Сервисы</Typography>
-                  <TableContainer>
-                    <Table size="small">
+                  <Box sx={{ overflowX: 'auto', width: '100%' }}>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
+                    <Table size="small" sx={{ minWidth: 320 }}>
                       <TableHead>
                         <TableRow>
                           <TableCell>Сервис</TableCell>
@@ -142,6 +143,7 @@ const AdminDashboardPage = () => {
                       </TableBody>
                     </Table>
                   </TableContainer>
+                  </Box>
                 </Paper>
               </Grid>
 

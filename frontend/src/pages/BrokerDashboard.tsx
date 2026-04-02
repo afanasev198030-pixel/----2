@@ -142,7 +142,7 @@ const BrokerDashboard = () => {
 
         {/* Onboarding empty state */}
         {isEmpty && (
-          <Card sx={{ mb: 4, p: 3, textAlign: 'center', bgcolor: '#f8fafc', border: '1px dashed rgba(226,232,240,0.8)' }}>
+          <Card sx={{ mb: { xs: 3, sm: 4 }, p: { xs: 2, sm: 3 }, textAlign: 'center', bgcolor: '#f8fafc', border: '1px dashed rgba(226,232,240,0.8)' }}>
             <Typography variant="h6" fontWeight={700} gutterBottom sx={{ color: '#0f172a' }}>Начните работу</Typography>
             <Typography variant="body2" sx={{ mb: 3, maxWidth: 480, mx: 'auto', color: '#64748b' }}>
               Загрузите первый документ и создайте декларацию — система поможет с заполнением и кодами ТН ВЭД.
@@ -159,7 +159,7 @@ const BrokerDashboard = () => {
         )}
 
         {/* Metrics */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' }, gap: 2, mb: 4 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: { xs: 3, sm: 4 } }}>
           <Card
             sx={{
               cursor: 'pointer',
@@ -254,10 +254,10 @@ const BrokerDashboard = () => {
         </Box>
 
         {/* Two-column layout: Recent Declarations + Clients */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '3fr 2fr' }, gap: 3 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '3fr 2fr' }, gap: { xs: 2, sm: 3 }, minWidth: 0 }}>
           {/* Recent Declarations */}
-          <Paper sx={{ borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
-            <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Paper sx={{ borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden', minWidth: 0, width: '100%' }}>
+            <Box sx={{ p: { xs: 2, sm: 2.5 }, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', sm: 'center' }, gap: { xs: 1, sm: 0 } }}>
               <Typography variant="h6" fontWeight={600} sx={{ fontSize: 15, color: '#0f172a' }}>Последние декларации</Typography>
               <Button
                 size="small"
@@ -269,8 +269,8 @@ const BrokerDashboard = () => {
               </Button>
             </Box>
             <Divider />
-            <TableContainer>
-              <Table size="small">
+            <TableContainer sx={{ overflowX: 'auto', maxWidth: '100%' }}>
+              <Table size="small" sx={{ minWidth: { xs: 520, sm: 'unset' } }}>
                 <TableHead>
                   <TableRow>
                     <TableCell>№</TableCell>
@@ -353,8 +353,8 @@ const BrokerDashboard = () => {
           </Paper>
 
           {/* Clients */}
-          <Paper sx={{ borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
-            <Box sx={{ p: 2.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Paper sx={{ borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', overflow: 'hidden', minWidth: 0, width: '100%' }}>
+            <Box sx={{ p: { xs: 2, sm: 2.5 }, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', sm: 'center' }, gap: { xs: 1, sm: 0 } }}>
               <Typography variant="h6" fontWeight={600} sx={{ fontSize: 15, color: '#0f172a' }}>Клиенты</Typography>
               <Button
                 size="small"
@@ -366,8 +366,8 @@ const BrokerDashboard = () => {
               </Button>
             </Box>
             <Divider />
-            <TableContainer>
-              <Table size="small">
+            <TableContainer sx={{ overflowX: 'auto', maxWidth: '100%' }}>
+              <Table size="small" sx={{ minWidth: { xs: 400, sm: 'unset' } }}>
                 <TableHead>
                   <TableRow>
                     <TableCell>Название</TableCell>
@@ -461,30 +461,34 @@ const BrokerDashboard = () => {
         </Box>
 
         {/* Analytics */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mt: 3 }}>
-          <Paper sx={{ p: 2.5, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: { xs: 2, sm: 3 }, mt: { xs: 2, sm: 3 }, minWidth: 0 }}>
+          <Paper sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', minWidth: 0, width: '100%', overflow: 'hidden' }}>
             <Typography variant="h6" fontWeight={600} sx={{ mb: 2, fontSize: 15, color: '#0f172a' }}>Статусы деклараций</Typography>
-            <ResponsiveContainer width="100%" height={250}>
+            <Box sx={{ width: '100%', height: { xs: 220, sm: 250 }, minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={statusChartData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                <Pie data={statusChartData} cx="50%" cy="50%" outerRadius="72%" dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
                   {statusChartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                 </Pie>
                 <ReTooltip />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
+            </Box>
           </Paper>
-          <Paper sx={{ p: 2.5, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <Paper sx={{ p: { xs: 2, sm: 2.5 }, borderRadius: '14px', border: '1px solid rgba(226,232,240,0.8)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', minWidth: 0, width: '100%', overflow: 'hidden' }}>
             <Typography variant="h6" fontWeight={600} sx={{ mb: 2, fontSize: 15, color: '#0f172a' }}>Декларации по месяцам</Typography>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={monthlyData}>
+            <Box sx={{ width: '100%', height: { xs: 220, sm: 250 }, minWidth: 0 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthlyData} margin={{ top: 8, right: 4, left: 0, bottom: 4 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis allowDecimals={false} />
+                <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} width={36} tick={{ fontSize: 11 }} />
                 <ReTooltip />
                 <Bar dataKey="count" fill="#2563eb" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+            </Box>
           </Paper>
         </Box>
     </AppLayout>

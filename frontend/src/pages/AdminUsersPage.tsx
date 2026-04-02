@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Container, Typography, Paper, Table, TableHead, TableRow, TableCell, TableBody,
+  Container, Typography, Paper, Table, TableContainer, TableHead, TableRow, TableCell, TableBody,
   Chip, TextField, Box, IconButton, Pagination, MenuItem, Select, FormControl, InputLabel,
   Tooltip,
 } from '@mui/material';
@@ -71,16 +71,17 @@ const AdminUsersPage = () => {
         </Box>
 
         <Paper variant="outlined" sx={{ boxShadow: 'none' }}>
-          <Table size="small">
+          <TableContainer sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 700 }}>
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontWeight: 700 }}>Email</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>ФИО</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Телефон</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>ФИО</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>Телефон</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Роль</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Telegram</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>Telegram</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Статус</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Регистрация</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>Регистрация</TableCell>
                 <TableCell />
               </TableRow>
             </TableHead>
@@ -88,8 +89,8 @@ const AdminUsersPage = () => {
               {data?.items?.map((user) => (
                 <TableRow key={user.id} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/admin/users/${user.id}`)}>
                   <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.full_name || '—'}</TableCell>
-                  <TableCell>{user.phone || '—'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{user.full_name || '—'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{user.phone || '—'}</TableCell>
                   <TableCell>
                     <Chip
                       label={ROLE_LABELS[user.role] || user.role}
@@ -98,7 +99,7 @@ const AdminUsersPage = () => {
                       variant="outlined"
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                     {user.telegram_id ? (
                       <Chip label="Привязан" size="small" color="info" variant="outlined" />
                     ) : (
@@ -110,7 +111,7 @@ const AdminUsersPage = () => {
                       ? <Chip label="Активен" size="small" color="success" icon={<ActiveIcon />} />
                       : <Chip label="Деактивирован" size="small" color="default" icon={<BlockIcon />} />}
                   </TableCell>
-                  <TableCell>{dayjs(user.created_at).format('DD.MM.YYYY HH:mm')}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{dayjs(user.created_at).format('DD.MM.YYYY HH:mm')}</TableCell>
                   <TableCell>
                     <Tooltip title="Редактировать">
                       <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(`/admin/users/${user.id}`); }}>
@@ -125,6 +126,7 @@ const AdminUsersPage = () => {
               )}
             </TableBody>
           </Table>
+          </TableContainer>
         </Paper>
 
         {data && data.pages > 1 && (

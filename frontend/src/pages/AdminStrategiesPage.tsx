@@ -84,16 +84,17 @@ const AdminStrategiesPage = () => {
 
   return (
     <AppLayout>
-      <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <AiIcon sx={{ color: '#2563eb' }} />
+      <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, flex: '1 1 auto' }}>
+            <AiIcon sx={{ color: '#2563eb', flexShrink: 0 }} />
             <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>AI-стратегии заполнения</Typography>
           </Box>
           <Button
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => { setForm(EMPTY_FORM); setDialogOpen(true); }}
+            sx={{ flexShrink: 0, width: { xs: '100%', sm: 'auto' } }}
           >
             Новая стратегия
           </Button>
@@ -106,8 +107,9 @@ const AdminStrategiesPage = () => {
 
         {error && <Alert severity="error" sx={{ mb: 2, boxShadow: 'none' }}>Ошибка загрузки стратегий</Alert>}
 
+        <Box sx={{ overflowX: 'auto', width: '100%' }}>
         <TableContainer component={Paper} variant="outlined" sx={{ boxShadow: 'none' }}>
-          <Table>
+          <Table sx={{ minWidth: 640 }}>
             <TableHead>
               <TableRow>
                 <TableCell>Название</TableCell>
@@ -132,7 +134,7 @@ const AdminStrategiesPage = () => {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Typography variant="body2" sx={{ maxWidth: { xs: 160, sm: 280, md: 400 }, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {s.rule_text}
                       </Typography>
                     </TableCell>
@@ -164,6 +166,7 @@ const AdminStrategiesPage = () => {
             </TableBody>
           </Table>
         </TableContainer>
+        </Box>
 
         {/* Create / Edit Dialog */}
         <Dialog open={dialogOpen} onClose={handleClose} maxWidth="md" fullWidth>
@@ -194,13 +197,13 @@ const AdminStrategiesPage = () => {
               rows={4}
               placeholder='Если поставщик содержит "ZED Group", установить условия поставки EXW и таможенный пост Шереметьево.'
             />
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
               <TextField
                 label="Приоритет"
                 type="number"
                 value={form.priority}
                 onChange={(e) => setForm({ ...form, priority: parseInt(e.target.value) || 0 })}
-                sx={{ width: 120 }}
+                sx={{ width: { xs: '100%', sm: 120 }, maxWidth: { sm: 120 } }}
               />
               <FormControlLabel
                 control={

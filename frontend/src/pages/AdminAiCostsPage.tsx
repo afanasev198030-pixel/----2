@@ -119,13 +119,13 @@ const AdminAiCostsPage = () => {
                   {data.by_operation.length === 0 ? (
                     <Typography variant="caption" sx={{ color: '#64748b' }}>Нет данных</Typography>
                   ) : (
-                    <TableContainer>
-                      <Table size="small">
+                    <TableContainer sx={{ overflowX: 'auto' }}>
+                      <Table size="small" sx={{ minWidth: 600 }}>
                         <TableHead>
                           <TableRow>
                             <TableCell>Операция</TableCell>
-                            <TableCell align="right">Вызовов</TableCell>
-                            <TableCell align="right">Токенов</TableCell>
+                            <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>Вызовов</TableCell>
+                            <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>Токенов</TableCell>
                             <TableCell align="right">Стоимость</TableCell>
                           </TableRow>
                         </TableHead>
@@ -133,8 +133,8 @@ const AdminAiCostsPage = () => {
                           {data.by_operation.map((row: any) => (
                             <TableRow key={row.operation}>
                               <TableCell><Chip label={row.operation} size="small" variant="outlined" color="primary" sx={{ borderColor: 'rgba(37,99,235,0.35)', fontWeight: 500 }} /></TableCell>
-                              <TableCell align="right">{fmtInt(row.calls)}</TableCell>
-                              <TableCell align="right">{fmtInt(row.tokens)}</TableCell>
+                              <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>{fmtInt(row.calls)}</TableCell>
+                              <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>{fmtInt(row.tokens)}</TableCell>
                               <TableCell align="right">${fmt(row.cost_usd, 4)}</TableCell>
                             </TableRow>
                           ))}
@@ -151,13 +151,13 @@ const AdminAiCostsPage = () => {
                   {data.by_model.length === 0 ? (
                     <Typography variant="caption" sx={{ color: '#64748b' }}>Нет данных</Typography>
                   ) : (
-                    <TableContainer>
-                      <Table size="small">
+                    <TableContainer sx={{ overflowX: 'auto' }}>
+                      <Table size="small" sx={{ minWidth: 600 }}>
                         <TableHead>
                           <TableRow>
                             <TableCell>Модель</TableCell>
-                            <TableCell align="right">Вызовов</TableCell>
-                            <TableCell align="right">Токенов</TableCell>
+                            <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>Вызовов</TableCell>
+                            <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>Токенов</TableCell>
                             <TableCell align="right">Стоимость</TableCell>
                           </TableRow>
                         </TableHead>
@@ -165,8 +165,8 @@ const AdminAiCostsPage = () => {
                           {data.by_model.map((row: any) => (
                             <TableRow key={row.model}>
                               <TableCell><Chip label={row.model} size="small" variant="outlined" sx={{ borderColor: 'rgba(148,163,184,0.55)', color: '#64748b', fontWeight: 500 }} /></TableCell>
-                              <TableCell align="right">{fmtInt(row.calls)}</TableCell>
-                              <TableCell align="right">{fmtInt(row.tokens)}</TableCell>
+                              <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>{fmtInt(row.calls)}</TableCell>
+                              <TableCell align="right" sx={{ display: { xs: 'none', md: 'table-cell' } }}>{fmtInt(row.tokens)}</TableCell>
                               <TableCell align="right">${fmt(row.cost_usd, 4)}</TableCell>
                             </TableRow>
                           ))}

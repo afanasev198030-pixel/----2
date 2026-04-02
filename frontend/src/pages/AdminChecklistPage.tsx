@@ -95,13 +95,13 @@ const AdminChecklistPage = () => {
 
   return (
     <AppLayout breadcrumbs={[{ label: 'Админ', path: '/admin/users' }, { label: 'Чек-листы' }]}>
-      <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a' }}>
+      <Box sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 2, mb: 3 }}>
+          <Typography variant="h5" fontWeight={700} sx={{ color: '#0f172a', minWidth: 0 }}>
             <ChecklistIcon sx={{ mr: 1, verticalAlign: 'bottom', color: '#2563eb' }} />
             Чек-листы ({checklists.length})
           </Typography>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate}>Новый чек-лист</Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} sx={{ width: { xs: '100%', sm: 'auto' }, flexShrink: 0 }}>Новый чек-лист</Button>
         </Box>
 
         <Alert severity="info" sx={{ mb: 2, boxShadow: 'none', border: '1px solid rgba(226,232,240,0.9)' }}>
@@ -119,9 +119,9 @@ const AdminChecklistPage = () => {
             {checklists.map((cl: ChecklistData) => (
               <Grid item xs={12} md={6} key={cl.id}>
                 <Paper variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#0f172a' }}>{cl.name}</Typography>
-                    <Box>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                    <Typography variant="subtitle1" fontWeight={600} sx={{ color: '#0f172a', minWidth: 0, flex: '1 1 auto' }}>{cl.name}</Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                       <Chip label={cl.declaration_type} size="small" variant="outlined" sx={{ mr: 1, borderColor: 'rgba(148,163,184,0.55)', color: '#64748b', fontWeight: 600 }} />
                       <Chip label={cl.is_active ? 'Активен' : 'Неактивен'} size="small" color={cl.is_active ? 'success' : 'default'} variant={cl.is_active ? 'filled' : 'outlined'} sx={cl.is_active ? {} : { borderColor: 'rgba(148,163,184,0.55)', color: '#64748b' }} />
                     </Box>
@@ -155,8 +155,8 @@ const AdminChecklistPage = () => {
         <DialogTitle>{editCl ? 'Редактировать чек-лист' : 'Новый чек-лист'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
-            <Grid item xs={8}><TextField fullWidth label="Название" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} size="small" /></Grid>
-            <Grid item xs={4}><TextField fullWidth label="Тип ДТ" value={form.declaration_type} onChange={e => setForm({ ...form, declaration_type: e.target.value })} size="small" /></Grid>
+            <Grid item xs={12} sm={8}><TextField fullWidth label="Название" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} size="small" /></Grid>
+            <Grid item xs={12} sm={4}><TextField fullWidth label="Тип ДТ" value={form.declaration_type} onChange={e => setForm({ ...form, declaration_type: e.target.value })} size="small" /></Grid>
             <Grid item xs={12}><TextField fullWidth label="Описание" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} size="small" multiline rows={2} /></Grid>
           </Grid>
           <Typography variant="subtitle2" sx={{ mt: 2, mb: 1, color: '#0f172a', fontWeight: 600 }}>Пункты чек-листа ({clItems.length})</Typography>

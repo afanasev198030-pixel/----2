@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Container, Typography, Paper, Table, TableHead, TableRow, TableCell, TableBody,
+  Container, Typography, Paper, Table, TableContainer, TableHead, TableRow, TableCell, TableBody,
   Chip, TextField, Box, Pagination, MenuItem, Select, FormControl, InputLabel,
 } from '@mui/material';
 import AppLayout from '../components/AppLayout';
@@ -95,21 +95,22 @@ const AdminAuditPage = () => {
         </Box>
 
         <Paper variant="outlined" sx={{ boxShadow: 'none' }}>
-          <Table size="small">
+          <TableContainer sx={{ overflowX: 'auto' }}>
+          <Table size="small" sx={{ minWidth: 700 }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Дата</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>Дата</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Пользователь</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Действие</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Ресурс</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Детали</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>IP</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>Ресурс</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>Детали</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: 'none', md: 'table-cell' } }}>IP</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {filtered.map((log) => (
                 <TableRow key={log.id} hover>
-                  <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                  <TableCell sx={{ whiteSpace: 'nowrap', display: { xs: 'none', md: 'table-cell' } }}>
                     {log.created_at ? dayjs(log.created_at).format('DD.MM.YYYY HH:mm:ss') : '—'}
                   </TableCell>
                   <TableCell>
@@ -126,7 +127,7 @@ const AdminAuditPage = () => {
                       variant="outlined"
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                     {log.resource_type && (
                       <Typography variant="caption">
                         {log.resource_type}
@@ -134,14 +135,14 @@ const AdminAuditPage = () => {
                       </Typography>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                     {log.details && (
                       <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 200, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {JSON.stringify(log.details).slice(0, 80)}
                       </Typography>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                     <Typography variant="caption">{log.ip_address || '—'}</Typography>
                   </TableCell>
                 </TableRow>
@@ -151,6 +152,7 @@ const AdminAuditPage = () => {
               )}
             </TableBody>
           </Table>
+          </TableContainer>
         </Paper>
 
         {data && data.pages > 1 && (

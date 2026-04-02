@@ -630,13 +630,14 @@ const DeclarationFormPage = () => {
 
   return (
     <AppLayout breadcrumbs={breadcrumbs} noPadding>
-    <Box sx={{ height: 'calc(100vh - 88px)', width: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#f8f8fa', overflow: 'hidden', minWidth: 1280 }}>
+    <Box sx={{ height: 'calc(100vh - 88px)', width: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#f8f8fa', overflow: 'hidden', minWidth: { xs: 0, md: 1280 } }}>
       {/* DeclHeader */}
       <Box sx={{
         zIndex: 50, bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)',
-        borderBottom: '1px solid rgba(226,232,240,0.8)', px: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 48, flexShrink: 0,
+        borderBottom: '1px solid rgba(226,232,240,0.8)', px: 2.5, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', gap: { xs: 1, sm: 0 },
+        minHeight: { xs: 'auto', sm: 48 }, height: { sm: 48 }, flexShrink: 0,
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: 'wrap' }}>
           <Button size="small" startIcon={<FolderOpenIcon sx={{ fontSize: '14px !important' }} />}
             onClick={() => setDocViewerOpen(true)}
             sx={{ fontSize: 13, fontWeight: 500, borderRadius: '8px', px: 1.25, py: 0.75, border: '1px solid rgba(226,232,240,1)', color: '#64748b', textTransform: 'none' }}>
@@ -654,7 +655,7 @@ const DeclarationFormPage = () => {
           {autoSaveStatus === 'saving' && <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>Сохранение...</Typography>}
           {autoSaveStatus === 'saved' && <Typography sx={{ fontSize: 12, color: '#10b981' }}>Сохранено</Typography>}
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap', alignSelf: { xs: 'stretch', sm: 'auto' } }}>
           <Button size="small" startIcon={<PdfIcon sx={{ fontSize: '14px !important' }} />} onClick={handleExportPdf}
             sx={{ fontSize: 13, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
             PDF
@@ -671,7 +672,7 @@ const DeclarationFormPage = () => {
         bgcolor: 'white', borderBottom: '1px solid rgba(226,232,240,0.8)', px: 2.5, py: 1,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', minHeight: 40,
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', rowGap: 1 }}>
           <StripMetric icon={<CheckIcon sx={{ fontSize: 12, color: '#10b981' }} />} label="Заполнено" value={`${metrics.filled}/${metrics.total}`} />
           <Box sx={{ height: 16, width: '1px', bgcolor: 'rgba(226,232,240,0.6)' }} />
           <StripMetric icon={<WarningIcon sx={{ fontSize: 12, color: '#ef4444' }} />} label="Ошибки" value={String(metrics.errors)} muted={metrics.errors === 0} />
@@ -686,16 +687,16 @@ const DeclarationFormPage = () => {
       </Box>
 
       {/* Main area */}
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* Printed Form */}
-        <Box sx={{ flex: 1, overflowY: 'auto', bgcolor: '#f5f6f8', p: 4 }}>
+        <Box sx={{ flex: 1, overflowY: 'auto', bgcolor: '#f5f6f8', p: { xs: 1.5, sm: 2, md: 4 }, minWidth: 0 }}>
           <Box sx={{
             maxWidth: 1100, mx: 'auto', bgcolor: 'white', borderRadius: 4,
             boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)', overflow: 'hidden',
           }}>
             <Box sx={{
-              borderBottom: '1px solid #e2e8f0', px: 3, py: 1.75,
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              borderBottom: '1px solid #e2e8f0', px: { xs: 2, md: 3 }, py: 1.75,
+              display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1,
               background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)',
             }}>
               <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#334155', letterSpacing: '0.04em' }}>
@@ -707,74 +708,74 @@ const DeclarationFormPage = () => {
             </Box>
 
             {/* Row 1: Title + 1 + A */}
-            <Box sx={{ display: 'flex', borderBottom: '2px solid rgba(226,232,240,0.9)' }}>
-              <FormCell {...hc('f1', { width: '27%' })} />
-              <FormCell {...hc('fA', { width: '73%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, borderBottom: '2px solid rgba(226,232,240,0.9)' }}>
+              <FormCell {...hc('f1', { width: { xs: '100%', md: '27%' } })} />
+              <FormCell {...hc('fA', { width: { xs: '100%', md: '73%' } })} />
             </Box>
             {/* Row 2-3: 2 / 3-4 / 5-6-7 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f2', { width: '50%', minHeight: 80 })} />
-              <Box sx={{ width: '25%', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f2', { width: { xs: '100%', md: '50%' }, minHeight: 80 })} />
+              <Box sx={{ width: { xs: '100%', md: '25%' }, display: 'flex', flexDirection: 'column' }}>
                 <FormCell {...hc('f3', { width: '100%' })} />
                 <FormCell {...hc('f4', { width: '100%' })} />
               </Box>
-              <Box sx={{ width: '25%', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ width: { xs: '100%', md: '25%' }, display: 'flex', flexDirection: 'column' }}>
                 <FormCell {...hc('f5', { width: '100%' })} />
                 <FormCell {...hc('f6', { width: '100%' })} />
                 <FormCell {...hc('f7', { width: '100%' })} />
               </Box>
             </Box>
             {/* Row 4: 8 / 9 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f8', { width: '50%', minHeight: 60 })} />
-              <FormCell {...hc('f9', { width: '50%', minHeight: 60 })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f8', { width: { xs: '100%', md: '50%' }, minHeight: 60 })} />
+              <FormCell {...hc('f9', { width: { xs: '100%', md: '50%' }, minHeight: 60 })} />
             </Box>
             {/* Row 5: 10 / 11 / 12 / 13 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f10', { width: '12%' })} />
-              <FormCell {...hc('f11', { width: '13%' })} />
-              <FormCell {...hc('f12', { width: '50%' })} />
-              <FormCell {...hc('f13', { width: '25%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f10', { width: { xs: '100%', md: '12%' } })} />
+              <FormCell {...hc('f11', { width: { xs: '100%', md: '13%' } })} />
+              <FormCell {...hc('f12', { width: { xs: '100%', md: '50%' } })} />
+              <FormCell {...hc('f13', { width: { xs: '100%', md: '25%' } })} />
             </Box>
             {/* Row 6: 14 */}
-            <Box sx={{ display: 'flex' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
               <FormCell {...hc('f14', { width: '100%', minHeight: 60 })} />
             </Box>
             {/* Row 7: 15 / 15a / 17 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f15', { width: '25%' })} />
-              <FormCell {...hc('f15a', { width: '25%' })} />
-              <FormCell {...hc('f17', { width: '50%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f15', { width: { xs: '100%', md: '25%' } })} />
+              <FormCell {...hc('f15a', { width: { xs: '100%', md: '25%' } })} />
+              <FormCell {...hc('f17', { width: { xs: '100%', md: '50%' } })} />
             </Box>
             {/* Row 8: 16 / 17a */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f16', { width: '50%' })} />
-              <FormCell {...hc('f17a', { width: '50%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f16', { width: { xs: '100%', md: '50%' } })} />
+              <FormCell {...hc('f17a', { width: { xs: '100%', md: '50%' } })} />
             </Box>
             {/* Row 9: 18 / 19 / 20 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f18', { width: '42%' })} />
-              <FormCell {...hc('f19', { width: '8%' })} />
-              <FormCell {...hc('f20', { width: '50%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f18', { width: { xs: '100%', md: '42%' } })} />
+              <FormCell {...hc('f19', { width: { xs: '100%', md: '8%' } })} />
+              <FormCell {...hc('f20', { width: { xs: '100%', md: '50%' } })} />
             </Box>
             {/* Row 10: 21 / 22 / 23 / 24 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f21', { width: '50%' })} />
-              <FormCell {...hc('f22', { width: '22%' })} />
-              <FormCell {...hc('f23', { width: '14%' })} />
-              <FormCell {...hc('f24', { width: '14%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f21', { width: { xs: '100%', md: '50%' } })} />
+              <FormCell {...hc('f22', { width: { xs: '100%', md: '22%' } })} />
+              <FormCell {...hc('f23', { width: { xs: '100%', md: '14%' } })} />
+              <FormCell {...hc('f24', { width: { xs: '100%', md: '14%' } })} />
             </Box>
             {/* Row 11: 25 / 26 / 27 / 28 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f25', { width: '12%' })} />
-              <FormCell {...hc('f26', { width: '12%' })} />
-              <FormCell {...hc('f27', { width: '26%' })} />
-              <FormCell {...hc('f28', { width: '50%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f25', { width: { xs: '100%', md: '12%' } })} />
+              <FormCell {...hc('f26', { width: { xs: '100%', md: '12%' } })} />
+              <FormCell {...hc('f27', { width: { xs: '100%', md: '26%' } })} />
+              <FormCell {...hc('f28', { width: { xs: '100%', md: '50%' } })} />
             </Box>
             {/* Row 12: 29 / 30 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...hc('f29', { width: '25%' })} />
-              <FormCell {...hc('f30', { width: '75%' })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...hc('f29', { width: { xs: '100%', md: '25%' } })} />
+              <FormCell {...hc('f30', { width: { xs: '100%', md: '75%' } })} />
             </Box>
 
             {/* Item block for first item */}
@@ -787,15 +788,19 @@ const DeclarationFormPage = () => {
             )}
 
             {/* Payment section: 47 / 48+49+B */}
-            <Box sx={{ display: 'flex' }}>
-              <Box sx={{ width: '50%', borderRight: '1px solid rgba(226,232,240,0.7)' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <Box sx={{
+                width: { xs: '100%', md: '50%' },
+                borderRight: { xs: 'none', md: '1px solid rgba(226,232,240,0.7)' },
+                borderBottom: { xs: '1px solid rgba(226,232,240,0.7)', md: 'none' },
+              }}>
                 <Box sx={{ px: 1.25, pt: 0.75 }}>
                   <Typography sx={{ fontSize: 9, color: 'rgba(148,163,184,0.8)', fontWeight: 600 }}>47</Typography>
                   <Typography sx={{ fontSize: 8, color: 'rgba(148,163,184,0.7)' }}>Исчисление платежей</Typography>
                 </Box>
                 <EditablePaymentTable payments={payments} />
               </Box>
-              <Box sx={{ width: '50%', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ width: { xs: '100%', md: '50%' }, display: 'flex', flexDirection: 'column' }}>
                 <FormCell {...fc('f48', { width: '100%' })} />
                 <FormCell {...fc('f49', { width: '100%' })} />
                 <FormCell {...fc('fb', { width: '100%', flex: 1 })} />
@@ -803,24 +808,24 @@ const DeclarationFormPage = () => {
             </Box>
 
             {/* Section C */}
-            <Box sx={{ display: 'flex' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
               <FormCell {...fc('fC', { width: '100%', minHeight: 28, textAlign: 'center' })} />
             </Box>
 
             {/* Fields 51 / 52 / 53 */}
-            <Box sx={{ display: 'flex' }}>
-              <FormCell {...fc('f51', { width: '33%', minHeight: 60 })} />
-              <FormCell {...fc('f52', { width: '33%', minHeight: 60 })} />
-              <FormCell {...fc('f53', { width: '34%', minHeight: 60 })} />
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <FormCell {...fc('f51', { width: { xs: '100%', md: '33%' }, minHeight: 60 })} />
+              <FormCell {...fc('f52', { width: { xs: '100%', md: '33%' }, minHeight: 60 })} />
+              <FormCell {...fc('f53', { width: { xs: '100%', md: '34%' }, minHeight: 60 })} />
             </Box>
 
             {/* Section D + 54 */}
-            <Box sx={{ display: 'flex' }}>
-              <Box sx={{ width: '50%', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+              <Box sx={{ width: { xs: '100%', md: '50%' }, display: 'flex', flexDirection: 'column' }}>
                 <FormCell {...fc('fd', { width: '100%' })} />
                 <FormCell {...fc('fdj', { width: '100%' })} />
               </Box>
-              <FormCell {...fc('f54', { width: '50%', minHeight: 80 })} />
+              <FormCell {...fc('f54', { width: { xs: '100%', md: '50%' }, minHeight: 80 })} />
             </Box>
 
             {/* Status bar */}
@@ -838,7 +843,7 @@ const DeclarationFormPage = () => {
             const startItemIdx = 1 + sheetIdx * 3;
             return (
               <Box key={sheetIdx} sx={{ mt: 3, bgcolor: 'white', borderRadius: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
-                <Box sx={{ borderBottom: '2px solid rgba(226,232,240,0.9)', px: 3, py: 1.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)' }}>
+                <Box sx={{ borderBottom: '2px solid rgba(226,232,240,0.9)', px: { xs: 2, md: 3 }, py: 1.75, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1, background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)' }}>
                   <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#334155', letterSpacing: '0.04em' }}>
                     ДОБАВОЧНЫЙ ЛИСТ К ДЕКЛАРАЦИИ НА ТОВАРЫ
                   </Typography>
@@ -846,10 +851,10 @@ const DeclarationFormPage = () => {
                     Лист {sheetNumber}/{totalForms}
                   </Typography>
                 </Box>
-                <Box sx={{ display: 'flex' }}>
-                  <FormCell {...hc('f2', { width: '40%' })} />
-                  <FormCell {...hc('f8', { width: '40%' })} />
-                  <FormCell {...hc('f3', { width: '20%' })} />
+                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+                  <FormCell {...hc('f2', { width: { xs: '100%', md: '40%' } })} />
+                  <FormCell {...hc('f8', { width: { xs: '100%', md: '40%' } })} />
+                  <FormCell {...hc('f3', { width: { xs: '100%', md: '20%' } })} />
                 </Box>
                 {sheetItems.map((itm, slotIdx) => {
                   const globalIdx = startItemIdx + slotIdx;
@@ -878,8 +883,8 @@ const DeclarationFormPage = () => {
               overflow: 'hidden',
             }}>
               <Box sx={{
-                borderBottom: '2px solid rgba(226,232,240,0.9)', px: 3, py: 1.75,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                borderBottom: '2px solid rgba(226,232,240,0.9)', px: { xs: 2, md: 3 }, py: 1.75,
+                display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1,
                 background: 'linear-gradient(to right, rgba(248,250,252,0.8), white)',
               }}>
                 <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#334155', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
@@ -889,14 +894,15 @@ const DeclarationFormPage = () => {
               {items.map((itm, idx) => {
                 const it = itm as any;
                 return (
-                  <Box key={itm.id} sx={{ px: 3, py: 2, borderBottom: idx < items.length - 1 ? '1px solid rgba(226,232,240,0.7)' : 'none' }}>
+                  <Box key={itm.id} sx={{ px: { xs: 1.5, md: 3 }, py: 2, borderBottom: idx < items.length - 1 ? '1px solid rgba(226,232,240,0.7)' : 'none' }}>
                     <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#1e293b', mb: 1 }}>
                       Товар № {itm.item_no || idx + 1}
                     </Typography>
                     {it.documents_json?.length > 0 && (
                       <Box sx={{ mb: 1.5 }}>
                         <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#475569', mb: 0.5 }}>К ГРАФЕ 44 (Документы)</Typography>
-                        <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, '& th, & td': { border: '1px solid rgba(226,232,240,0.7)', p: '3px 6px' } }}>
+                        <Box sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                        <Box component="table" sx={{ width: '100%', minWidth: { xs: 320, md: 'auto' }, borderCollapse: 'collapse', fontSize: 11, '& th, & td': { border: '1px solid rgba(226,232,240,0.7)', p: '3px 6px' } }}>
                           <thead>
                             <tr>
                               <Box component="th" sx={{ fontWeight: 600, textAlign: 'left', color: '#64748b' }}>Код</Box>
@@ -914,10 +920,12 @@ const DeclarationFormPage = () => {
                             ))}
                           </tbody>
                         </Box>
+                        </Box>
                       </Box>
                     )}
                     <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#475569', mb: 0.5 }}>К ГРАФЕ 31 (Описание и характеристики товара)</Typography>
-                    <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, '& th, & td': { border: '1px solid rgba(226,232,240,0.7)', p: '3px 6px' } }}>
+                    <Box sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <Box component="table" sx={{ width: '100%', minWidth: { xs: 560, md: 'auto' }, borderCollapse: 'collapse', fontSize: 11, '& th, & td': { border: '1px solid rgba(226,232,240,0.7)', p: '3px 6px' } }}>
                       <thead>
                         <tr>
                           {['Гр.', 'Наименование', 'Производитель', 'Марка', 'Модель', 'Кол-во', 'Ед.изм', 'Артикул', 'Серийные NN'].map(h => (
@@ -941,6 +949,7 @@ const DeclarationFormPage = () => {
                         </tr>
                       </tbody>
                     </Box>
+                    </Box>
                   </Box>
                 );
               })}
@@ -951,8 +960,9 @@ const DeclarationFormPage = () => {
         {/* SourceDrawer */}
         {selectedCell && (
           <Box sx={{
-            width: 480, flexShrink: 0, bgcolor: '#fafafa', borderLeft: '1px solid rgba(226,232,240,0.8)',
-            display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden',
+            width: { xs: '100%', md: 480 }, maxWidth: { xs: '100%', md: 480 }, flexShrink: 0, bgcolor: '#fafafa',
+            borderLeft: { xs: 'none', md: '1px solid rgba(226,232,240,0.8)' }, borderTop: { xs: '1px solid rgba(226,232,240,0.8)', md: 'none' },
+            display: 'flex', flexDirection: 'column', height: { xs: 'min(45vh, 420px)', md: '100%' }, maxHeight: { xs: 'min(45vh, 420px)' }, overflow: 'hidden',
           }}>
             <SourceDrawerContent
               cell={selectedCell} value={selectedValue} state={selectedState}
@@ -992,14 +1002,15 @@ const DeclarationFormPage = () => {
       <Box sx={{
         zIndex: 50, bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(8px)',
         borderTop: '1px solid rgba(226,232,240,0.8)', px: 2.5, py: 1,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 46, flexShrink: 0,
+        display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', gap: { xs: 1, sm: 0 },
+        minHeight: { xs: 'auto', sm: 46 }, height: { sm: 46 }, flexShrink: 0,
       }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', rowGap: 1 }}>
           <BottomInd icon={<CheckIcon sx={{ fontSize: 12 }} />} text={`${metrics.errors} критических ошибок`} color="#059669" bg="rgba(236,253,245,1)" />
           <BottomInd icon={<WarningIcon sx={{ fontSize: 12 }} />} text={`${metrics.warnings} предупреждения`} color="#d97706" bg="rgba(255,251,235,1)" />
           <BottomInd icon={<EditIcon sx={{ fontSize: 12 }} />} text={`${metrics.manual} ручных изменения`} color="#3b82f6" bg="rgba(239,246,255,1)" />
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', alignSelf: { xs: 'stretch', sm: 'auto' } }}>
           <Button size="small" startIcon={<ShieldIcon sx={{ fontSize: '14px !important' }} />}
             onClick={() => setSnackMsg('ЭЦП: будет в следующей версии')}
             sx={{ fontSize: 13, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '8px', textTransform: 'none', bgcolor: 'white' }}>
@@ -1047,35 +1058,35 @@ function EditableItemBlock({ item, itemIndex, paymentItem, evidenceMap, docs, ce
   return (
     <Box sx={{ borderTop: '2px solid rgba(226,232,240,0.9)' }}>
       {/* Row: 31 (57%) | 32-43 (43%) */}
-      <Box sx={{ display: 'flex' }}>
-        <FormCell {...ic('description', { width: '57%', minHeight: 140 })} />
-        <Box sx={{ width: '43%', display: 'flex', flexDirection: 'column' }}>
-          <Box sx={{ display: 'flex' }}>
-            <FormCell {...ic('item_no', { width: '35%' })} />
-            <FormCell {...ic('hs_code', { width: '65%' })} />
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+        <FormCell {...ic('description', { width: { xs: '100%', md: '57%' }, minHeight: 140 })} />
+        <Box sx={{ width: { xs: '100%', md: '43%' }, display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' } }}>
+            <FormCell {...ic('item_no', { width: { xs: '100%', sm: '35%' } })} />
+            <FormCell {...ic('hs_code', { width: { xs: '100%', sm: '65%' } })} />
           </Box>
-          <Box sx={{ display: 'flex' }}>
-            <FormCell {...ic('country_origin_code', { width: '35%' })} />
-            <FormCell {...ic('gross_weight', { width: '40%' })} />
-            <FormCell {...ic('preference_code', { width: '25%' })} />
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+            <FormCell {...ic('country_origin_code', { width: { xs: '100%', md: '35%' } })} />
+            <FormCell {...ic('gross_weight', { width: { xs: '100%', md: '40%' } })} />
+            <FormCell {...ic('preference_code', { width: { xs: '100%', md: '25%' } })} />
           </Box>
-          <Box sx={{ display: 'flex' }}>
-            <FormCell {...ic('procedure_code', { width: '35%' })} />
-            <FormCell {...ic('net_weight', { width: '40%' })} />
-            <FormCell {...ic('quota_info', { width: '25%' })} />
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+            <FormCell {...ic('procedure_code', { width: { xs: '100%', md: '35%' } })} />
+            <FormCell {...ic('net_weight', { width: { xs: '100%', md: '40%' } })} />
+            <FormCell {...ic('quota_info', { width: { xs: '100%', md: '25%' } })} />
           </Box>
           <FormCell {...ic('prev_doc_ref', { width: '100%' })} />
-          <Box sx={{ display: 'flex' }}>
-            <FormCell {...ic('additional_unit_qty', { width: '35%' })} />
-            <FormCell {...ic('unit_price', { width: '40%' })} />
-            <FormCell {...ic('mos_method_code', { width: '25%' })} />
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+            <FormCell {...ic('additional_unit_qty', { width: { xs: '100%', md: '35%' } })} />
+            <FormCell {...ic('unit_price', { width: { xs: '100%', md: '40%' } })} />
+            <FormCell {...ic('mos_method_code', { width: { xs: '100%', md: '25%' } })} />
           </Box>
         </Box>
       </Box>
       {/* Row: 44 (57%) | 45+46 (43%) */}
-      <Box sx={{ display: 'flex' }}>
-        <FormCell {...ic('documents_json', { width: '57%', minHeight: 60 })} />
-        <Box sx={{ width: '43%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
+        <FormCell {...ic('documents_json', { width: { xs: '100%', md: '57%' }, minHeight: 60 })} />
+        <Box sx={{ width: { xs: '100%', md: '43%' }, display: 'flex', flexDirection: 'column' }}>
           <FormCell {...ic('customs_value_rub', { width: '100%' })} />
           <FormCell {...ic('statistical_value_usd', { width: '100%' })} />
         </Box>
@@ -1095,7 +1106,8 @@ function EditablePaymentTable({ payments }: { payments: PaymentResult | null }) 
   const tdC = { ...tdSx, textAlign: 'center' as const };
 
   return (
-    <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', m: 0 }}>
+    <Box sx={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+    <Box component="table" sx={{ width: '100%', minWidth: { xs: 380, md: 'auto' }, borderCollapse: 'collapse', m: 0 }}>
       <thead>
         <tr>
           <Box component="th" sx={thSx}>Вид</Box>
@@ -1133,6 +1145,7 @@ function EditablePaymentTable({ payments }: { payments: PaymentResult | null }) 
           <Box component="td" sx={{ ...tdSx, borderTop: '2px solid rgba(226,232,240,0.9)' }} />
         </tr>
       </tbody>
+    </Box>
     </Box>
   );
 }
@@ -1312,12 +1325,12 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
     <>
       {/* Header */}
       <Box sx={{ bgcolor: 'white', px: 2.5, py: 1.5, borderBottom: '1px solid rgba(226,232,240,0.6)', flexShrink: 0 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.75 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.75, mb: 0.75 }}>
           <Typography sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 500, letterSpacing: '0.05em' }}>ПОЛЕ ДЕКЛАРАЦИИ</Typography>
           <IconButton size="small" onClick={onClose} sx={{ p: 0.5, color: '#94a3b8' }}><CloseIcon sx={{ fontSize: 16 }} /></IconButton>
         </Box>
-        <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>Графа {cell.num}. {cell.label}</Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.75, fontSize: 11, color: '#94a3b8' }}>
+        <Typography sx={{ fontSize: { xs: 13, sm: 15 }, fontWeight: 600, color: '#0f172a', wordBreak: 'break-word' }}>Графа {cell.num}. {cell.label}</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.75, mt: 0.75, fontSize: 11, color: '#94a3b8' }}>
           <Typography sx={{ fontSize: 'inherit', color: 'inherit', cursor: 'pointer', '&:hover': { color: '#475569' } }}>Декларация</Typography>
           <ChevronRightIcon sx={{ fontSize: 10 }} />
           <Typography sx={{ fontSize: 'inherit', color: 'inherit', cursor: 'pointer', '&:hover': { color: '#475569' } }}>{cell.section}</Typography>
@@ -1421,7 +1434,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
             <Box sx={{ mx: 2, mt: 2 }}>
               <Box sx={{ bgcolor: 'white', borderRadius: 4, border: '1px solid rgba(226,232,240,0.7)', boxShadow: '0 1px 2px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
                 <Box sx={{ px: 2, py: 1.75 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.75, mb: 0.5 }}>
                     <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 500, letterSpacing: '0.05em' }}>ТЕКУЩЕЕ ЗНАЧЕНИЕ</Typography>
                     {state !== 'default' && (
                       <Box sx={{
@@ -1435,19 +1448,19 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                   {state === 'empty' ? (
                     <Typography sx={{ fontSize: 22, color: '#cbd5e1', fontStyle: 'italic', fontWeight: 500 }}>Не заполнено</Typography>
                   ) : (
-                    <Typography sx={{ fontSize: 22, fontWeight: 600, color: '#0f172a', letterSpacing: '-0.02em' }}>{value}</Typography>
+                    <Typography sx={{ fontSize: { xs: 16, sm: 22 }, fontWeight: 600, color: '#0f172a', letterSpacing: '-0.02em', wordBreak: 'break-word' }}>{value}</Typography>
                   )}
                 </Box>
                 {confidence != null && (
                   <Box sx={{
                     borderTop: '1px solid', borderColor: state === 'review' ? 'rgba(253,230,138,0.4)' : state === 'empty' ? 'rgba(254,202,202,0.4)' : 'rgba(167,243,208,0.4)',
-                    px: 2, py: 1.25, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    px: 2, py: 1.25, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 1,
                     bgcolor: state === 'review' ? 'rgba(255,251,235,0.4)' : state === 'empty' ? 'rgba(254,242,242,0.4)' : 'rgba(236,253,245,0.4)',
                   }}>
                     <Typography sx={{ fontSize: 10, color: confColor }}>
                       {state === 'review' ? 'Рекомендуется проверить' : state === 'empty' ? 'Обязательное поле' : 'Значение подтверждено'}
                     </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0 }}>
                       <Box sx={{ width: 52, height: 5, borderRadius: 3, bgcolor: confTrackColor, overflow: 'hidden' }}>
                         <Box sx={{ height: '100%', width: `${confidence}%`, bgcolor: confBarColor, borderRadius: 3 }} />
                       </Box>
@@ -1463,7 +1476,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
               <Box sx={{ px: 2, pt: 2 }}>
                 <DrawerLabel text="ОСНОВНОЙ ИСТОЧНИК" />
                 <Box sx={{
-                  display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, bgcolor: 'white',
+                  display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, gap: 1.5, p: 1.5, bgcolor: 'white',
                   borderRadius: 4, border: '1px solid rgba(226,232,240,0.7)', boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
                   cursor: 'pointer', '&:hover': { borderColor: 'rgba(203,213,225,1)' },
                 }}>
@@ -1522,7 +1535,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                       </Box>
                     </Box>
                   </Box>
-                  <Box sx={{ bgcolor: 'rgba(248,250,252,1)', borderTop: '1px solid rgba(226,232,240,0.5)', px: 2, py: 0.75, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Box sx={{ bgcolor: 'rgba(248,250,252,1)', borderTop: '1px solid rgba(226,232,240,0.5)', px: 2, py: 0.75, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 0.75 }}>
                     <Typography sx={{ fontSize: 9, color: '#94a3b8' }}>Страница {previewPage}</Typography>
                     {sourceDoc && (
                       <Typography
@@ -1619,7 +1632,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
                   </Box>
                 </Box>
               )}
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 0.75 }}>
                 <ActionCard icon={<EditIcon sx={{ fontSize: 14, color: '#8b5cf6' }} />} label="Изменить вручную"
                   active={isEditing} onClick={onStartEdit} />
                 <ActionCard icon={<FileUpIcon sx={{ fontSize: 14, color: '#f59e0b' }} />} label="Изменить источник"
@@ -1658,7 +1671,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
       {/* Footer */}
       {!sourceMode && (
         <Box sx={{ bgcolor: 'white', borderTop: '1px solid rgba(226,232,240,0.8)', px: 2.5, py: 1.5, flexShrink: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'stretch', gap: 1 }}>
             <Button fullWidth variant="contained" size="small"
               startIcon={<CheckIcon sx={{ fontSize: '14px !important' }} />}
               onClick={() => onApplyValue(value)}
@@ -1668,7 +1681,7 @@ function SourceDrawerContent({ cell, value, state, evidence, sourceDoc, logs, do
             {state !== 'empty' && evidence?.raw_value != null && (
               <Button size="small" startIcon={<UndoIcon sx={{ fontSize: '12px !important' }} />}
                 onClick={onResetToAi}
-                sx={{ color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '12px', textTransform: 'none', fontSize: 11, bgcolor: 'white', whiteSpace: 'nowrap' }}>
+                sx={{ width: { xs: '100%', sm: 'auto' }, color: '#64748b', border: '1px solid rgba(226,232,240,1)', borderRadius: '12px', textTransform: 'none', fontSize: 11, bgcolor: 'white', whiteSpace: 'nowrap' }}>
                 Сбросить к AI
               </Button>
             )}
