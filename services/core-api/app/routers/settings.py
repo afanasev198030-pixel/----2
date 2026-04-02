@@ -151,8 +151,11 @@ async def get_settings(
     # Redis (TCP check via Docker DNS)
     try:
         import socket
-        redis_host = os.environ.get("REDIS_URL", "redis://redis:6379/0").split("://")[1].split(":")[0]
-        s = socket.create_connection((redis_host, 6379), timeout=2)
+        from urllib.parse import urlparse
+        redis_parsed = urlparse(os.environ.get("REDIS_URL", "redis://redis:6379/0"))
+        redis_host = redis_parsed.hostname or "redis"
+        redis_port = redis_parsed.port or 6379
+        s = socket.create_connection((redis_host, redis_port), timeout=2)
         s.close()
         services.append(ServiceStatus(name="Redis", port=6379, status="ok", detail="Кеш и очереди"))
     except Exception:
