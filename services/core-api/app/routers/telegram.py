@@ -257,14 +257,27 @@ async def _resolve_user_by_telegram(telegram_id: str, db: AsyncSession) -> User:
     return user
 
 
+async def _resolve_user(identifier: str, db: AsyncSession) -> User:
+    """Resolve user by UUID user_id or telegram_id."""
+    try:
+        uid = uuid.UUID(identifier)
+        result = await db.execute(select(User).where(User.id == uid))
+        user = result.scalar_one_or_none()
+        if user:
+            return user
+    except (ValueError, AttributeError):
+        pass
+    return await _resolve_user_by_telegram(identifier, db)
+
+
 @router.get("/user/{telegram_id}/declarations")
 async def get_user_declarations_by_telegram(
     telegram_id: str,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=10, le=50),
 ):
-    """List user declarations by telegram_id (internal, no JWT)."""
-    user = await _resolve_user_by_telegram(telegram_id, db)
+    """List user declarations by telegram_id or user_id UUID (internal, no JWT)."""
+    user = await _resolve_user(telegram_id, db)
 
     from app.models.declaration_item import DeclarationItem
 
@@ -303,7 +316,7 @@ async def get_declaration_status_by_telegram(
     db: AsyncSession = Depends(get_db),
 ):
     """Detailed status of a declaration including pre-send checks (internal, no JWT)."""
-    user = await _resolve_user_by_telegram(telegram_id, db)
+    user = await _resolve_user(telegram_id, db)
 
     decl_uuid = uuid.UUID(declaration_id)
     result = await db.execute(
@@ -353,8 +366,8 @@ async def get_user_profile_by_telegram(
     telegram_id: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Full user profile by telegram_id (internal, no JWT, no require_role)."""
-    user = await _resolve_user_by_telegram(telegram_id, db)
+    """Full user profile by telegram_id or user_id UUID (internal, no JWT)."""
+    user = await _resolve_user(telegram_id, db)
 
     return {
         "id": str(user.id),

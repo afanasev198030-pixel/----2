@@ -128,12 +128,13 @@ class AgentTools:
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any], telegram_id: str, user_id: str) -> str:
         """Dispatch tool call and return JSON-serialised result string."""
-        logger.info("tool_execute", tool=tool_name, telegram_id=telegram_id)
+        identifier = telegram_id or user_id
+        logger.info("tool_execute", tool=tool_name, identifier=identifier)
         try:
             if tool_name == "get_my_declarations":
-                result = await self.get_my_declarations(telegram_id, arguments.get("limit", 5))
+                result = await self.get_my_declarations(identifier, arguments.get("limit", 5))
             elif tool_name == "get_declaration_details":
-                result = await self.get_declaration_details(telegram_id, arguments["declaration_id"])
+                result = await self.get_declaration_details(identifier, arguments["declaration_id"])
             elif tool_name == "search_knowledge_base":
                 result = await self.search_knowledge_base(arguments["query"])
             elif tool_name == "get_filling_rules":
@@ -141,7 +142,7 @@ class AgentTools:
             elif tool_name == "remember_fact":
                 result = await self.remember_fact(user_id, arguments["fact"])
             elif tool_name == "get_user_profile":
-                result = await self.get_user_profile(telegram_id)
+                result = await self.get_user_profile(identifier)
             else:
                 result = {"error": f"Unknown tool: {tool_name}"}
             return json.dumps(result, ensure_ascii=False, default=str)
