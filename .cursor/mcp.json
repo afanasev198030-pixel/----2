@@ -3,6 +3,10 @@
     "prompts-chat": {
       "command": "npx",
       "args": ["-y", "@fkadev/prompts.chat-mcp"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest"]
     }
   }
 }

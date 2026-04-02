@@ -521,11 +521,18 @@ async def classify_hs_rag(request: ClassifyHSRequest):
 
     context_tokens = set_usage_context(declaration_id=request.declaration_id or "", operation="hs_classify_dspy")
     try:
-        # RAG поиск по ChromaDB
-        index_manager = get_index_manager()
-        rag_results = index_manager.search_hs_codes(clean_desc)
+        # Query expansion: переформулируем описание в терминах ТН ВЭД
+        from app.services.dspy_modules import _expand_query, _rerank_candidates
+        expanded_desc = _expand_query(clean_desc)
 
-        # DSPy классификация
+        # RAG поиск по ChromaDB (используем обогащённый запрос)
+        index_manager = get_index_manager()
+        rag_results = index_manager.search_hs_codes(expanded_desc)
+
+        # Re-ranking: перераранжируем RAG-кандидатов через LLM
+        rag_results = _rerank_candidates(clean_desc, rag_results)
+
+        # DSPy классификация (используем оригинальное описание)
         classifier = HSCodeClassifier()
         result = classifier.classify(clean_desc, rag_results)
 
@@ -559,8 +566,11 @@ async def classify_hs_rag(request: ClassifyHSRequest):
                 c["hs_code"] = _pad10(c["hs_code"])
 
         main_code = result.get("hs_code", "")
-        all_suggestions = [result]
-        seen_codes = {main_code}
+        all_suggestions = []
+        seen_codes = set()
+        if main_code:
+            all_suggestions.append(result)
+            seen_codes.add(main_code)
         for c in candidates:
             code = c.get("hs_code", "")
             if code and code not in seen_codes:

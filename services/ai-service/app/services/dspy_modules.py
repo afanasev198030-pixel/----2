@@ -58,6 +58,8 @@ def _detect_drone_product_kind(description: str) -> str:
         "камера", "пропеллер", "рама", "передатчик", "приемник", "приёмник",
         "приём видео", "приёма видео", "видеоприём", "видеоприемник", "видеоприёмник",
         "видеопередат", "5.8g", "5.8ггц", "5.8 ггц", "5.8ghz",
+        "двигатель", "аккумулятор", "батарея", "зарядное", "подвес",
+        "для дрона", "для бпла", "для квадрокоптера", "for drone", "for uav", "for quadcopter",
     ]
 
     has_complete = _contains_any(text, complete_drone_words)
@@ -147,6 +149,94 @@ def _build_candidates(selected: Optional[dict], rag_results: list[dict], keyword
     result = list(by_code.values())
     result.sort(key=lambda x: x.get("confidence", 0), reverse=True)
     return result[:8]
+
+
+def _expand_query(description: str) -> str:
+    """Переформулирует описание товара в терминах ТН ВЭД для улучшения RAG-поиска."""
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_llm:
+            return description
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
+        llm = get_llm_client(operation="hs_query_expand")
+        resp = llm.chat.completions.create(
+            model=get_model(),
+            messages=[
+                {"role": "system", "content": (
+                    "Ты эксперт по ТН ВЭД ЕАЭС. Переформулируй описание товара, "
+                    "используя терминологию таможенной номенклатуры. "
+                    "Добавь: материал, назначение, тип изделия, синонимы из ТН ВЭД. "
+                    "Ответь ОДНОЙ строкой без кода, только описание."
+                )},
+                {"role": "user", "content": description},
+            ],
+            temperature=0,
+            max_tokens=150,
+        )
+        expanded = (resp.choices[0].message.content or "").strip()
+        if expanded and len(expanded) > 5:
+            logger.info("query_expanded", original=description[:60], expanded=expanded[:80])
+            return expanded
+    except Exception as e:
+        logger.debug("query_expand_skip", error=str(e)[:80])
+    return description
+
+
+def _rerank_candidates(description: str, candidates: list[dict]) -> list[dict]:
+    """Перераранжирует RAG-кандидатов через LLM по релевантности к описанию товара."""
+    if not candidates or len(candidates) <= 1:
+        return candidates
+    try:
+        from app.config import get_settings
+        settings = get_settings()
+        if not settings.has_llm:
+            return candidates
+        from app.services.llm_client import get_llm_client, get_model, json_format_kwargs
+        llm = get_llm_client(operation="hs_rerank")
+
+        cand_text = "\n".join([
+            f"- {c.get('code', '')}: {c.get('name_ru', '')} (score: {c.get('score', 0):.2f})"
+            for c in candidates
+        ])
+        resp = llm.chat.completions.create(
+            model=get_model(),
+            messages=[
+                {"role": "system", "content": (
+                    "Тебе дано описание товара и список кодов ТН ВЭД с описаниями. "
+                    "Отранжируй коды по релевантности для данного товара. "
+                    "Верни JSON-массив кодов от наиболее подходящего к наименее: "
+                    "[\"XXXXXXXXXX\", \"YYYYYYYYYY\", ...]"
+                )},
+                {"role": "user", "content": f"Товар: {description}\n\nКандидаты:\n{cand_text}"},
+            ],
+            temperature=0,
+            max_tokens=200,
+            **json_format_kwargs(),
+        )
+        text = strip_code_fences(resp.choices[0].message.content or "")
+        ranked_codes = json.loads(text)
+        if not isinstance(ranked_codes, list):
+            return candidates
+
+        # Пересортируем кандидатов по порядку из LLM
+        code_to_cand = {c.get("code", ""): c for c in candidates}
+        reranked = []
+        seen = set()
+        for code in ranked_codes:
+            code = re.sub(r"\D", "", str(code))
+            if code in code_to_cand and code not in seen:
+                reranked.append(code_to_cand[code])
+                seen.add(code)
+        # Добавляем оставшиеся (LLM мог пропустить)
+        for c in candidates:
+            if c.get("code", "") not in seen:
+                reranked.append(c)
+        logger.info("candidates_reranked", description=description[:60], order=[c.get("code", "") for c in reranked[:5]])
+        return reranked
+    except Exception as e:
+        logger.debug("rerank_skip", error=str(e)[:80])
+        return candidates
 
 
 _dspy_available = False
