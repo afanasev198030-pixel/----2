@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-04-02 — Мобильная адаптация всего фронтенда
+
+### AppLayout: гамбургер-меню с Drawer
+
+На экранах уже `md` (< 900px) горизонтальная навигация заменяется на:
+- Кнопка-гамбургер (MenuIcon) в тулбаре
+- MUI Drawer (выезжает слева) с полным списком навигации + блоком "Администрирование"
+- Активные пункты подсвечиваются, при клике drawer закрывается
+
+### Таблицы: горизонтальный скролл + скрытие колонок
+
+| Страница | Скрытые колонки на xs |
+|----------|----------------------|
+| DeclarationsListPage | Дата, Направление, Стоимость |
+| AdminUsersPage | ФИО, Телефон, Telegram, Регистрация |
+| AdminAuditPage | Дата, Ресурс, Детали, IP |
+| ClientsListPage | КПП, Контракт, Тариф, Статус |
+| AdminAiCostsPage | Вызовов, Токенов |
+
+Все таблицы обёрнуты в `TableContainer` с `overflowX: 'auto'` и `minWidth` для горизонтального скролла.
+
+### DeclarationFormPage (1728 строк)
+
+- `gridTemplateColumns: '1fr 1fr'` → `{ xs: '1fr', md: '1fr 1fr' }` 
+- Шапка, панели, кнопки — колонка на xs, строка на sm/md
+- Боковая панель источника — `width: { xs: '100%', md: 480 }`, сверху на мобильном
+- Блоки ДТ (графы 47/48, D/54, листы ДТ2) — адаптивные направления flex
+- Таблицы платежей — горизонтальный скролл
+
+### DeclarationStatusPage
+
+- Hero-секция: колонка на xs, строка на md
+- Сетки issues/summary, карточки товаров, документов — responsive grid
+- Кнопки действий — `flexDirection: { xs: 'column', sm: 'row' }`
+- Навигация внизу: 1 колонка на xs → 2 на sm → 4 на md
+
+### BrokerDashboard, ProfilePage
+
+- Метрики: `gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: 'repeat(4,1fr)' }`
+- Таблицы с горизонтальным скроллом
+- Графики Recharts в `ResponsiveContainer` с адаптивной высотой
+- ProfilePage: центрированный контент, адаптивные отступы
+
+### Админ-страницы (6 файлов)
+
+AdminStrategiesPage, AdminParseDebugPage, AdminChecklistPage, AdminKnowledgePage, AdminDashboardPage, AdminUserEditPage — адаптивные отступы, скролл таблиц, flex-wrap шапок.
+
+**Итого:** 16 файлов, +492 / -317 строк.
+
+---
+
 ## 2026-04-02 — AI Chat Widget, исправление LLM, продающая Landing Page
 
 ### Исправлен критический баг: бот не отвечал (ошибка LLM)
