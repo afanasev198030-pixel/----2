@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import ProtectedRoute from './components/ProtectedRoute';
+import ChatWidget from './components/ChatWidget';
 import LandingPage from './pages/LandingPage';
 import BrokerDashboard from './pages/BrokerDashboard';
 import ClientsListPage from './pages/ClientsListPage';
@@ -24,6 +25,8 @@ import AdminParseDebugPage from './pages/AdminParseDebugPage';
 
 function App() {
   return (
+    <>
+    <ChatWidget />
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route element={<ProtectedRoute />}>
@@ -49,6 +52,7 @@ function App() {
         <Route path="/admin/parse-debug" element={<AdminParseDebugPage />} />
       </Route>
     </Routes>
+    </>
   );
 }
 

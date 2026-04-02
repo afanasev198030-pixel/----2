@@ -13,7 +13,6 @@ from app.config import get_settings
 import redis.asyncio as redis
 
 logger = structlog.get_logger()
-settings = get_settings()
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
@@ -116,12 +115,15 @@ class AgentTools:
     """Executes tools on behalf of the agent. All methods use internal telegram API (no JWT)."""
 
     def __init__(self):
-        self.core_api_url = settings.CORE_API_URL
         self._redis: Optional[redis.Redis] = None
+
+    @property
+    def core_api_url(self) -> str:
+        return get_settings().CORE_API_URL
 
     async def _get_redis(self) -> redis.Redis:
         if self._redis is None:
-            self._redis = redis.from_url(settings.REDIS_BROKER_URL, decode_responses=True)
+            self._redis = redis.from_url(get_settings().REDIS_BROKER_URL, decode_responses=True)
         return self._redis
 
     async def execute(self, tool_name: str, arguments: Dict[str, Any], telegram_id: str, user_id: str) -> str:

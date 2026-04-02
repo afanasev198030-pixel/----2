@@ -14,29 +14,52 @@ from app.services.agent_tools import tools, TOOL_DEFINITIONS
 from app.config import get_settings
 
 logger = structlog.get_logger()
-settings = get_settings()
 
 MAX_TOOL_ROUNDS = 6
 
 SYSTEM_PROMPT = """Ты — экспертный AI-ассистент таможенного брокера Digital Broker.
+Ты — профессионал в области ВЭД, таможенного оформления, международной торговли.
 
-У тебя есть инструменты — используй их АКТИВНО:
-• get_my_declarations — посмотреть список деклараций пользователя
-• get_declaration_details — подробный статус конкретной декларации + pre-send проверки
+=== ЧТО ТЫ УМЕЕШЬ ===
+Ты помогаешь пользователям:
+• Оформлять таможенные декларации (ДТ) — от загрузки документов до отправки
+• Подбирать коды ТН ВЭД по описанию товара (39 000+ кодов)
+• Рассчитывать пошлины, НДС, акцизы по актуальным ставкам
+• Проверять декларации на ошибки перед отправкой
+• Отвечать на любые вопросы по таможенному оформлению
+• Управлять декларациями: проверять статус, подписывать, отправлять
+
+=== ТВОИ ИНСТРУМЕНТЫ ===
+Используй их АКТИВНО, не угадывай данные:
+• get_my_declarations — список деклараций пользователя
+• get_declaration_details — подробный статус + pre-send проверки
 • search_knowledge_base — поиск по базе знаний (коды ТН ВЭД, прецеденты)
 • get_filling_rules — правила заполнения граф ДТ
-• remember_fact — запомнить факт о пользователе для будущих диалогов
-• get_user_profile — получить профиль пользователя
+• remember_fact — запомнить факт о пользователе
+• get_user_profile — профиль пользователя
 
-Правила:
-1. Если пользователь спрашивает о декларациях — ВСЕГДА вызывай get_my_declarations
-2. Если спрашивает статус — ВСЕГДА вызывай get_declaration_details
-3. Если спрашивает о кодах/правилах — вызывай search_knowledge_base или get_filling_rules
-4. Если пользователь сообщает важную информацию о себе — вызывай remember_fact
-5. Отвечай профессионально, кратко и структурировано
-6. Используй emoji для статусов: ✅ готово, ⚠️ внимание, ❌ проблема, 📋 список
-7. Если у декларации есть blocking проверки — перечисли их
-8. Не выдумывай данных — всегда получай через инструменты"""
+=== ЭКСПЕРТНЫЕ ЗНАНИЯ ===
+Ты глубоко знаешь:
+• Структуру ДТ: все 54 графы, правила заполнения, зависимости между графами
+• ТН ВЭД ЕАЭС: 10-значные коды, группировки, примечания к разделам/группам
+• Таможенные процедуры: ИМ40 (выпуск для внутреннего потребления), ЭК10 (экспорт), ТТ (транзит)
+• Инкотермс 2020: EXW, FCA, CPT, CIP, DAP, DPU, DDP, FAS, FOB, CFR, CIF
+• Таможенную стоимость: методы 1-6, структура ДТС-1/ДТС-2
+• Валютный контроль, сертификацию, лицензирование
+• Таможенные платежи: ввозная пошлина, НДС, акцизы, антидемпинговые пошлины
+• Документы: инвойс, упаковочный лист, коносамент, CMR, сертификаты происхождения
+
+=== ПРАВИЛА ОТВЕТОВ ===
+1. Если спрашивают о декларациях — ВЫЗЫВАЙ get_my_declarations
+2. Если спрашивают статус — ВЫЗЫВАЙ get_declaration_details
+3. Если спрашивают о кодах/правилах/графах — search_knowledge_base или get_filling_rules
+4. Если сообщают информацию о себе (ИНН, товары, маршруты) — remember_fact
+5. Отвечай структурировано: заголовки, списки, emoji для статусов
+6. Если данных нет в инструментах — отвечай из своих знаний, но предупреди
+7. Используй emoji: ✅ готово, ⚠️ внимание, ❌ проблема, 📋 список, 📦 товар
+8. Не выдумывай конкретные данные (числа, даты, коды) — бери из инструментов
+9. Отвечай на русском языке, кратко и по делу
+10. Если вопрос общий ("что ты умеешь?") — расскажи о своих возможностях без вызова инструментов"""
 
 
 class ReActAgent:
@@ -51,6 +74,7 @@ class ReActAgent:
         telegram_id: Optional[str] = None,
     ) -> str:
         tg_id = telegram_id or ""
+        current_settings = get_settings()
 
         memory = await self._tools.get_user_memory(user_id)
         system = SYSTEM_PROMPT
@@ -58,17 +82,18 @@ class ReActAgent:
             system += f"\n\nИз долгосрочной памяти о пользователе:\n{memory}"
 
         try:
-            if settings.LLM_PROVIDER == "anthropic":
+            if current_settings.LLM_PROVIDER == "anthropic":
                 return await self._run_anthropic(system, history, message, tg_id, user_id)
             return await self._run_openai_react(system, history, message, tg_id, user_id)
         except Exception as e:
-            logger.error("agent_error", error=str(e), provider=settings.LLM_PROVIDER)
+            logger.error("agent_error", error=str(e), provider=current_settings.LLM_PROVIDER)
             return "Произошла ошибка при обработке вашего запроса."
 
     async def _run_openai_react(
         self, system: str, history: List[Dict], user_msg: str,
         telegram_id: str, user_id: str,
     ) -> str:
+        current_settings = get_settings()
         try:
             llm = get_llm_client(operation="telegram_chat")
         except Exception as e:
@@ -80,7 +105,8 @@ class ReActAgent:
             messages.append({"role": m["role"], "content": m["content"]})
         messages.append({"role": "user", "content": user_msg})
 
-        model = settings.effective_model
+        model = current_settings.effective_model
+        logger.info("react_start", model=model, provider=current_settings.LLM_PROVIDER)
 
         for round_num in range(MAX_TOOL_ROUNDS):
             response = await asyncio.to_thread(
@@ -131,12 +157,13 @@ class ReActAgent:
         except ImportError:
             return "Anthropic SDK не установлен."
 
-        api_key = settings.ANTHROPIC_API_KEY or settings.LLM_API_KEY
+        current_settings = get_settings()
+        api_key = current_settings.ANTHROPIC_API_KEY or current_settings.LLM_API_KEY
         if not api_key:
             return "Anthropic API ключ не настроен."
 
         client = anthropic.Anthropic(api_key=api_key)
-        model = settings.ANTHROPIC_MODEL or "claude-3-5-sonnet-20241022"
+        model = current_settings.ANTHROPIC_MODEL or "claude-3-5-sonnet-20241022"
 
         anthropic_tools = []
         for td in TOOL_DEFINITIONS:
@@ -196,12 +223,13 @@ class ReActAgent:
         except Exception:
             return ""
 
+        current_settings = get_settings()
         text = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in history)
         prompt = f"Сделай краткое резюме этого диалога (3-5 предложений) на русском:\n\n{text}"
 
         response = await asyncio.to_thread(
             lambda: llm.chat.completions.create(
-                model=settings.effective_model,
+                model=current_settings.effective_model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
                 max_tokens=300,
