@@ -36,6 +36,8 @@ const ACTION_LABELS: Record<string, string> = {
   telegram_message_received: 'Сообщение в Telegram',
   telegram_document_received: 'Документ в Telegram',
   telegram_bot_replied: 'Ответ бота',
+  telegram_account_linked: 'Привязка Telegram',
+  telegram_token_received: 'Токен привязки',
 };
 
 const AdminUserEditPage = () => {

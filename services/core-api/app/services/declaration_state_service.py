@@ -11,7 +11,9 @@ from datetime import datetime
 from typing import Optional
 
 import structlog
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.models import (
     Declaration,
@@ -21,8 +23,11 @@ from app.models import (
     DeclarationLog,
     DeclarationStatusHistory,
 )
+from app.models.user import User
 
 logger = structlog.get_logger()
+
+BOT_SERVICE_URL = "http://bot-service:8006"
 
 STATUS_DISPLAY = {
     DeclarationStatus.NEW: "Новая",
@@ -42,6 +47,34 @@ SIGNATURE_DISPLAY = {
     SignatureStatus.UNSIGNED: "Не подписана",
     SignatureStatus.SIGNED: "Подписана",
 }
+
+
+async def _notify_telegram(
+    db: AsyncSession,
+    declaration: Declaration,
+    event: str,
+    extra: dict | None = None,
+) -> None:
+    """Fire-and-forget push notification to bot-service if user has telegram_id."""
+    try:
+        result = await db.execute(select(User).where(User.id == declaration.created_by))
+        user = result.scalar_one_or_none()
+        if not user or not user.telegram_id:
+            return
+
+        payload = {
+            "telegram_id": user.telegram_id,
+            "event": event,
+            "data": {
+                "declaration_id": str(declaration.id),
+                **(extra or {}),
+            },
+        }
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(f"{BOT_SERVICE_URL}/notify", json=payload)
+        logger.info("telegram_notification_sent", event=event, declaration_id=str(declaration.id))
+    except Exception as e:
+        logger.warning("telegram_notification_failed", event=event, error=str(e))
 
 
 async def recalculate_declaration_state(
@@ -88,6 +121,11 @@ async def recalculate_declaration_state(
         old_status=old_status,
         new_status=new_status.value,
         blocking_count=check_result.blocking_count,
+    )
+
+    await _notify_telegram(
+        db, declaration, new_status.value,
+        {"old": old_status, "new": new_status.value, "blocking_count": check_result.blocking_count},
     )
 
     return declaration

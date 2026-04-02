@@ -2,6 +2,98 @@
 
 ---
 
+## 2026-04-02 — Telegram Bot: Killer Features (ReAct Agent, Push-уведомления, Команды)
+
+### Бот теперь РЕАЛЬНО использует инструменты (ReAct Agent)
+
+Раньше: агент делал вид, что у него есть инструменты, но на самом деле просто искал ключевые слова в сообщении и подмешивал контекст вслепую. Запросы к API декларций и пользователей падали с 401/403, потому что шли с JWT которого у бота нет.
+
+Теперь:
+- Агент полностью переписан на **ReAct loop с настоящим function calling** — LLM сам решает, какой инструмент вызвать, а не мы угадываем по ключевым словам
+- 6 инструментов: `get_my_declarations`, `get_declaration_details`, `search_knowledge_base`, `get_filling_rules`, `remember_fact`, `get_user_profile`
+- Все инструменты работают через **Internal Telegram API** (без JWT, по `telegram_id`) — специальные endpoint'ы, доступные только из внутренней сети Docker
+- Поддержка и OpenAI-совместимых провайдеров (DeepSeek, OpenAI), и нативного Anthropic tool use (Claude)
+- До 6 раундов tool calling за один запрос — агент может сначала получить список деклараций, потом проверить статус конкретной
+
+### Бот теперь сам пишет пользователю (Push-уведомления)
+
+Раньше: бот только отвечал на сообщения. Если статус декларации менялся — пользователь узнавал об этом, только зайдя в веб-интерфейс.
+
+Теперь:
+- В bot-service добавлен **HTTP-сервер** (порт 8006) для приёма уведомлений от core-api
+- При смене статуса декларации (`requires_attention`, `ready_to_send`, `sent`) — бот автоматически шлёт push в Telegram
+- При завершении AI-парсинга — бот присылает уведомление с количеством позиций
+- Каждое уведомление приходит с **inline-кнопками**: "Статус", "Проверки", "Подписать", "Открыть в браузере"
+
+### Команды и кнопки как в профессиональном боте
+
+Раньше: бот принимал файлы и отвечал на текст. Для всего остального — заходи в веб.
+
+Теперь:
+- `/status` — сводка: сколько деклараций в каких статусах
+- `/declarations` — список последних деклараций с кнопками
+- `/new` — сбросить контекст диалога (очищает Redis-сессию)
+- `/help` — справка по возможностям бота
+- **Inline-кнопки** на каждой декларации: Статус, Проверки, Подписать (если `ready_to_send`), Открыть в браузере
+- Подпись декларации прямо из Telegram через `decl_sign:{id}`
+
+### Умная память вместо обрезки
+
+Раньше: история чата обрезалась до 10 последних сообщений (грубо, теряя контекст). TTL — 1 час.
+
+Теперь:
+- **Session compaction**: когда сообщений больше 16, старые суммаризируются через LLM, последние 6 сохраняются. Контекст не теряется, а сжимается
+- **Долгосрочная память** через tool `remember_fact` — агент сам решает, что запомнить (ИНН, частые маршруты, предпочтения). Хранится 90 дней в Redis
+
+### Исправления
+
+- Исправлен баг: `handle_auth_token` отправлял `telegram_id` (строка) в `log_action` как `user_id` (UUID), что вызывало 500 до привязки аккаунта. Теперь логирование происходит только после успешной привязки с реальным UUID
+- Новые action labels в аудите: "Привязка Telegram"
+
+### Затронутые файлы
+
+**ai-service (3 файла — полностью переписаны):**
+
+| Файл | Изменения |
+|---|---|
+| `services/ai-service/app/services/chat_agent.py` | ReAct loop с function calling, поддержка OpenAI + Anthropic, session compaction |
+| `services/ai-service/app/services/agent_tools.py` | 6 tool definitions (OpenAI format), все вызовы через internal telegram API |
+| `services/ai-service/app/routers/chat.py` | Передача telegram_id, session compaction вместо обрезки |
+| `services/ai-service/app/schemas/chat.py` | +telegram_id в ChatRequest |
+
+**bot-service (4 файла):**
+
+| Файл | Изменения |
+|---|---|
+| `services/bot-service/app/handlers.py` | 4 slash-команды, 4 callback handler'а, fix log_action bug |
+| `services/bot-service/app/services.py` | +get_declarations, +get_declaration_status, +sign_declaration, telegram_id в chat |
+| `services/bot-service/app/main.py` | asyncio.gather: polling + FastAPI notify server |
+| `services/bot-service/app/notify_server.py` | НОВЫЙ: FastAPI на порту 8006, push-уведомления с inline-кнопками |
+| `services/bot-service/requirements.txt` | +fastapi, +uvicorn |
+
+**core-api (3 файла):**
+
+| Файл | Изменения |
+|---|---|
+| `services/core-api/app/routers/telegram.py` | +5 endpoint'ов: declarations, status, profile, sign-declaration (все по telegram_id, без JWT) |
+| `services/core-api/app/services/declaration_state_service.py` | +_notify_telegram: push при смене статуса |
+| `services/core-api/app/routers/workflow.py` | Push при sent |
+| `services/core-api/app/routers/apply_parsed.py` | Push при parsing_complete |
+
+**Frontend (1 файл):**
+
+| Файл | Изменения |
+|---|---|
+| `frontend/src/pages/AdminUserEditPage.tsx` | +2 action labels |
+
+**Инфраструктура:**
+
+| Файл | Изменения |
+|---|---|
+| `docker-compose.yml` | expose 8006 для bot-service |
+
+---
+
 ## 2026-04-01 — Улучшение Telegram AI-агента и UX подключения нового пользователя
 
 ### Telegram AI-агент стал значительно мощнее

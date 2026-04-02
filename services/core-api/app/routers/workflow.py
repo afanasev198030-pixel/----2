@@ -28,6 +28,7 @@ from app.services.declaration_state_service import (
     reset_signature_if_needed,
     can_send,
     handle_first_open,
+    _notify_telegram,
     STATUS_DISPLAY,
 )
 
@@ -820,6 +821,8 @@ async def send_declaration(
         declaration_id=str(declaration.id),
         user_id=str(current_user.id),
     )
+
+    await _notify_telegram(db, declaration, "sent")
 
     return {
         "declaration_id": str(declaration.id),

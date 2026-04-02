@@ -28,6 +28,7 @@ from app.services.declaration_state_service import (
     recalculate_declaration_state,
     reset_signature_if_needed,
     set_processing_status,
+    _notify_telegram,
 )
 from app.utils.declaration_helpers import (
     merge_company_inn_kpp as _build_declarant_inn_kpp,
@@ -1569,6 +1570,11 @@ async def apply_parsed_data(
             counterparties_created=counters["counterparties"],
             documents_linked=counters["documents"],
             confidence=data.confidence,
+        )
+
+        await _notify_telegram(
+            db, declaration, "parsing_complete",
+            {"items_count": counters["items"]},
         )
 
         return ApplyParsedResponse(

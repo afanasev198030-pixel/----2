@@ -83,6 +83,46 @@ class CoreApiClient:
                 logger.error("core_api_apply_parsed_error", error=str(e))
                 return False
 
+    async def get_declarations(self, telegram_id: str, limit: int = 10) -> Optional[Dict[str, Any]]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}/api/v1/telegram/user/{telegram_id}/declarations",
+                    params={"limit": limit},
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return None
+            except Exception as e:
+                logger.error("core_api_get_declarations_error", error=str(e))
+                return None
+
+    async def get_declaration_status(self, telegram_id: str, declaration_id: str) -> Optional[Dict[str, Any]]:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}/api/v1/telegram/user/{telegram_id}/declaration/{declaration_id}/status",
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return None
+            except Exception as e:
+                logger.error("core_api_get_decl_status_error", error=str(e))
+                return None
+
+    async def sign_declaration(self, user_id: str, declaration_id: str) -> bool:
+        """Sign declaration via internal API — delegates to workflow."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.post(
+                    f"{self.base_url}/api/v1/telegram/sign-declaration",
+                    json={"user_id": user_id, "declaration_id": declaration_id},
+                )
+                return response.status_code == 200
+            except Exception as e:
+                logger.error("core_api_sign_error", error=str(e))
+                return False
+
     async def attach_document(self, user_id: str, declaration_id: str, file_key: str, filename: str) -> bool:
         async with httpx.AsyncClient() as client:
             try:
@@ -164,7 +204,7 @@ class AiServiceClient:
                 logger.error("ai_service_parse_batch_error", error=str(e))
                 return None
 
-    async def chat(self, user_id: str, message: str, session_id: str) -> str:
+    async def chat(self, user_id: str, message: str, session_id: str, telegram_id: str = "") -> str:
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(
@@ -172,7 +212,8 @@ class AiServiceClient:
                     json={
                         "user_id": user_id,
                         "message": message,
-                        "session_id": session_id
+                        "session_id": session_id,
+                        "telegram_id": telegram_id,
                     }
                 )
                 if response.status_code == 200:

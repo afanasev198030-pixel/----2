@@ -18,6 +18,9 @@ import BusinessIcon from '@mui/icons-material/Business';
 import PublicIcon from '@mui/icons-material/Public';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import TelegramIcon from '@mui/icons-material/Telegram';
+import NotificationsActiveOutlinedIcon from '@mui/icons-material/NotificationsActiveOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import { styled, keyframes } from '@mui/material/styles';
 import { login } from '../api/auth';
 import client from '../api/client';
@@ -300,6 +303,12 @@ export default function LandingPage() {
       desc: 'Хранение, предпросмотр и привязка документов к графам декларации. Источник каждого значения прозрачен',
       bg: '#fff1f2',
     },
+    {
+      icon: <TelegramIcon sx={{ fontSize: 28, color: '#0088cc' }} />,
+      title: 'Telegram-бот с AI',
+      desc: 'Отправляйте документы, спрашивайте статус и управляйте декларациями прямо из Telegram',
+      bg: '#e0f2fe',
+    },
   ];
 
   const steps = [
@@ -347,6 +356,12 @@ export default function LandingPage() {
               sx={{ color: C.textSecondary, textTransform: 'none', fontWeight: 600, fontSize: 15, '&:hover': { color: C.accent, background: C.bgSoft } }}
             >
               Как работает
+            </Button>
+            <Button
+              onClick={() => document.getElementById('telegram-bot')?.scrollIntoView({ behavior: 'smooth' })}
+              sx={{ color: C.textSecondary, textTransform: 'none', fontWeight: 600, fontSize: 15, '&:hover': { color: C.accent, background: C.bgSoft } }}
+            >
+              Telegram-бот
             </Button>
             <Button
               onClick={() => document.getElementById('contacts')?.scrollIntoView({ behavior: 'smooth' })}
@@ -757,8 +772,111 @@ export default function LandingPage() {
         </Container>
       </Section>
 
+      {/* TELEGRAM BOT */}
+      <Section id="telegram-bot" sx={{ background: C.bgWhite }}>
+        <Container maxWidth="lg">
+          <Grid container spacing={6} alignItems="center">
+            <Grid item xs={12} md={6}>
+              <Reveal>
+                <AccentBadge sx={{ background: '#e0f2fe', color: '#0088cc' }}>Telegram-бот</AccentBadge>
+                <Typography sx={{ fontWeight: 800, fontSize: { xs: 26, md: 34 }, mb: 2, color: C.text }}>
+                  AI-ассистент брокера в Telegram
+                </Typography>
+                <Typography sx={{ fontSize: 17, color: C.textSecondary, mb: 4, lineHeight: 1.7 }}>
+                  Полноценный помощник, который работает там, где удобно вам. Не просто бот для уведомлений — настоящий AI-агент с доступом к вашим данным.
+                </Typography>
+
+                <Stack spacing={2.5}>
+                  {[
+                    {
+                      icon: <SmartToyOutlinedIcon sx={{ fontSize: 22, color: '#0088cc' }} />,
+                      title: 'AI с реальными инструментами',
+                      desc: 'Агент сам решает, какие данные запросить: декларации, статусы, коды ТН ВЭД. Не скрипт, а настоящий function calling',
+                    },
+                    {
+                      icon: <DescriptionOutlinedIcon sx={{ fontSize: 22, color: '#0088cc' }} />,
+                      title: 'Документы → Декларация',
+                      desc: 'Отправьте PDF или Excel — бот создаст декларацию и запустит AI-парсинг. Результат с кнопками для проверки',
+                    },
+                    {
+                      icon: <NotificationsActiveOutlinedIcon sx={{ fontSize: 22, color: '#0088cc' }} />,
+                      title: 'Push-уведомления',
+                      desc: 'Бот сам напишет, когда декларация готова к отправке, требует внимания или успешно отправлена',
+                    },
+                    {
+                      icon: <ViewKanbanOutlinedIcon sx={{ fontSize: 22, color: '#0088cc' }} />,
+                      title: 'Управление из чата',
+                      desc: '/status — сводка, /declarations — список с кнопками. Подпись декларации в один клик прямо из Telegram',
+                    },
+                  ].map((item, i) => (
+                    <Stack key={i} direction="row" spacing={2} alignItems="flex-start">
+                      <Box sx={{
+                        width: 44, height: 44, borderRadius: '12px', background: '#e0f2fe',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        {item.icon}
+                      </Box>
+                      <Box>
+                        <Typography sx={{ fontWeight: 700, fontSize: 15, color: C.text, mb: 0.3 }}>{item.title}</Typography>
+                        <Typography sx={{ fontSize: 14, color: C.textSecondary, lineHeight: 1.5 }}>{item.desc}</Typography>
+                      </Box>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Reveal>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Reveal delay={0.15}>
+                <LandingCard sx={{
+                  background: 'linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%)',
+                  border: '1px solid #bae6fd',
+                  p: 4,
+                  textAlign: 'center',
+                }}>
+                  <Box sx={{
+                    width: 80, height: 80, borderRadius: '50%', background: '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    mx: 'auto', mb: 3, boxShadow: '0 4px 20px rgba(0,136,204,0.15)',
+                  }}>
+                    <TelegramIcon sx={{ fontSize: 44, color: '#0088cc' }} />
+                  </Box>
+                  <Typography sx={{ fontWeight: 800, fontSize: 22, color: C.text, mb: 2 }}>
+                    @Digital_deklaration_bot
+                  </Typography>
+                  <Box sx={{ background: '#fff', borderRadius: '12px', p: 2.5, mb: 2, textAlign: 'left', border: '1px solid #e0f2fe' }}>
+                    <Typography sx={{ fontSize: 13, color: C.textMuted, mb: 1 }}>Пример диалога:</Typography>
+                    <Box sx={{ mb: 1.5, p: 1.5, background: '#f0f9ff', borderRadius: '10px 10px 10px 2px' }}>
+                      <Typography sx={{ fontSize: 14, color: C.text }}>Какой статус моих деклараций?</Typography>
+                    </Box>
+                    <Box sx={{ p: 1.5, background: '#e0f2fe', borderRadius: '10px 10px 2px 10px', ml: 3 }}>
+                      <Typography sx={{ fontSize: 14, color: C.text }}>
+                        📊 Сводка (5 деклараций):<br />
+                        ✅ Готово к отправке: 2<br />
+                        ⚠️ Требует внимания: 1<br />
+                        🆕 Новая: 2
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap" useFlexGap>
+                    {['/status', '/declarations', '/help', '/new'].map((cmd) => (
+                      <Box key={cmd} sx={{
+                        px: 1.5, py: 0.5, borderRadius: '8px', background: '#fff',
+                        border: '1px solid #bae6fd', fontSize: 13, fontWeight: 600,
+                        color: '#0088cc', fontFamily: 'monospace',
+                      }}>
+                        {cmd}
+                      </Box>
+                    ))}
+                  </Stack>
+                </LandingCard>
+              </Reveal>
+            </Grid>
+          </Grid>
+        </Container>
+      </Section>
+
       {/* AUDIENCE */}
-      <Section sx={{ background: C.bgWhite }}>
+      <Section sx={{ background: C.bgPage }}>
         <Container maxWidth="lg">
           <Reveal>
             <Box sx={{ textAlign: 'center', mb: 7 }}>

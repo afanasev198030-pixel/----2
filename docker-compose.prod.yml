@@ -15,6 +15,8 @@ services:
       - CORE_API_URL=http://core-api:8001
       - FILE_SERVICE_URL=http://file-service:8002
       - AI_SERVICE_URL=http://ai-service:8003
+    expose:
+      - "8006"
     depends_on:
       redis:
         condition: service_healthy
