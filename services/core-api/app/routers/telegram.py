@@ -348,10 +348,10 @@ async def get_declaration_status_by_telegram(
 
     from app.models.declaration_item import DeclarationItem
     item_count_q = await db.execute(
-        select(func.count()).select_from(DeclarationItem).where(DeclarationItem.declaration_id == decl_uuid)
+        select(func.count()).select_from(DeclarationItem).where(DeclarationItem.declaration_id == declaration.id)
     )
     doc_count_q = await db.execute(
-        select(func.count()).select_from(Document).where(Document.declaration_id == decl_uuid)
+        select(func.count()).select_from(Document).where(Document.declaration_id == declaration.id)
     )
 
     return {

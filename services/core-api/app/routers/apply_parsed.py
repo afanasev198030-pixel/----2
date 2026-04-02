@@ -8,7 +8,7 @@ from typing import Optional
 from decimal import Decimal
 from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, delete
 from sqlalchemy.orm import selectinload
@@ -505,6 +505,18 @@ class ApplyParsedRequest(BaseModel):
     # Графа 9: лицо, ответственное за финансовое урегулирование
     responsible_person: Optional[ParsedCounterparty | str] = None
     responsible_person_matches_declarant: Optional[bool] = True
+
+    @field_validator("consignee", "seller", "buyer", mode="before")
+    @classmethod
+    def _coerce_counterparty(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return None
+            return ParsedCounterparty(name=v)
+        return v
 
     # Общие
     deal_nature_code: Optional[str] = "010"
